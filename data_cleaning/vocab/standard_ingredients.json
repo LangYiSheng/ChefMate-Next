@@ -1,0 +1,9 @@
+[
+ {"ingredient_id":"potato","canonical_name":"土豆","category":"vegetable","aliases":["马铃薯","洋芋"]},
+ {"ingredient_id":"chicken_breast","canonical_name":"鸡胸肉","category":"meat","aliases":["鸡胸","鸡脯肉"]},
+ {"ingredient_id":"chicken_thigh","canonical_name":"鸡腿肉","category":"meat","aliases":[]},
+ {"ingredient_id":"chicken","canonical_name":"鸡肉","category":"meat","aliases":[]},
+ {"ingredient_id":"egg","canonical_name":"鸡蛋","category":"egg","aliases":[],"allergens":["egg"]},
+ {"ingredient_id":"salt","canonical_name":"盐","category":"seasoning","aliases":["食盐"]},
+ {"ingredient_id":"scallion","canonical_name":"葱","category":"vegetable","aliases":["小葱"]}
+]

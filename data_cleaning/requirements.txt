@@ -1,0 +1,5 @@
+streamlit>=1.54,<2
+pydantic>=2.12,<3
+python-dotenv>=1.1,<2
+openai>=2.11,<3
+requests>=2.32,<3

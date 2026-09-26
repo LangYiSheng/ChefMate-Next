@@ -1,0 +1,16 @@
+.venv/
+.uv-cache/
+.env
+__pycache__/
+.pytest_cache/
+.ruff_cache/
+database/*
+!database/.gitkeep
+logs/*
+!logs/.gitkeep
+data/raw/*
+!data/raw/.gitkeep
+data/exported/*
+!data/exported/.gitkeep
+data/intermediate/*
+!data/intermediate/.gitkeep

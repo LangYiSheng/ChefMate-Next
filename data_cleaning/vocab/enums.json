@@ -1,0 +1,8 @@
+{
+  "taste": {"spicy":"辣","light":"清淡","sweet":"甜","sour":"酸","sweet_sour":"酸甜","salty_fresh":"咸鲜","savory":"鲜香","rich":"浓郁"},
+  "category": {"meat":"肉类","seafood":"水产","egg":"蛋类","dairy":"乳制品","soy":"豆类","vegetable":"蔬菜","fruit":"水果","grain":"谷物","nut":"坚果","mushroom":"菌菇","seasoning":"调味料","oil":"油脂","other":"其他"},
+  "allergen": {"peanut":"花生","tree_nut":"树坚果","milk":"牛奶","egg":"蛋","soy":"大豆","wheat":"小麦","fish":"鱼","shellfish":"贝类与甲壳类","sesame":"芝麻"},
+  "difficulty": {"beginner":"新手","normal":"普通","advanced":"进阶"},
+  "tool": {"stove":"炉灶","wok":"炒锅","pot":"锅","oven":"烤箱","air_fryer":"空气炸锅","microwave":"微波炉","rice_cooker":"电饭煲","steamer":"蒸锅","pressure_cooker":"高压锅"},
+  "cooking_method": {"stir_fry":"炒","boil":"煮","stew":"炖","braise":"焖烧","steam":"蒸","deep_fry":"炸","pan_fry":"煎","bake":"烘焙","roast":"烤","cold_mix":"凉拌","other":"其他"}
+}
