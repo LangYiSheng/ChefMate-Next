@@ -2,7 +2,7 @@ import hashlib
 import json
 
 from chefmate_contracts import RecipeDocument, VocabularySnapshot, validate_recipe_vocabulary
-from chefmate_core import ConvertedRecipe
+from chefmate_recipe_processing import ConvertedRecipe
 from data_cleaning.models.conversion import ConversionRepository
 from data_cleaning.services import exporter
 from data_cleaning.tests.test_conversion import document

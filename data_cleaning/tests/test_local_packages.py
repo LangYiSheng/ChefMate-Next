@@ -5,10 +5,11 @@ import zipfile
 import pytest
 import requests
 
-from chefmate_core import RecipeProcessor, calculate, TagThresholds
-from chefmate_core.datasets import download, import_datasets, sha256
-from chefmate_core.fooddata import FoodDataError, LocalFoodData
-from chefmate_core.nutrition import food_key, parse_nutrients
+from chefmate_recipe_processing import RecipeProcessor, calculate, TagThresholds
+from chefmate_food_data.datasets import download, import_datasets, sha256
+from chefmate_food_data.fooddata import FoodDataError, LocalFoodData
+from chefmate_recipe_processing.nutrition import food_key
+from chefmate_food_data import parse_nutrients
 from data_cleaning.tests.test_conversion import document, AI
 
 

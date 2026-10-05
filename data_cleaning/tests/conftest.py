@@ -16,8 +16,8 @@ def isolate_ai_configuration(monkeypatch, tmp_path):
 def local_catalog(tmp_path):
     import json
     import zipfile
-    from chefmate_core.datasets import Dataset, import_datasets
-    from chefmate_core.fooddata import LocalFoodData
+    from chefmate_food_data.datasets import Dataset, import_datasets
+    from chefmate_food_data.fooddata import LocalFoodData
     folder = tmp_path / "archives"
     folder.mkdir()
     datasets = (

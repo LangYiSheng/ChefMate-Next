@@ -1,4 +1,4 @@
-"""Run with chefmate-usda or python -m chefmate_core.cli."""
+"""Run with chefmate-usda or python -m chefmate_food_data.cli."""
 
 import argparse
 import json

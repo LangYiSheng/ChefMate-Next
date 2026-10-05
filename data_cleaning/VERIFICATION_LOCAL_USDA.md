@@ -35,10 +35,15 @@ Edge 无界面浏览器验证了单篇、批量、数据与设置页面；本地
 截图：`data/intermediate/usda-single.png`、`usda-batch.png`、`usda-settings-final.png`。
 测试服务仅监听127.0.0.1:8502，验证结束后关闭。
 
-## 可复用产物
+## 当前可复用产物（2026-10-05 更新）
 
-源码与调用说明：`../packages/chefmate-core/README.md`。
-安装包：`data/intermediate/core-dist/chefmate_core-0.1.0-py3-none-any.whl`。
-当前清洗虚拟环境已安装 editable 核心包；源码修改直接生效。
+源码与调用说明：[包总览](../packages/README.md)。当前提供 contracts、food-data、recipe-processing 三个独立包，清洗环境安装对应 editable 包。
 
-已有历史快照、旧导入路径及审核流程兼容。USDA_API_KEY 已停用；AI处理仍调用配置的外部模型。
+安装包位于 `data/intermediate/package-dist/`：
+
+- `chefmate_contracts-0.1.0-py3-none-any.whl`
+- `chefmate_food_data-0.1.0-py3-none-any.whl`
+- `chefmate_recipe_processing-0.1.0-py3-none-any.whl`
+
+旧聚合包及导入兼容层已移除；业务数据库、菜谱 JSON 和历史营养快照不需要迁移。
+USDA_API_KEY 已停用；AI 处理仍调用调用方配置的外部模型。

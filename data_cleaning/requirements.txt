@@ -1,7 +1,6 @@
 -e ../packages/chefmate-contracts
 -e ../packages/chefmate-food-data
 -e ../packages/chefmate-recipe-processing
--e ../packages/chefmate-core
 streamlit>=1.54,<2
 pydantic>=2.12,<3
 python-dotenv>=1.1,<2

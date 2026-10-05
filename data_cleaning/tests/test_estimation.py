@@ -2,9 +2,9 @@ import json
 
 import pytest
 
-from chefmate_core.estimation import ESTIMATE_KEY, estimate_missing
-from chefmate_core.nutrition import calculate, food_key, keep_snapshots
-from chefmate_core.schemas import ConversionSettings, TagThresholds
+from chefmate_recipe_processing.estimation import ESTIMATE_KEY, estimate_missing
+from chefmate_recipe_processing.nutrition import calculate, food_key, keep_snapshots
+from chefmate_recipe_processing import ConversionSettings, TagThresholds
 from data_cleaning.services.conversion import enrich_nutrition
 from test_conversion import document, repo, USDA  # noqa: F401
 
