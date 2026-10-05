@@ -1,6 +1,6 @@
 """USDA data is always read from the local catalogue."""
-from chefmate_core.fooddata import DATA_TYPES as DATA_TYPES, FoodDataError, LocalFoodData
-from chefmate_core.nutrition import NUTRIENT_IDS as NUTRIENT_IDS, parse_nutrients as parse_nutrients
+from chefmate_food_data.fooddata import DATA_TYPES as DATA_TYPES, FoodDataError, LocalFoodData
+from chefmate_food_data.nutrients import NUTRIENT_IDS as NUTRIENT_IDS, parse_nutrients as parse_nutrients
 from data_cleaning.config import usda_database_path
 
 USDARequestError = FoodDataError

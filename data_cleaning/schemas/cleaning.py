@@ -84,4 +84,5 @@ class RecipeProfile(RecipeTags):
         return self
 
 
-from chefmate_core.schemas import Nutrients as Nutrients, TagThresholds as TagThresholds
+from chefmate_contracts import Nutrients as Nutrients
+from chefmate_recipe_processing import TagThresholds as TagThresholds

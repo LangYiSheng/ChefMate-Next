@@ -26,7 +26,7 @@ class CatalogChoice(StrictModel):
     reason: str
 
 
-from chefmate_core.schemas import USDAChoice as USDAChoice
+from chefmate_recipe_processing.schemas import USDAChoice as USDAChoice
 
 
 class USDAQuery(StrictModel):

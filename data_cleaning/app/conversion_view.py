@@ -224,7 +224,7 @@ def simple_data_page(repository) -> None:
     else:
         st.warning(availability["error"] + "；仍可执行仅 AI 转换。")
     st.caption("仅查询 Foundation Foods 与 SR Legacy；数据更新通过命令行下载并导入，历史快照保持不变。")
-    st.code('python -m chefmate_core.cli install --directory data/raw/usda --database database/usda.db', language="powershell")
+    st.code('python -m chefmate_food_data.cli install --directory data/raw/usda --database database/usda.db', language="powershell")
     with st.expander("重试全库 USDA 处理失败项"):
         st.caption("仅处理 request_failed / processing_failed，跳过成功项、无可靠匹配和已拒绝菜谱；结果变化后需要重新审阅。逐篇处理，单篇失败不阻断后续。")
         if st.button("重试所有请求失败的词条"):

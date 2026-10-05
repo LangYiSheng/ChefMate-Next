@@ -6,6 +6,7 @@ from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterator
+from chefmate_contracts import default_vocabulary
 
 from data_cleaning.config import ROOT
 from data_cleaning.schemas.recipe import Recipe, Status
@@ -60,10 +61,10 @@ class Repository:
 
     @staticmethod
     def _seed(db: sqlite3.Connection) -> None:
-        enums = json.loads((ROOT / "vocab/enums.json").read_text(encoding="utf-8"))
+        enums = default_vocabulary()
         db.executemany(
             "INSERT OR IGNORE INTO enum_options(kind,code,label) VALUES(?,?,?)",
-            [(kind, code, label) for kind, values in enums.items() for code, label in values.items()],
+            [(entry.kind.value, entry.code, entry.label) for entry in enums],
         )
 
     @staticmethod

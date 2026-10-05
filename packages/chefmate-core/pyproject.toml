@@ -8,16 +8,10 @@ version = "0.1.0"
 description = "Reusable recipe extraction and local USDA nutrition processing"
 readme = "README.md"
 requires-python = ">=3.12"
-dependencies = ["pydantic>=2.12,<3", "openai>=2.11,<3", "requests>=2.32,<3"]
-
-[project.scripts]
-chefmate-usda = "chefmate_core.cli:main"
+dependencies = ["chefmate-contracts>=0.1,<0.2", "chefmate-food-data>=0.1,<0.2", "chefmate-recipe-processing>=0.1,<0.2"]
 
 [tool.setuptools.packages.find]
 where = ["src"]
-
-[tool.setuptools.package-data]
-chefmate_core = ["prompts/*.txt"]
 
 [tool.ruff]
 line-length = 120

@@ -1,3 +1,4 @@
+from chefmate_contracts import vocabulary_snapshot
 import json
 
 from data_cleaning.config import ROOT
@@ -182,6 +183,8 @@ class ConversionRepository(WorkflowRepository):
 
         recipes = []
         with self.connection() as db:
+            vocabulary = vocabulary_snapshot([dict(row) for row in db.execute(
+                "SELECT * FROM enum_options ORDER BY kind,code")]).model_dump(mode="json")
             for row in db.execute(
                 "SELECT c.*,r.source,s.raw_text FROM converted_recipes c JOIN recipes r ON r.recipe_id=c.recipe_id JOIN source_versions s ON s.recipe_id=r.recipe_id AND s.revision=r.revision WHERE c.source_hash=r.content_hash AND (?=0 OR c.status='approved')",
                 (int(approved_only),),
@@ -204,6 +207,7 @@ class ConversionRepository(WorkflowRepository):
                 )
         return {
             "recipes": recipes,
+            "vocabulary": vocabulary,
             "usda_mappings": [
                 {key: value for key, value in mapping.items() if key != "snapshot"}
                 for mapping in self.confirmed_usda_mappings()

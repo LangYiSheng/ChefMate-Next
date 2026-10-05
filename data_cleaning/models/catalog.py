@@ -4,6 +4,8 @@ import json
 import re
 import sqlite3
 
+from chefmate_contracts import Difficulty
+
 from data_cleaning.models.repository import Repository, encode, now
 from data_cleaning.schemas.cleaning import StandardIngredient, TagThresholds
 
@@ -308,7 +310,7 @@ class CatalogRepository(Repository):
     def save_enum(self, kind: str, code: str, label: str, enabled: bool) -> None:
         if not re.fullmatch(r"[a-z][a-z0-9_]*", code) or not label.strip():
             raise ValueError("选项 code 需为英文小写标识，显示名不能为空")
-        if kind == "difficulty" and code not in ("beginner", "normal", "advanced"):
+        if kind == "difficulty" and code not in set(Difficulty):
             raise ValueError("难度只允许 beginner / normal / advanced")
         with self.connection(write=True) as db:
             if not db.execute("SELECT 1 FROM enum_options WHERE kind=?", (kind,)).fetchone():

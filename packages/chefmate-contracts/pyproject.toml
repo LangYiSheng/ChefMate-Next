@@ -1,0 +1,16 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "chefmate-contracts"
+version = "0.1.0"
+requires-python = ">=3.12"
+readme = "README.md"
+dependencies = ["pydantic>=2.12,<3"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+chefmate_contracts = ["data/*.json"]

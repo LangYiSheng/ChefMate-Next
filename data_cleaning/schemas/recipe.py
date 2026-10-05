@@ -13,7 +13,7 @@ class Status(StrEnum):
     FAILED = "failed"
 
 
-from chefmate_core.schemas import StrictModel as StrictModel
+from chefmate_contracts import StrictModel as StrictModel
 
 
 class Ingredient(StrictModel):

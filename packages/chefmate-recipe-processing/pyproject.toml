@@ -1,0 +1,16 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "chefmate-recipe-processing"
+version = "0.1.0"
+requires-python = ">=3.12"
+readme = "README.md"
+dependencies = ["chefmate-contracts>=0.1,<0.2", "chefmate-food-data>=0.1,<0.2", "openai>=2.11,<3"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+chefmate_recipe_processing = ["prompts/*.txt"]

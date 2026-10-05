@@ -35,24 +35,24 @@ USDA_DB_PATH=database/usda.db
 
 改 `.env` 后重启后台。本地 USDA 库未安装时仍能完成 JSON 转换和审阅，营养查询可选。USDA_API_KEY 已停用，旧配置项会被忽略。
 
-## USDA 本地数据与复用核心
+## USDA 本地数据与复用包
 
 当前已部署 Foundation 2026-04（363条）与 SR Legacy 2018-04（7,793条），共 8,156 条。
 原始 ZIP 位于 `data/raw/usda`，独立只读查询库位于 `database/usda.db`。Foundation 包内 32 个空项已记录并跳过。
 首次安装或恢复数据（当前目录 `data_cleaning`）：
 
 ```powershell
-.\.venv\Scripts\python.exe -m chefmate_core.cli install --directory data/raw/usda --database database/usda.db
-.\.venv\Scripts\python.exe -m chefmate_core.cli status --database database/usda.db
+.\.venv\Scripts\python.exe -m chefmate_food_data.cli install --directory data/raw/usda --database database/usda.db
+.\.venv\Scripts\python.exe -m chefmate_food_data.cli status --database database/usda.db
 ```
 
 `download` 仅下载，`import` 仅导入；下载支持续传，导入校验成功才替换旧库。同哈希重复导入不写入。
 “数据与设置”显示数据版本、数量与 SHA256。未安装时提示本地库不可用，不会回退到在线 API。
 旧业务数据库、已审阅菜谱和历史营养快照保持兼容，不自动重算。失败项可以从本地重试，发生修改后重新审阅。
 
-核心包在 `../packages/chefmate-core`，提供 LocalFoodData、RecipeProcessor.extract/enrich、calculate；
-核心不依赖页面或业务数据库，其他 Python 项目可以直接安装调用。参见 [核心接口与更新说明](../packages/chefmate-core/README.md)。
-未来上传功能将文件转成文本后即可复用同一核心，本次不包含图片/PDF解析。
+共享模型/词表在 `chefmate-contracts`，本地食物数据在 `chefmate-food-data`，菜谱处理在 `chefmate-recipe-processing`。
+应用使用这些包，旧 `chefmate-core` 仅作兼容转发。其他 Python 项目可以独立安装 wheel，接口与同步/异步示例参见 [包总览](../packages/README.md)。
+本次支持文本/Markdown，不包含图片/PDF解析。整篇转换导出附带 `vocabulary.json`（实际词表、启用状态和内容哈希），并纳入 manifest 文件哈希；使用快照校验历史词表，不依赖当前数据库的启用状态。
 
 ## 单篇转换
 
@@ -134,7 +134,7 @@ USDA_DB_PATH=database/usda.db
 
 清空位于设置折叠区，必须输入 CLEAR；有活动任务时阻止清空。不删除 SQLite 文件、磁盘原文、历史导出。配置只用于本机内部工具，没有多用户权限体系。
 
-目录：`app` 页面；`services` 转换/营养/外部接口/任务；`models` 集中数据库访问与 migrations；`schemas` 校验；`prompts` 指令；`vocab` 初始词表；`tests` 测试；`logs` 日志；`data` 原始/中间/导出数据。应用数据仍在本子项目，复用核心位于 `../packages/chefmate-core`。
+目录：`app` 页面；`services` 转换/营养/外部接口/任务；`models` 集中数据库访问与 migrations；`schemas` 校验；`prompts` 指令；初始词表由 contracts 包提供；`tests` 测试；`logs` 日志；`data` 原始/中间/导出数据。应用数据仍在本子项目，复用能力位于 `../packages/`，旧 core 为转发兼容层。
 
 ## 验证
 

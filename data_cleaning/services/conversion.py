@@ -6,7 +6,7 @@ from data_cleaning.models.conversion import ConversionRepository
 from data_cleaning.schemas.conversion import ConvertedRecipe, ConversionSettings
 from data_cleaning.services.openai_service import OpenAIService
 from data_cleaning.services.usda import USDAService
-from chefmate_core import RecipeProcessor
+from chefmate_recipe_processing import RecipeProcessor
 
 
 def configured_ai(repo: ConversionRepository, settings: ConversionSettings) -> OpenAIService:
@@ -46,8 +46,6 @@ def convert_one(
         {"kind": e["kind"], "code": e["code"], "label": e["label"]} for e in repo.enums() if e["status"] == "approved"
     ]
     model = ai or configured_ai(repo, settings)
-    if progress is not None:
-        model.progress = progress
     try:
         document = RecipeProcessor(model, progress=report).extract(
             row["raw_text"], vocabulary=enums, prompt=settings.prompt, feedback=feedback,
@@ -80,20 +78,17 @@ def enrich_nutrition(repo: ConversionRepository, recipe_id: str, *, settings=Non
     document = ConvertedRecipe.model_validate_json(row["data_json"])
     model = ai or configured_ai(repo, settings)
     service = usda or USDAService(repo)
-    if progress is not None:
-        model.progress = progress
-        service.progress = progress
     result = RecipeProcessor(model, service, progress=report).enrich(
         document, snapshots=json.loads(row["nutrition_json"]),
         confirmed_lookup=repo.lookup_confirmed_usda, entity_id=recipe_id, failed_only=failed_only,
     )
     snapshots, changed = result["snapshots"], result["changed"]
-    from chefmate_core.estimation import ESTIMATE_KEY, estimate_missing
+    from chefmate_recipe_processing.estimation import ESTIMATE_KEY, estimate_missing
     estimation_error = None
     if settings.estimate_missing:
         report("AI 估算缺失用量与营养，结果将单独标记")
         try:
-            estimate = estimate_missing(document, snapshots, model, recipe_id)
+            estimate = estimate_missing(document, snapshots, model, recipe_id, progress=progress)
             if estimate:
                 snapshots[ESTIMATE_KEY] = estimate
                 changed = True
