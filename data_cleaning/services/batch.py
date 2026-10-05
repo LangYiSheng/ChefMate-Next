@@ -21,8 +21,8 @@ def preflight(options: BatchOptions) -> None:
         raise ValueError("至少选择一个处理阶段")
     if not settings["openai_key"] or not settings["model"]:
         raise ValueError("请先在 .env 填入 DeepSeek / OpenAI 密钥与模型，重启后台后再运行")
-    if options.usda and not settings["usda_key"]:
-        raise ValueError("USDA_API_KEY 尚未填写；可取消 USDA 阶段先处理 AI 提取和标准食材")
+    if options.usda and not (options.pipeline == "unified" and options.conversion and options.conversion.estimate_missing):
+        USDAService().require_ready()
 
 
 def launch(repo: BatchRepository, run_id: str) -> int:

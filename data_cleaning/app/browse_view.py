@@ -55,25 +55,60 @@ def ingredient_records(repo) -> list[dict]:
         snapshots = json.loads(row["nutrition_json"] or "{}")
         for item in document.ingredients:
             snapshot = snapshots.get(food_key(item), {})
-            # Keep identities distinct even when the same nutrition substitute is used.
-            key = (item.canonical_name, item.usda_query)
-            group = groups.setdefault(key, {"name": item.canonical_name, "query": item.usda_query,
+            # Matched rows merge by name and source; unmatched queries remain distinct.
+            fdc_id = str(snapshot["fdc_id"]) if snapshot.get("fdc_id") else None
+            key = (item.canonical_name, "fdc", fdc_id) if fdc_id else (item.canonical_name, "query", item.usda_query)
+            group = groups.setdefault(key, {"name": item.canonical_name, "queries": set(), "fdc_id": fdc_id,
                 "aliases": set(), "raw_names": set(), "ids": set(), "categories": set(), "uses": []})
+            group["queries"].add(item.usda_query)
             group["aliases"].update(item.aliases)
             group["raw_names"].add(item.raw_name)
             group["ids"].add(item.ingredient_id)
             group["categories"].add(item.category)
             group["uses"].append({"菜谱": row["name"], "菜谱ID": row["recipe_id"], "审核": row_status(row),
-                "原始名称": item.raw_name, "USDA ID": snapshot.get("fdc_id"),
+                "标准名": item.canonical_name, "原始名称": item.raw_name, "USDA 检索词": item.usda_query, "USDA ID": fdc_id,
                 "USDA 名称": snapshot.get("name"), "置信度": snapshot.get("confidence"),
                 "匹配说明": snapshot.get("reason") or snapshot.get("error"),
                 "近似": str(snapshot.get("reason", "")).startswith("近似匹配：")})
-    return list(groups.values())
+    # Merge connected groups by either exact standard name or non-empty USDA ID.
+    records = list(groups.values())
+    parents = list(range(len(records)))
+
+    def root(index):
+        while parents[index] != index:
+            parents[index] = parents[parents[index]]
+            index = parents[index]
+        return index
+
+    seen = {}
+    for index, group in enumerate(records):
+        identities = [("name", group["name"])]
+        if group["fdc_id"]:
+            identities.append(("fdc", group["fdc_id"]))
+        for identity in identities:
+            if identity in seen:
+                parents[root(index)] = root(seen[identity])
+            else:
+                seen[identity] = index
+
+    merged = {}
+    for index, group in enumerate(records):
+        target = merged.setdefault(root(index), {"names": set(), "queries": set(), "fdc_ids": set(),
+            "aliases": set(), "raw_names": set(), "ids": set(), "categories": set(), "uses": []})
+        target["names"].add(group["name"])
+        if group["fdc_id"]:
+            target["fdc_ids"].add(group["fdc_id"])
+        for field in ("queries", "aliases", "raw_names", "ids", "categories"):
+            target[field].update(group[field])
+        target["uses"].extend(group["uses"])
+    for group in merged.values():
+        group["name"] = "、".join(sorted(group["names"]))
+    return list(merged.values())
 
 
 def ingredients_page(repo) -> None:
     st.header("标准食材")
-    st.caption("汇总当前版本菜谱 JSON；包含待审阅结果，不等于全部已确认。按标准名和检索词分组，同一 USDA ID 的近似替代不会强行合并。")
+    st.caption("汇总当前版本菜谱 JSON；包含待审阅结果，不等于全部已确认。标准名相同或 USDA ID 相同即合并显示，关联分组一并合并。详情保留各篇标准名、检索词与匹配依据。")
     search = st.text_input("搜索标准名、原名、别名或 USDA ID").strip().casefold()
     mode = st.selectbox("匹配筛选", ["全部", "有 USDA 匹配", "无 USDA 匹配", "包含近似匹配"])
     groups = ingredient_records(repo)
@@ -92,7 +127,7 @@ def ingredients_page(repo) -> None:
     if not groups:
         st.info("暂无符合条件的食材。先转换菜谱后即可查看。")
         return
-    selected = st.selectbox("查看食材及使用菜谱", range(len(groups)), format_func=lambda i: f"{groups[i]['name']} · {groups[i]['query']}")
+    selected = st.selectbox("查看食材及使用菜谱", range(len(groups)), format_func=lambda i: f"{groups[i]['name']} · " + ("USDA " + ", ".join(sorted(groups[i]["fdc_ids"])) if groups[i]["fdc_ids"] else "、".join(sorted(groups[i]["queries"]))))
     group = groups[selected]
-    st.write({"原始名称": sorted(group["raw_names"]), "AI 食材 IDs": sorted(group["ids"]), "USDA 检索词": group["query"]})
+    st.write({"标准名称": sorted(group["names"]), "USDA IDs": sorted(group["fdc_ids"]), "原始名称": sorted(group["raw_names"]), "AI 食材 IDs": sorted(group["ids"]), "USDA 检索词": sorted(group["queries"])})
     st.dataframe(group["uses"], width="stretch", hide_index=True)

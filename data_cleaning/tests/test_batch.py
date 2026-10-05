@@ -187,7 +187,7 @@ def test_preflight_and_batch_ui_do_not_call_api(repo, monkeypatch):
     with pytest.raises(ValueError, match="密钥"):
         preflight(BatchOptions())
     monkeypatch.setenv("OPENAI_API_KEY", "fake-test-key")
-    monkeypatch.setenv("USDA_API_KEY", "")
+    monkeypatch.setenv("USDA_DB_PATH", str(repo.path.parent / "missing-usda.db"))
     with pytest.raises(ValueError, match="USDA"):
         preflight(BatchOptions())
     preflight(BatchOptions(usda=False))

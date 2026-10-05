@@ -26,10 +26,7 @@ class CatalogChoice(StrictModel):
     reason: str
 
 
-class USDAChoice(StrictModel):
-    fdc_id: str | None
-    confidence: float = Field(ge=0, le=1)
-    reason: str
+from chefmate_core.schemas import USDAChoice as USDAChoice
 
 
 class USDAQuery(StrictModel):

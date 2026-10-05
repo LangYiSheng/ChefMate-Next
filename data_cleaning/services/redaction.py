@@ -34,7 +34,7 @@ def redact(value: Any) -> Any:
     if isinstance(value, list):
         return [redact(v) for v in value]
     if isinstance(value, str):
-        for name in ("OPENAI_API_KEY", "USDA_API_KEY"):
+        for name in ("OPENAI_API_KEY",):
             if secret := os.getenv(name):
                 value = value.replace(secret, "[REDACTED]")
         return re.sub(r"sk-[A-Za-z0-9_-]{8,}", "[REDACTED]", value)

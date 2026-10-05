@@ -1,0 +1,4 @@
+只输出一个符合下方 JSON Schema 的 JSON 对象，不要 Markdown 或解释文字。
+必填字段必须保留；未知信息仅在 Schema 允许时使用 null，不得猜测或编造营养数据。
+匹配任务的格式示例：{"selected_ingredient_id":null,"confidence":0,"reason":"无可靠候选","suggested_name":null}。
+其他任务必须使用各自 Schema 的字段，不要使用匹配任务字段。

@@ -18,7 +18,6 @@ def service_settings() -> dict:
         "retries": min(5, max(0, int(os.getenv("OPENAI_MAX_RETRIES", "2")))),
         "timeout": min(120, max(1, float(os.getenv("API_TIMEOUT_SECONDS", "45")))),
         "max_output_tokens": min(16000, max(500, int(os.getenv("OPENAI_MAX_OUTPUT_TOKENS", "6000")))),
-        "usda_key": os.getenv("USDA_API_KEY", ""),
     }
 
 
@@ -38,3 +37,8 @@ def database_path() -> Path:
 def source_path() -> Path:
     load_dotenv(ROOT / ".env", override=False)
     return local_path(os.getenv("HOWTOCOOK_DATA_DIR", "data/raw/HowToCook"))
+
+
+def usda_database_path() -> Path:
+    load_dotenv(ROOT / ".env", override=False)
+    return local_path(os.getenv("USDA_DB_PATH", "database/usda.db"))

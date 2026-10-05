@@ -8,6 +8,7 @@ from data_cleaning.models.batch import BatchRepository
 from data_cleaning.schemas.batch import BatchOptions
 from data_cleaning.services.batch import launch, preflight
 from data_cleaning.services.batch_lock import worker_lock
+from data_cleaning.services.usda import local_status
 
 
 @st.fragment(run_every="3s")
@@ -74,24 +75,28 @@ def batch_page(repository) -> None:
     st.header("批量转换")
     st.write("每篇完整 Markdown 一次生成 JSON，包含食材、用量、标签和 USDA 检索词。完成后逐篇审阅即可。")
     settings = service_settings()
+    availability = local_status()
     st.caption(
-        f"模型：{settings['model']} · AI 密钥：{'已配置' if settings['openai_key'] else '未配置'} · USDA 密钥：{'已配置' if settings['usda_key'] else '未配置'}"
+        f"模型：{settings['model']} · AI 密钥：{'已配置' if settings['openai_key'] else '未配置'} · USDA 本地库：{'已就绪' if availability['ready'] else '未就绪'}"
     )
-    st.info("已有人工通过/拒绝结果受保护。新 AI 结果为待审核；无匹配不猜测。任务会产生 API 用量，密钥缺失时不会启动。")
+    if not availability["ready"]:
+        st.warning(availability["error"] + "；取消营养查询可先转换菜谱。")
+    st.info("已有人工通过/拒绝结果受保护。新 AI 结果为待审核；可开启缺失估算并保留标记。任务会产生 API 用量，密钥缺失时不会启动。")
     with st.form("batch_start"):
         config = repo.conversion_settings()
         prompt = st.text_area("本批提示词", config.prompt, height=220)
         retries = st.number_input("本批额外重试次数", 0, 5, config.retries)
         redo = st.checkbox("按本批提示词重做已有待审阅 JSON", value=False)
-        usda = st.checkbox("转换后自动查询 USDA 并计算营养", value=bool(settings["usda_key"]))
+        usda = st.checkbox("转换后自动查询 USDA 并计算营养", value=availability["ready"])
+        estimate = st.checkbox("AI 估算缺失数据（标记估算值）", value=config.estimate_missing)
         limit = st.number_input("本批最多菜谱数（0 = 全部）", min_value=0, max_value=100000, value=0, step=1)
         start = st.form_submit_button("一键开始批量 AI 处理", type="primary")
     if start:
         options = BatchOptions(
             pipeline="unified",
             redo_existing=redo,
-            conversion=config.model_copy(update={"prompt": prompt, "retries": int(retries)}),
-            usda=usda,
+            conversion=config.model_copy(update={"prompt": prompt, "retries": int(retries), "estimate_missing": estimate}),
+            usda=usda or estimate,
             recipe_limit=int(limit),
         )
         preflight(options)

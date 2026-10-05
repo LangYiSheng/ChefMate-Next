@@ -1,0 +1,28 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "chefmate-core"
+version = "0.1.0"
+description = "Reusable recipe extraction and local USDA nutrition processing"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = ["pydantic>=2.12,<3", "openai>=2.11,<3", "requests>=2.32,<3"]
+
+[project.scripts]
+chefmate-usda = "chefmate_core.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+chefmate_core = ["prompts/*.txt"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F"]
+ignore = ["E402"]

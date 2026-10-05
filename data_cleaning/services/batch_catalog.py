@@ -131,7 +131,8 @@ def match_usda(repo: BatchRepository, ingredient_id: str, ai: OpenAIService, usd
     repo.save_usda_candidates(ingredient_id, options, choice.confidence, choice.reason, row["updated_at"])
     if choice.fdc_id:
         usda.food(choice.fdc_id)
-        repo.stage_nutrition(ingredient_id, choice.fdc_id, row["updated_at"])
+        repo.stage_nutrition(ingredient_id, choice.fdc_id, row["updated_at"],
+                             dataset=usda.provenance(choice.fdc_id) if hasattr(usda, "provenance") else None)
     else:
         repo.nutrition_error(ingredient_id, row["updated_at"], choice.reason)
     return "pending_review"

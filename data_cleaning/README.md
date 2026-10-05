@@ -13,7 +13,7 @@ cd D:\Dev\ChefMate\data_cleaning
 .\.venv\Scripts\python.exe -m streamlit run app/main.py --server.address 127.0.0.1 --server.port 8501 --browser.gatherUsageStats false
 ```
 
-打开 <http://127.0.0.1:8501>。主界面只有 **菜谱转换 / 批量转换 / 数据与设置**。
+打开 <http://127.0.0.1:8501>。主界面包含 **菜谱转换 / 批量转换 / 数据库菜谱 / 标准食材 / 数据与设置**。
 
 新机器安装（已有配置不要覆盖）：
 
@@ -30,10 +30,29 @@ OPENAI_API_KEY=你的DeepSeek密钥
 OPENAI_MODEL=deepseek-flash
 OPENAI_BASE_URL=https://api.deepseek.com
 OPENAI_API_MODE=deepseek_json
-USDA_API_KEY=你的USDA密钥
+USDA_DB_PATH=database/usda.db
 ```
 
-改 `.env` 后重启后台。USDA 密钥未填也能完成 JSON 转换和审阅，营养查询可选。
+改 `.env` 后重启后台。本地 USDA 库未安装时仍能完成 JSON 转换和审阅，营养查询可选。USDA_API_KEY 已停用，旧配置项会被忽略。
+
+## USDA 本地数据与复用核心
+
+当前已部署 Foundation 2026-04（363条）与 SR Legacy 2018-04（7,793条），共 8,156 条。
+原始 ZIP 位于 `data/raw/usda`，独立只读查询库位于 `database/usda.db`。Foundation 包内 32 个空项已记录并跳过。
+首次安装或恢复数据（当前目录 `data_cleaning`）：
+
+```powershell
+.\.venv\Scripts\python.exe -m chefmate_core.cli install --directory data/raw/usda --database database/usda.db
+.\.venv\Scripts\python.exe -m chefmate_core.cli status --database database/usda.db
+```
+
+`download` 仅下载，`import` 仅导入；下载支持续传，导入校验成功才替换旧库。同哈希重复导入不写入。
+“数据与设置”显示数据版本、数量与 SHA256。未安装时提示本地库不可用，不会回退到在线 API。
+旧业务数据库、已审阅菜谱和历史营养快照保持兼容，不自动重算。失败项可以从本地重试，发生修改后重新审阅。
+
+核心包在 `../packages/chefmate-core`，提供 LocalFoodData、RecipeProcessor.extract/enrich、calculate；
+核心不依赖页面或业务数据库，其他 Python 项目可以直接安装调用。参见 [核心接口与更新说明](../packages/chefmate-core/README.md)。
+未来上传功能将文件转成文本后即可复用同一核心，本次不包含图片/PDF解析。
 
 ## 单篇转换
 
@@ -66,17 +85,25 @@ USDA_API_KEY=你的USDA密钥
 | 每次请求超时 | 90秒 | 5–300秒 |
 | 最大输出 tokens | 12000 | 1000–64000 |
 
-额外重试2次表示最多请求3次。JSON/Schema错误、截断、可重试网络异常有限重试；400/401/403/404等不重复请求。USDA 共用重试和超时。转换以上述设置为准。
+额外重试2次表示最多请求3次。JSON/Schema错误、截断、可重试网络异常有限重试；400/401/403/404等不重复请求。USDA 只查询本地数据库，不使用网络重试或 API 密钥。转换以上述设置为准。
 
 默认提示词：`prompts/convert.txt`；Schema：`schemas/conversion.py`。固定提示词、启用词表及 Schema 置于前缀，Markdown、反馈、当前 JSON 放在后面，便于缓存复用。实际命中由服务端决定，不能保证每次命中；服务记录保留返回的 usage / 缓存 token 数据。见 [DeepSeek 缓存文档](https://api-docs.deepseek.com/guides/kv_cache/)。
 
+## AI 缺失估算模式
+
+单篇页面勾选 **AI 估算缺失数据（标记估算值）**，再点击 **补齐 / 重试 USDA 并重新计算**，无需重做菜谱。批量页也有相同开关；数据与设置可保存默认开关。开启后即使未勾选自动营养查询，也会进行营养补齐和估算。
+
+先保留已有原文克重与 USDA 指标，再让 AI 根据整份菜谱估算缺失的可食克重、人数及每100g营养。估算单独保存，不改写原始 JSON，不伪造 USDA 来源。页面显示估算表与依据，导出保留 `estimated`、字段列表、估算模型和时间。所有指标补齐且使用了估算时，`nutrition.status=estimated`；仍有缺项则为 `incomplete`。估算结果仍需整篇审阅，`ready_for_recommendation` 保持严格口径，估算结果不会自动设为 true。
+
+编辑菜谱使旧估算失效；关闭估算开关并点击补齐按钮可移除估算，恢复严格计算。估算失败保留已获得的 USDA 结果，可重试。无法合理估计的值仍可为空，未知不按0处理。估算不会加入 USDA 共享映射。
+
 ## 营养计算
 
-已通过整篇审阅、且原文版本仍有效的 USDA 快照自动成为共享映射。后续食材标准名称命中该名称或已审阅别名、英文检索词一致且 FDC ID 无冲突时，直接复用快照，无需再次请求 AI/USDA。不同部位或加工状态请保留在标准名和检索词中。查询词变化时保守地重新匹配。
+已通过整篇审阅、且原文版本仍有效的 USDA 快照自动成为共享映射。后续食材标准名称命中该名称或已审阅别名、英文检索词一致且 FDC ID 无冲突时，直接复用快照，无需再次请求 AI/本地 USDA。不同部位或加工状态请保留在标准名和检索词中。查询词变化时保守地重新匹配。
 
 在“数据与设置 → 已确认的 USDA 共享映射”查看来源。编辑来源菜谱 aliases 并重新通过审阅即可确认别名；撤回为待审阅、拒绝或原文变化后停止作为共享来源。已经复用的历史营养快照不自动覆盖，需要重新转换或修改食材身份来清除旧快照后再匹配。共享映射从当前批准记录读取，无额外审核阶段或数据库迁移。导出增加 usda_mappings.json，菜谱搜索支持原始食材名、标准名、别名，以及已确认映射关联的相同 FDC ID。
 
-程序按 JSON 的英文检索词查询 USDA，AI 只在真实候选中选 ID，程序获取每100g数据，结合 grams 计算总营养、每人份与统一阈值标签。
+程序按 JSON 的英文检索词查询本地 USDA（Foundation Foods 与 SR Legacy），AI 只在真实候选中选 ID，程序获取每100g数据，结合 grams 计算总营养、每人份与统一阈值标签。
 
 - AI Schema 不允许营养值/FDC ID；候选外 ID 被校验拒绝。
 - 明确 g/kg 可转换；“一个、少许、约两勺”不猜克重，证据保留。
@@ -107,7 +134,7 @@ USDA_API_KEY=你的USDA密钥
 
 清空位于设置折叠区，必须输入 CLEAR；有活动任务时阻止清空。不删除 SQLite 文件、磁盘原文、历史导出。配置只用于本机内部工具，没有多用户权限体系。
 
-目录：`app` 页面；`services` 转换/营养/外部接口/任务；`models` 集中数据库访问与 migrations；`schemas` 校验；`prompts` 指令；`vocab` 初始词表；`tests` 测试；`logs` 日志；`data` 原始/中间/导出数据。所有内容均在本子项目。
+目录：`app` 页面；`services` 转换/营养/外部接口/任务；`models` 集中数据库访问与 migrations；`schemas` 校验；`prompts` 指令；`vocab` 初始词表；`tests` 测试；`logs` 日志；`data` 原始/中间/导出数据。应用数据仍在本子项目，复用核心位于 `../packages/chefmate-core`。
 
 ## 验证
 
@@ -117,3 +144,7 @@ USDA_API_KEY=你的USDA密钥
 ```
 
 测试使用隔离数据库；合成营养数据不会进入正式库。可选扩展为多用户权限、并行任务、更多营养指标，不影响当前简化流程。
+
+## 标准食材汇总展示
+
+列表按标准名相同或 USDA ID 相同合并，关联分组一并合并。查询命中组内任一名称、别名或来源 ID 时显示整个分组；详情保留每篇标准名、原名、检索词、来源及匹配依据。这仅改变展示分组，不改菜谱、营养快照或共享映射。

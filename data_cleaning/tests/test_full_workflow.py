@@ -255,21 +255,12 @@ def test_nutrition_changes_invalidate_final_approval(repo):
     assert repo.profile("r1")["status"] == "pending_review"
 
 
-def test_usda_client_cache_unit_validation_and_timeout(repo, monkeypatch):
-    monkeypatch.setenv("USDA_API_KEY", "fixture-secret")
-    calls = []
-
-    class Session:
-        def get(self, url, **kwargs):
-            calls.append((url, kwargs))
-            return SimpleNamespace(raise_for_status=lambda: None, json=lambda: food())
-
-    client = USDAService(repo, Session(), sleeper=lambda _: None)
+def test_usda_local_cache_and_unit_validation(repo, local_catalog):
+    local, _, _ = local_catalog
+    client = USDAService(repo, path=local.path)
     assert client.food("123")["fdcId"] == 123
-    client.food("123")
-    assert len(calls) == 1
-    assert calls[0][1]["timeout"] > 0
-    assert "fixture-secret" not in json.dumps(repo.service_history())
+    assert repo.cached_food("123")["fdcId"] == 123
+    assert len(client.search("potato raw")) >= 2
     wrong = food()
     wrong["foodNutrients"][0]["nutrient"]["unitName"] = "kJ"
     assert parse_nutrients(wrong).calories_kcal is None
@@ -398,52 +389,36 @@ def test_openai_actual_sdk_structured_contract(repo, monkeypatch):
     assert requests_seen[0]["store"] is False
 
 
-def test_usda_error_bounded_and_scrubbed(repo, monkeypatch):
-    import requests
-
-    monkeypatch.setenv("USDA_API_KEY", "fixture-secret")
-    monkeypatch.setenv("OPENAI_MAX_RETRIES", "1")
-
-    class Session:
-        count = 0
-
-        def get(self, *args, **kwargs):
-            self.count += 1
-            raise requests.Timeout("api_key=fixture-secret")
-
-    session = Session()
-    with pytest.raises(ValueError, match="USDA 请求失败"):
-        USDAService(repo, session, sleeper=lambda _: None).food("123")
-    assert session.count == 2
-    assert "fixture-secret" not in json.dumps(repo.service_history())
+def test_usda_missing_catalog_has_local_diagnostic(repo, tmp_path):
+    from data_cleaning.services.usda import USDARequestError
+    with pytest.raises(USDARequestError, match="本地库") as caught:
+        USDAService(repo, path=tmp_path / "missing.db").food("123")
+    assert caught.value.details["backend"] == "local"
 
 
-def test_full_ui_pages_and_manual_decisions(repo, monkeypatch):
+def test_full_ui_pages_and_manual_decisions(repo, monkeypatch, local_catalog):
     from streamlit.testing.v1 import AppTest
+    from data_cleaning.models.conversion import ConversionRepository
+    from data_cleaning.tests.test_conversion import document
+    from data_cleaning.services.conversion import convert_one
+    from data_cleaning.tests.test_conversion import AI
 
     complete(repo)
     monkeypatch.setenv("CLEANING_DB_PATH", str(repo.path))
+    monkeypatch.setenv("USDA_DB_PATH", str(local_catalog[0].path))
+    converted = ConversionRepository(repo.path)
+    convert_one(converted, "r1", ai=AI())
     app = AppTest.from_file(str(ROOT / "app/main.py"), default_timeout=30).run()
-    app.sidebar.checkbox[0].check().run()
-    for page in (
-        "标准食材",
-        "固定映射",
-        "固定选项",
-        "USDA 匹配",
-        "营养计算",
-        "食材列表",
-        "菜谱列表与审核",
-        "数据管理",
-        "服务日志",
-    ):
+    for page in ("菜谱转换", "批量转换", "数据库菜谱", "标准食材", "数据与设置"):
         app.sidebar.radio[0].set_value(page).run()
         assert not app.exception, page
         assert not app.error, page
-    app.sidebar.radio[0].set_value("固定映射").run()
-    next(t for t in app.text_input if t.label == "原始名称").set_value("测试同义词")
-    next(b for b in app.button if b.label == "保存固定映射").click().run()
-    assert not app.error
-    assert any(r["raw_name"] == "测试同义词" for r in repo.fixed_mappings())
+    assert any("5 条食物" in message.value for message in app.success)
+    app.sidebar.radio[0].set_value("菜谱转换").run()
+    next(b for b in app.button if b.label == "通过审阅").click().run()
+    assert not app.exception
+    assert converted.conversion("r1")["status"] == "approved"
+    assert json.loads(converted.conversion("r1")["data_json"])["name"] == document().name
 
 
 def test_final_export_manifest_and_review_filter(repo, tmp_path, monkeypatch):

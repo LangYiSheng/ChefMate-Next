@@ -89,3 +89,14 @@ source 快照包括 query、candidates、confidence、reason、source（USDA_FDC
 ## references 参考资料
 
 菜谱顶层 references 是对象列表，每项 title 保存原文链接标题，url 保存完整 HTTP/HTTPS 地址。用于追溯做法参考、视频教程等，不抓取视频内容。没有参考为 []；旧 JSON 缺少此字段仍可读取，默认空列表，重新转换后才能补齐。随整篇 JSON 保存、审核和导出，不需要数据库迁移。
+
+
+## 本地 USDA 来源（新增）
+
+新营养快照的 `dataset` 记录 backend=local、data_type、version、source_url、sha256、imported_at、record_count、skipped_nulls。旧快照缺少该字段仍然有效，不据当前数据版本补写历史来源。USDA 原始数据库独立于 cleaning.db，不参与清空业务数据。
+
+## AI 估算扩展
+
+`ConversionSettings.estimate_missing` 默认 false。估算存储在 nutrition_json 的 `__ai_estimate__` 中，与 USDA 快照分开；包含 source=AI_ESTIMATE、document_hash、created_at、model、ingredients、servings 和 servings_reason。每项包括 ingredient_id、grams、per_100g、reason。
+
+营养输出新增 estimated、estimated_total_fields、estimated_per_serving_fields、estimated_servings、estimation、tags_estimated；食材新增 original_grams、estimated_grams、estimated_nutrients、estimate 和 source_issue。实际用于计算的 grams 可来自估算，原始 JSON grams 保持不变。已有克重、人数、USDA 指标优先；旧数据无需迁移。status 新增 estimated 表示指标齐全但含估算，incomplete 仍可通过 estimated=true 表明部分使用了估算。

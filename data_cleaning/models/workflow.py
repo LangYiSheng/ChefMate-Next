@@ -91,7 +91,7 @@ class WorkflowRepository(CatalogRepository):
                 (str(food["fdcId"]), encode(food), now()),
             )
 
-    def stage_nutrition(self, ingredient_id: str, fdc_id: str, expected: str) -> None:
+    def stage_nutrition(self, ingredient_id: str, fdc_id: str, expected: str, *, dataset=None) -> None:
         from data_cleaning.services.usda import parse_nutrients
 
         with self.connection(write=True) as db:
@@ -108,6 +108,8 @@ class WorkflowRepository(CatalogRepository):
             food = json.loads(cached[0])
             nutrients = parse_nutrients(food)
             snapshot = {"per_100g": nutrients.model_dump(), "food": food, "fetched_at": cached[1]}
+            if dataset is not None:
+                snapshot["dataset"] = dataset
             db.execute(
                 """UPDATE standard_ingredients SET nutrition_source='USDA_FDC',nutrition_source_id=?,nutrition_source_name=?,
                 nutrition_match_status='pending_review',nutrition_json=?,nutrition_error=NULL,nutrition_review_note=NULL,

@@ -15,7 +15,7 @@ st.set_page_config(page_title="ChefMate 数据清洗", page_icon="🥬", layout=
 st.title("🥬 ChefMate · 数据清洗工作台")
 st.caption("Markdown → AI 完整 JSON → 修改与审阅 → 营养计算")
 page = st.sidebar.radio("工作区", ["菜谱转换", "批量转换", "数据库菜谱", "标准食材", "数据与设置"])
-st.sidebar.caption("本地内部工具 · AI 与 USDA 密钥在 .env 配置")
+st.sidebar.caption("本地内部工具 · USDA 本地查询 · AI 在 .env 配置")
 try:
     repository = Repository(database_path())
     {

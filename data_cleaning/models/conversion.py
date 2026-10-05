@@ -46,7 +46,8 @@ class ConversionRepository(WorkflowRepository):
         return mappings
 
     def lookup_confirmed_usda(self, ingredient) -> dict | None:
-        normalize = lambda value: " ".join(value.casefold().split())
+        def normalize(value):
+            return " ".join(value.casefold().split())
         # Never use raw_name: a whole egg in the source may mean egg white in the recipe.
         name = normalize(ingredient.canonical_name)
         candidates = [m for m in self.confirmed_usda_mappings()

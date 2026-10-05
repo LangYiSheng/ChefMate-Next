@@ -1,6 +1,6 @@
 from enum import StrEnum
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import Field
 
 
 class Status(StrEnum):
@@ -13,8 +13,7 @@ class Status(StrEnum):
     FAILED = "failed"
 
 
-class StrictModel(BaseModel):
-    model_config = ConfigDict(extra="forbid", allow_inf_nan=False)
+from chefmate_core.schemas import StrictModel as StrictModel
 
 
 class Ingredient(StrictModel):

@@ -84,19 +84,4 @@ class RecipeProfile(RecipeTags):
         return self
 
 
-class Nutrients(StrictModel):
-    calories_kcal: float | None = Field(default=None, ge=0)
-    protein_g: float | None = Field(default=None, ge=0)
-    fat_g: float | None = Field(default=None, ge=0)
-    carbohydrate_g: float | None = Field(default=None, ge=0)
-    sugar_g: float | None = Field(default=None, ge=0)
-    sodium_mg: float | None = Field(default=None, ge=0)
-
-
-class TagThresholds(StrictModel):
-    basis: Literal["per_serving", "total"] = "per_serving"
-    high_fat: float = Field(default=20, gt=0)
-    high_sodium: float = Field(default=800, gt=0)
-    high_sugar: float = Field(default=20, gt=0)
-    high_calorie: float = Field(default=700, gt=0)
-    high_protein: float = Field(default=30, gt=0)
+from chefmate_core.schemas import Nutrients as Nutrients, TagThresholds as TagThresholds
