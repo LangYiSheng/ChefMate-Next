@@ -1,0 +1,7 @@
+include .env.example
+include VERIFICATION.md
+include uv.lock
+recursive-include scripts *.ps1
+recursive-include examples *.py
+recursive-include tests *.py
+recursive-include src/chefmate_storage/migrations *.sql
