@@ -219,6 +219,8 @@ export class WorkspaceController {
     return { historical: false, busy: entry.saving, draft, selectedRecipeIds: entry.snapshot?.selected_recipe_ids || [],
         stage: entry.snapshot?.stage,
         activeRecipeId: entry.snapshot?.active_recipe_id,
+        mealRecipes: entry.views.find(item => item.kind === 'meal_plan')?.data.recipes ||
+          entry.snapshot?.components?.find(item => item.kind === 'meal_plan')?.data.recipes || [],
         viewState: entry.viewState[view.id] ||= {},
         onViewState: () => { this.render(); this.onInlineChange?.(); },
         openRecipeSection: async (recipeId,section) => {

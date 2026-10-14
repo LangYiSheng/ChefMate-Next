@@ -41,7 +41,7 @@ asyncio.run(main())
 
 发送给模型的 schema 使用 LangChain 官方 `convert_to_openai_tool(PydanticModel)` 生成，递归内联嵌套 `$ref` 并移除 `$defs`，避免把预格式化 function dict 原样发送而跳过适配。内部请求仍由原始 Pydantic 模型验证，嵌套字段和参数约束保持完整。实际四工具与完整提示词已验证能返回标准 `find_ingredients` 调用；端到端多轮效果继续由测试应用验证，单个请求成功不代表所有模型行为都已经验证。
 
-当前实现将 Pydantic 模型交给 `StructuredTool`，标准 runner 绑定模型时走同一官方 schema 转换。middleware 使用 `abefore_model/aafter_model/awrap_model_call/awrap_tool_call` 检查预算、完整调用批次与数据证据，并按当前阶段筛选应用工具。没有手写模型—工具循环，也不另启智能体框架或隐藏 checkpointer；应用持有唯一的持久化历史。
+当前实现将 Pydantic 模型交给 `StructuredTool`，标准 runner 绑定模型时走同一官方 schema 转换。middleware 使用 `abefore_model/aafter_model/awrap_model_call/awrap_tool_call` 检查预算、完整调用批次与数据证据；工具目录稳定，当前阶段限制在执行时校验。没有手写模型—工具循环，也不另启智能体框架或隐藏 checkpointer；应用持有唯一的持久化历史。
 
 ## 界面和工作流注入
 
@@ -76,7 +76,7 @@ result = await agent.run_turn(
 
 以上 `Application*` 模型由应用提供，核心不定义菜谱选择、备菜或计时器业务字段。`ToolExecutionContext` 为 frozen dataclass，含本次工具调用的 `ui_context` 副本、`host_context`、标准 JSON `messages` 和 `call_id`。host object 只进入工具 handler，不序列化到模型提示、历史或结果，不使用跨会话 contextvar 或共享业务单例。同步 handler 用 `to_thread`，异步 handler 直接 await。
 
-成功工具返回的 `actions` 必须通过外部 `action_model` 验证；完整动作通过 `ui_action` 事件与 `result.actions` 交给界面。模型只接收紧凑 `ui_snapshot` 和组件回执，不接收完整 workspace/views 渲染对象。新快照通过 `ui_context_model` 验证后更新本轮状态，下一模型轮的工具可见性根据最新 `stage` 变化。`allowed_stages=None` 表示所有阶段可见；该字段是推荐和输入量控制，业务服务仍必须执行自己的权限、revision 与阶段检查。
+成功工具返回的 `actions` 必须通过外部 `action_model` 验证；完整动作通过 `ui_action` 事件与 `result.actions` 交给界面。模型只接收紧凑 `ui_snapshot` 和组件回执，不接收完整 workspace/views 渲染对象。新快照通过 `ui_context_model` 验证后更新本轮状态，下一次工具调用按最新 `stage` 校验。`allowed_stages=None` 表示所有阶段可执行；受限工具在其他阶段返回stage_conflict且不执行，业务服务继续执行自己的权限、revision 与阶段检查。
 
 已确认餐单的备菜与烹饪用量优先使用最新快照中已换算的 `amount_text/amount_value/unit`，并区分当前 `target_servings` 与原始 `original_servings`。原始菜谱 `raw_text` 和步骤中的数字仅作来源引用，不能覆盖当前用量或再次乘人数倍率。应用必须把当前用量保留在紧凑快照中；缺失时智能体先读取工作区，仍无法可靠换算时说明未知。提示词约束不保证模型每次都遵守，真实流程仍需检查回答与工作区一致性。
 
@@ -103,6 +103,7 @@ result = await agent.run_turn(
 | `snapshot` | 对应 `data_version/imported_at`，可跟踪数据替换 |
 | `error` | 稳定的 `code/message/retryable`，不暴露原始供应商错误或凭证 |
 | `actions` | 已由应用动作模型严格验证的实际界面动作，失败/停止时仍可描述已经完成的业务效果 |
+| `usage` | 实际模型调用数及输入/输出/缓存/推理token统计；供应商未报告的项为null，不能视为0 |
 
 调用方传入当前用户消息，成功后保存 `messages`。失败、超时和取消返回原有输入历史，不加入未完成的 assistant/tool 片段。每轮新输入历史超出预算时仅移除完整的旧用户轮次，绝不把工具调用与结果拆开；当前轮增长超过预算会明确报错。
 
@@ -111,6 +112,10 @@ result = await agent.run_turn(
 自然语言执行策略：用户说“我想吃虾”或“找番茄做的菜”时，先获取候选，再默认覆盖符合常见意图的真实食材并执行 `search_recipes`，展示实际菜谱。用户无需先选数据库食材、虾种或补全全部可选条件；取得结果后再允许收窄口味或时间。只有候选不足、实质歧义、条件冲突等情况才先追问。问候和普通解释可以直接回复，不通过代码强制所有回答先查菜谱。该策略由真实模型端到端场景验收，离线脚本测试只能验证工具与历史协议。
 
 初始推荐在用户和历史没有明确排序、数量要求时，智能体默认按 `total_time_min` 升序取8条；工具请求模型的默认值和最大范围保持完整。回答编号与最新搜索 `items` 顺序一致，让“第二道”对应同一张卡片。更多结果使用相同条件和排序分页，新筛选条件从第一页开始。
+
+系统提示与工具目录保持稳定，阶段限制改为执行时校验，不随阶段删改工具定义。服务器状态附在对应用户轮次，后续工具快照优先；仅传变化的快照使用 `snapshot_kind=delta`，组件按ID更新和删除，未列出的字段沿用此前状态。持久化用户文字和完整服务器快照不改写，旧完整快照也在模型请求投影时去重。相同成功只读查询在本轮内不重复执行/回传大结果，失败可重试。请求投影保留菜谱ID、来源快照、用量与未知/估算证据，不将这些事实摘要成猜测。
+
+`model_usage`事件与最终`usage`来自`AIMessage.usage_metadata`，逐次累计而不估算。工具定义/系统前缀稳定是缓存前提，实际命中仍以供应商报告为准；未添加网关未声明支持的缓存参数。
 
 ## 事件
 

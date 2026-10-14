@@ -251,8 +251,23 @@ function mealPlan(view, ctx) {
   return root;
 }
 
+function checklistScope(view, ctx) {
+  const navigation = node('nav','checklist-scope'); navigation.setAttribute('aria-label','食材清单范围');
+  const selected = view.data.recipe_ids;
+  for (const [ids,label] of [[null,'整餐合并'], ...(ctx.mealRecipes || []).map(recipe => [[recipe.recipe_id],recipe.name])]) {
+    const active = ids === null ? selected == null : selected?.length === 1 && selected[0] === ids[0];
+    const control = button(label, async () => {
+      await ctx.action('set_checklist_scope',{recipe_ids:ids});
+      ctx.viewState.shoppingPage=0;ctx.viewState.prepPage=0;ctx.onViewState();
+    },ctx.locked || active,'ui-text-button');
+    control.setAttribute('aria-pressed',String(active));navigation.append(control);
+  }
+  return navigation;
+}
+
 function shoppingList(view, ctx) {
   const root = node('div');
+  root.append(checklistScope(view,ctx));
   const locked = ctx.locked || !['planning', 'shopping', 'prep'].includes(ctx.stage);
   root.append(pagedList(view.data.items || [],ctx,'shoppingPage',(item)=>{
     const label = node('label', `ui-check-row${item.checked ? ' checked' : ''}`); const input = node('input'); input.type = 'checkbox'; input.checked = Boolean(item.checked); input.disabled = locked;
@@ -268,6 +283,7 @@ function shoppingList(view, ctx) {
 
 function prepChecklist(view, ctx) {
   const root = node('div');
+  root.append(checklistScope(view,ctx));
   const locked = ctx.locked || !['shopping', 'prep'].includes(ctx.stage);
   const prepared=(view.data.items || []).filter(item=>['ready','skipped'].includes(item.status)).length;
   root.append(hint(`已确认 ${prepared} / ${view.data.items?.length || 0} 项`));

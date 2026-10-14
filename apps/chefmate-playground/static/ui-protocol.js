@@ -6,6 +6,7 @@ export const COMPONENT_KINDS = Object.freeze([
 export const ACTION_TYPES = Object.freeze([
   'update_preferences', 'select_recipes', 'open_recipe_detail', 'change_servings',
   'check_shopping_item', 'check_prep_item', 'set_active_recipe', 'set_active_step',
+  'set_checklist_scope',
   'complete_step', 'change_stage', 'start_timer', 'pause_timer', 'resume_timer', 'cancel_timer',
 ]);
 export const STAGES = Object.freeze({ idea: '想吃什么', planning: '选菜与份量', shopping: '采购', prep: '备菜', cooking: '开始烹饪', completed: '完成' });

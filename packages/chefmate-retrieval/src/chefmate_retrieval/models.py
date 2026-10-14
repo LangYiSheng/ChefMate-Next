@@ -112,7 +112,7 @@ class RecipeSearchRequest(ToolRequest):
     nutrients: Annotated[list[NutrientConstraint], Field(max_length=12)] = Field(default_factory=list)
     ready_for_recommendation: bool | None = True
     sort: SearchSort = Field(default_factory=SearchSort)
-    limit: Annotated[int, Field(ge=1, le=100)] = 20
+    limit: Annotated[int, Field(ge=1, le=100)] = Field(default=8, description="每页默认8道；明确需要更多时再分页或提高limit。")
     offset: Annotated[int, Field(ge=0, le=100000)] = 0
     expected_snapshot: DatasetSnapshot | None = None
 

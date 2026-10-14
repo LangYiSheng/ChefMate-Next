@@ -4,6 +4,7 @@ const $ = (id) => document.getElementById(id);
 const names = {
   model: ["模型连接", "选择模型、端点和连接方式。保存后用于接下来的对话。"],
   display: ["界面显示", "把注意力留给菜谱和下一步。"],
+  developer: ["开发者", "按需查看公开执行记录、工具参数和模型实际用量。"],
   skills: ["厨房技能", "让助手按需使用你启用的厨房知识。"],
   runtime: ["执行设置", "设置一次任务的等待时间和操作上限。"],
   context: ["上下文预算", "给查询结果和连续对话留出足够空间。"],
@@ -27,15 +28,15 @@ const drafts = new Map(),
   dirty = new Set();
 function readDisplay() {
   try {
-    return {
-      inline_limit: 2,
-      density: "comfortable",
-      ...JSON.parse(localStorage.getItem("chefmate:ui-settings") || "{}"),
-      trace_mode: localStorage.getItem("chefmate:trace-mode") || "compact",
-    };
+    const { inline_limit = 2, density = "comfortable" } = JSON.parse(localStorage.getItem("chefmate:ui-settings") || "{}");
+    return { inline_limit, density };
   } catch {
-    return { trace_mode: "compact", inline_limit: 2, density: "comfortable" };
+    return { inline_limit: 2, density: "comfortable" };
   }
+}
+function readDeveloper() {
+  try { return { enabled: false, trace_mode: "compact", ...JSON.parse(localStorage.getItem("chefmate:developer-settings") || "{}") }; }
+  catch { return { enabled: false, trace_mode: "compact" }; }
 }
 async function api(path, options = {}) {
   const response = await fetch(path, {
@@ -182,19 +183,18 @@ function render() {
     button.disabled = testing || busy;
     button.addEventListener("click", testConnection);
     $("settings-form").append(button);
-  } else if (current === "display") {
-    heading("执行过程");
-    field("展示方式", "trace_mode", {
+  } else if (current === "developer") {
+    heading("调试信息");
+    field("保留已完成的执行记录", "enabled", { type: "checkbox", note: "默认关闭。只影响当前浏览器的展示。" });
+    field("记录展示方式", "trace_mode", {
       options: [
-        ["compact", "单行摘要 · 完成后收起"],
+        ["compact", "收起记录 · 按需展开"],
         ["detailed", "展开公开执行轨迹"],
-        ["hidden", "隐藏执行过程"],
       ],
       note: "只展示公开操作与工具状态。",
     });
-    const preview = node("div", "display-preview", "◌ 正在查找适合的虾菜谱…");
-    preview.append(node("div", "", "✓ 找到候选，等待你选菜"));
-    $("settings-form").append(preview);
+    $("settings-form").append(node("p", "settings-note", "用量来自模型服务实际返回。缓存或 token 数据未返回时显示“未报告”，不推测命中率。正在执行时仍显示一行当前操作。"));
+  } else if (current === "display") {
     heading("核心内容");
     field("每轮交互内容上限", "inline_limit", {
       options: [
@@ -305,7 +305,7 @@ async function load() {
     ]);
     loaded = result[0];
     status = result[1];
-    for (const section of ["model", "skills", "runtime", "context", "display"])
+    for (const section of ["model", "skills", "runtime", "context", "display", "developer"])
       if (!dirty.has(section)) {
         draftRevisions.set(section,loaded.revision);
         drafts.set(
@@ -323,7 +323,7 @@ async function load() {
                 ? { ...loaded.runtime }
                 : section === "context"
                   ? { ...loaded.context }
-                : readDisplay(),
+                : section === "developer" ? readDeveloper() : readDisplay(),
         );
       }
     render();
@@ -342,9 +342,10 @@ async function save() {
   updateFooter();
   message("");
   try {
-    if (section === "display") {
+    if (section === "developer") {
+      localStorage.setItem("chefmate:developer-settings", JSON.stringify(values));
+    } else if (section === "display") {
       values.inline_limit = Number(values.inline_limit);
-      localStorage.setItem("chefmate:trace-mode", values.trace_mode);
       localStorage.setItem("chefmate:ui-settings", JSON.stringify(values));
     } else {
       const payload =

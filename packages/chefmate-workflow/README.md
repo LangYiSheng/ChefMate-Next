@@ -54,8 +54,8 @@ message         可选说明
 | `show_recipe_details` | 已选任务 ID，或新候选 ID 与快照 | `recipe_detail` |
 | `set_meal_plan` | 至多4道、按 ID 的目标人数、快照 | `meal_plan` |
 | `show_meal_plan` | 无业务参数 | `meal_plan` |
-| `show_shopping_list` | 无业务参数 | `shopping_list` |
-| `show_prep_checklist` | 无业务参数 | `prep_checklist` |
+| `show_shopping_list` | `recipe_ids` 为当前餐单子集，null整餐 | `shopping_list` |
+| `show_prep_checklist` | `recipe_ids` 为当前餐单子集，null整餐 | `prep_checklist` |
 | `show_cooking_guide` | 可选已选菜谱 ID | `cooking_guide` |
 | `set_cooking_timer` | 秒数、标题、所属菜谱/步骤、来源 | `timers` |
 | `show_timers` | 无业务参数 | `timers` |
@@ -96,6 +96,7 @@ message         可选说明
 - 烹饪中不允许替换餐单、修改备料或份量。回退后改变人数会使该菜谱的准备和步骤重新待确认，并取消其关联计时。
 - 份量换算仅针对已知数字、可靠人数基准和 `scalable=true` 的项；不猜单位、不把“适量”转零、不倍增不可缩放调味料。营养按单项贡献重算，缺信息保持未知，人数估算继续传递标记。
 - 购物清单只合并同 ID、同标准形态、同单位且数值可可靠求和的条目；未知用量分别展示。购物勾选与备料确认分开。
+- `set_checklist_scope` 在当前清单视图上切换整餐/单菜，范围必须来自已选餐单；范围、目标人数和勾选随快照保存。购物条目记录 `source_item_ids`，按菜品食材贡献保存购买确认，整餐中同名食材只有全部贡献被勾选才算买齐。旧购物确认会保留并在下一次购物操作中转换。
 - 计时保存 UTC 截止时间；暂停保存剩余秒数，恢复生成新截止时间，读取时依据真实时间判断到期。UI 的直接输入属于用户指定；模型的 `basis=user` 需与可信用户文本明确时长一致，`basis=recipe_text` 需源步骤唯一明确时长，不猜范围或多阶段时间。无后台通知。
 
 旧版功能考察与本轮边界见 [迁移矩阵](docs/legacy-feature-matrix.md)。

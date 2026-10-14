@@ -125,6 +125,8 @@ class TurnManager:
                 existing["status"] = "completed" if kind == "tool_end" else "running"
             elif kind == "ui_action":
                 progress["actions"].append(payload["action"])
+            elif kind == "model_usage":
+                progress["usage"] = payload["usage"]
             instant = time.monotonic()
             if kind != "assistant_delta" or instant - turn.last_persist >= 0.4:
                 def persist(state):
@@ -155,6 +157,7 @@ class TurnManager:
             "recipes": data.get("recipes", []), "selected_recipe": data.get("selected_recipe"),
             "tool_calls": data.get("tool_calls", []), "snapshot": data.get("snapshot"),
             "actions": data.get("actions", []), "process": turn.progress.get("process", []),
+            "usage": data.get("usage", {}),
         }
         async with self._lock:
             def finish(state):
@@ -169,6 +172,7 @@ class TurnManager:
                         "created_at": now(), "actions": visible["actions"], "process": visible["process"],
                         "recipes": visible["recipes"], "selected_recipe": visible["selected_recipe"],
                         "tool_calls": visible["tool_calls"], "snapshot": visible["snapshot"],
+                        "usage": visible["usage"],
                     })
                 state.update(running=False, active_turn=None, updated_at=now(), last_status=status,
                              last_error=data.get("error"),

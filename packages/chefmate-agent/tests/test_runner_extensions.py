@@ -5,7 +5,7 @@ import json
 from typing import Literal
 
 import pytest
-from langchain_core.messages import SystemMessage, ToolMessage
+from langchain_core.messages import AIMessageChunk, HumanMessage, ToolMessage
 from langgraph.graph.state import CompiledStateGraph
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -34,6 +34,43 @@ class EmptyInput(BaseModel):
 def make_core(responses, **kwargs):
     model = ScriptedModel(responses)
     return ChefMateAgent(Service(), AgentConfig(model="test"), model=model, request_models=REQUESTS, **kwargs), model
+
+
+def test_stable_catalog_still_denies_stage_restricted_execution():
+    calls = []
+    spec = InjectedToolSpec("prep_tool", "备菜", EmptyInput, lambda request, context: calls.append(request),
+                            allowed_stages=("prep",))
+    core, _ = make_core([tool("prep_tool", {}), answer("请先确认餐单。")], extra_tools=[spec], ui_context_model=UISnapshot)
+    result = asyncio.run(core.run_turn([{"role": "user", "content": "开始"}],
+                                      ui_context={"revision": 1, "stage": "search"}))
+    assert result.status == "completed" and calls == []
+    assert result.tool_calls[0].result["status"] == "stage_conflict"
+
+
+def test_snapshot_delta_retains_quantities_and_removes_stale_components():
+    before = {"revision": 1, "stage": "prep", "components": [
+        {"id": "list", "kind": "prep_checklist", "revision": 1, "data": {"amount_value": 100, "checked": False}},
+        {"id": "old", "kind": "recipe_detail", "revision": 1, "data": {"name": "旧菜"}}], "preferences": {"servings": 2}}
+    after = {**before, "revision": 2, "components": [{**before["components"][0], "revision": 2}]}
+    delta = ChefMateAgent._snapshot_delta(before, after)
+    assert "components" not in delta and delta["removed_component_ids"] == ["old"]
+    restored = ChefMateAgent._merge_snapshot(before, delta)
+    assert restored["components"][0]["data"]["amount_value"] == 100
+    assert restored["preferences"]["servings"] == 2
+    assert len(json.dumps(delta)) < len(json.dumps(after))
+
+
+def test_usage_reports_actual_cache_and_unknown_metrics_without_guessing():
+    reported = [AIMessageChunk(content="完成", usage_metadata={"input_tokens": 1200, "output_tokens": 80,
+        "total_tokens": 1280, "input_token_details": {"cache_read": 1024}, "output_token_details": {"reasoning": 10}})]
+    core, _ = make_core([reported, answer("继续。")])
+    events = []
+    first = asyncio.run(core.run_turn([{"role": "user", "content": "测试"}], events.append))
+    assert first.usage["input_tokens"] == 1200 and first.usage["cached_tokens"] == 1024
+    assert first.usage["reasoning_tokens"] == 10
+    assert any(event["type"] == "model_usage" for event in events)
+    second = asyncio.run(core.run_turn([*first.messages, {"role": "user", "content": "继续"}]))
+    assert second.usage["input_tokens"] is None and second.usage["cached_tokens"] is None
 
 
 def test_standard_create_agent_owns_execution_and_history():
@@ -72,13 +109,14 @@ def test_scoped_host_context_actions_and_original_user_snapshot():
     assert any(event["type"] == "ui_action" for event in events)
     assert "LARGE_UI_RENDER_DATA" not in result.messages[2]["content"]
     assert "views" not in result.tool_calls[0].result
-    assert any(isinstance(message, SystemMessage) and '"stage":"prep"' in message.content
+    assert any(isinstance(message, ToolMessage) and '"stage":"prep"' in message.content
                for message in model.histories[-1])
+    assert model.histories[0][0].content == model.histories[-1][0].content
     assert snapshot == {"revision": 1, "stage": "search"}
     json.dumps(result.model_dump(mode="json"), allow_nan=False)
 
 
-def test_stage_tool_visibility_changes_after_latest_snapshot():
+def test_tool_catalog_stays_stable_after_latest_snapshot():
     def move(request, context):
         return {"status": "ok", "ui_snapshot": {"revision": 2, "stage": "prep"}, "actions": []}
 
@@ -90,8 +128,10 @@ def test_stage_tool_visibility_changes_after_latest_snapshot():
                                       ui_context={"revision": 1, "stage": "search"}))
     assert result.status == "completed"
     names = [{item["function"]["name"] for item in definitions} for definitions in model.bind_history]
-    assert "show_form" in names[0] and "prep_tool" not in names[0]
-    assert "prep_tool" in names[-1] and "show_form" not in names[-1]
+    assert "show_form" in names[0] and "prep_tool" in names[0]
+    assert model.bind_history[0] == model.bind_history[-1]
+    assert model.histories[0][0].content == model.histories[-1][0].content
+    assert model.histories[0][1].content == model.histories[-1][1].content
     assert {"find_ingredients", "search_recipes", "get_recipe", "get_search_options", "list_skills", "load_skill"} <= names[-1]
 
 
@@ -126,8 +166,9 @@ def test_latest_prep_quantities_reach_model_without_original_render_data():
     items = projected["ui_snapshot"]["components"][1]["data"]["items"]
     assert [(item["amount_value"], item["unit"]) for item in items] == [(100, "g"), (40, "ml")]
     latest_system = model.histories[-1][0].content
-    assert '"original_servings":1,"target_servings":2' in latest_system
-    assert '"amount_text":"100 g"' in latest_system and '"amount_text":"40 ml"' in latest_system
+    latest_result = next(message.content for message in reversed(model.histories[-1]) if isinstance(message, ToolMessage))
+    assert '"original_servings":1,"target_servings":2' in latest_result
+    assert '"amount_text":"100 g"' in latest_result and '"amount_text":"40 ml"' in latest_result
     assert "原始步骤里的数字是原始份量的引用" in latest_system
     assert "不能用旧get_recipe" in latest_system
     assert "ORIGINAL_RENDER_ONLY" not in result.messages[2]["content"]
@@ -229,7 +270,9 @@ def test_ui_context_validation_and_replay_preserve_user_text():
     assert second.messages[0]["content"] == "我选了第二道"
     assert second.messages[0]["ui_context"]["revision"] == 1
     assert second.messages[-2]["ui_context"]["revision"] == 2
-    assert "历史用户操作摘记" in model.histories[-1][0].content
+    assert model.histories[0][0].content == model.histories[-1][0].content
+    assert model.histories[0][1].content == model.histories[-1][1].content
+    assert '"stage":"prep"' in next(message.content for message in reversed(model.histories[-1]) if isinstance(message, HumanMessage))
     bad = asyncio.run(core.run_turn([{"role": "user", "content": "继续"}],
                                    ui_context={"revision": "untrusted", "stage": "prep"}))
     assert bad.error.code == "invalid_ui_context"

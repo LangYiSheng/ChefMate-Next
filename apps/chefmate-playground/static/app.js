@@ -19,11 +19,23 @@ const state = {
   runs: new Map(), selectionEpoch: 0, sessionsEpoch: 0, detailEpoch: 0,
   detailAbort: null, detailOpen: false, sidebarOpen: false, tab: 'query',
   selectedRecipe: null, remotePoll: null, renderFrame: null, creating: false, preparing: false, skills: [], skillsEpoch: 0,
-  traceMode: readTraceMode(), uiPreferences: readUIPreferences(),
+  traceMode: readTraceMode(), developer: readDeveloper(), uiPreferences: readUIPreferences(),
 };
-function readTraceMode() { try { const value=localStorage.getItem('chefmate:trace-mode');return ['detailed','hidden'].includes(value) ? value : 'compact'; } catch { return 'compact'; } }
+function readDeveloper() { try { return JSON.parse(localStorage.getItem('chefmate:developer-settings') || '{}').enabled === true; } catch { return false; } }
+function readTraceMode() { try { return JSON.parse(localStorage.getItem('chefmate:developer-settings') || '{}').trace_mode === 'detailed' ? 'detailed' : 'compact'; } catch { return 'compact'; } }
 function readUIPreferences() { try { return JSON.parse(localStorage.getItem('chefmate:ui-settings') || '{}'); } catch { return {}; } }
 document.body.classList.toggle('compact-density',state.uiPreferences.density==='compact');
+function refreshDisplayPreferences() {
+  state.developer=readDeveloper();state.traceMode=readTraceMode();state.uiPreferences=readUIPreferences();
+  ui['query-tab'].hidden=!state.developer;ui['skills-tab'].hidden=!state.developer;
+  if (!state.developer && ['query','skills'].includes(state.tab)) setTab('workspace');
+  document.body.classList.toggle('compact-density',state.uiPreferences.density==='compact');
+  renderConversation();
+}
+window.addEventListener('pageshow',refreshDisplayPreferences);
+window.addEventListener('storage',event=>{
+  if(['chefmate:developer-settings','chefmate:ui-settings'].includes(event.key)) refreshDisplayPreferences();
+});
 function storedSession() { try { return localStorage.getItem('chefmate:active-session'); } catch { return null; } }
 const labels = {
   find_ingredients: '查找食材', search_recipes: '查询菜谱', get_recipe: '读取菜谱',
@@ -137,7 +149,7 @@ function updateComposer() {
   ui['turn-status'].textContent = localRun?.cancelling ? '正在停止，请稍等…'
     : localRun?.status || currentSession()?.recoveryStatus || (running ? '正在执行，可以随时停止。' : '');
   const taskLabel = workspace.syncLabel(state.currentId);
-  ui['workspace-context'].hidden = !taskLabel;
+  ui['workspace-context'].hidden = !taskLabel || taskLabel === '当前内容已保存';
   ui['workspace-context'].textContent = taskLabel;
   ui['workspace-context'].classList.toggle('unsaved', workspace.unsaved(state.currentId));
 }
@@ -283,6 +295,7 @@ function normalizeMessage(message) {
     actions: message.actions ?? result.actions ?? [],
     skills: message.skills ?? result.skills ?? [],
     process: message.process ?? result.process ?? [],
+    usage: message.usage ?? result.usage,
   };
 }
 
@@ -296,12 +309,12 @@ function normalizeSession(session) {
   const lastUser = [...messages].reverse().find((message) => message.role === 'user');
   if (running && session.active_turn) {
     messages.push({ role: 'assistant', content: session.active_turn.text || '',
-      tool_calls: (session.active_turn.tool_calls || []).map(normalizeToolCall), actions: session.active_turn.actions || [], process: session.active_turn.process || [], recipes: [], streaming: true });
+      tool_calls: (session.active_turn.tool_calls || []).map(normalizeToolCall), actions: session.active_turn.actions || [], process: session.active_turn.process || [], usage:session.active_turn.usage, recipes: [], streaming: true });
   } else if (['error', 'cancelled', 'interrupted'].includes(session.last_status) && messages.at(-1)?.role === 'user') {
     const result = session.last_run?.result || {};
     const cancelled = session.last_status === 'cancelled';
     const message = { role: 'assistant', content: result.text || '', tool_calls: (result.tool_calls || []).map(normalizeToolCall),
-      recipes: result.recipes || [], snapshot: result.snapshot, actions: result.actions || [], process: result.process || [], cancelled,
+      recipes: result.recipes || [], snapshot: result.snapshot, actions: result.actions || [], process: result.process || [], usage:result.usage, cancelled,
       retryMessage: session.last_error?.retryable === false ? null : lastUser?.content };
     if (!cancelled) message.error = session.last_error?.message
       || (session.last_status === 'interrupted' ? '服务重启中断了这次执行，可以重试。' : '这次执行没有完成，可以重试。');
@@ -467,6 +480,11 @@ function toolCallNode(call) {
 }
 
 function executionTrace(message) {
+  if (message.streaming && !state.developer) {
+    const line = element('div','execution-trace trace-summary');
+    line.append(element('span','trace-orbit active','◌'), element('span','trace-current',safeText(latestActivity(message))));
+    return line;
+  }
   const rows = activityRows(message);
   const trace = element(message.streaming || state.traceMode==='detailed' ? 'section' : 'details', `execution-trace ${state.traceMode}`);
   trace.setAttribute('aria-label','执行过程');
@@ -474,6 +492,11 @@ function executionTrace(message) {
   summary.append(element('span',message.streaming ? 'trace-orbit active' : 'trace-orbit',message.streaming ? '◌' : message.error ? '!' : message.cancelled ? '◇' : '✓'),
     element('span','trace-current',safeText(message.streaming ? latestActivity(message) : '执行过程')));
   trace.append(summary);
+  if (message.usage?.model_calls) {
+    const usage = message.usage;
+    const count = value => value == null ? '未报告' : Number(value).toLocaleString();
+    trace.append(element('p','usage-summary',`${usage.model_calls} 次模型请求 · 输入 ${count(usage.input_tokens)} · 输出 ${count(usage.output_tokens)} · 缓存读取 ${count(usage.cached_tokens)} tokens`));
+  }
   {
     const timeline = element('ol','trace-timeline');
     for (const row of rows) {
@@ -531,6 +554,8 @@ function renderConversation(forceScroll = false) {
   ui.welcome.hidden = messages.length > 0;
   ui.messages.hidden = !messages.length;
   ui.messages.replaceChildren();
+  const lastViewMessage = new Map();
+  messages.forEach((message,index) => messageViews(message).forEach(view => lastViewMessage.set(view.id,index)));
   for (let index = 0; index < messages.length; index++) {
     const message = messages[index];
     if (message.role === 'user') {
@@ -555,6 +580,7 @@ function renderConversation(forceScroll = false) {
       const relevant = typedViews.filter(view=>view.kind!=='task_progress');
       const inlineIds = new Set(relevant.filter(view=>view.placement==='inline').slice(-(Number(state.uiPreferences.inline_limit)===1?1:2)).map(view=>view.id));
       for (const view of relevant) {
+        if (lastViewMessage.get(view.id) !== index) continue;
         const live = inlineIds.has(view.id) && workspace.renderInline(view,state.currentId,()=>scheduleRender(state.currentId));
         if (live) { live.classList.add('inline-component'); components.append(live); continue; }
         const receipt = element('button','view-receipt'); receipt.type='button';
@@ -570,7 +596,7 @@ function renderConversation(forceScroll = false) {
       for (const recipe of recipeItems) recipes.append(recipeButton(recipe, message.snapshot));
       node.append(recipes);
     } else if (message.resultTotal === 0) node.append(element('div', 'empty-results', '没有找到同时满足这些条件的菜谱，可以继续调整条件。'));
-    if (state.traceMode!=='hidden' && (message.tool_calls?.length || message.process?.length || message.streaming)) {
+    if ((message.streaming || state.developer) && (message.tool_calls?.length || message.process?.length || message.streaming || message.usage?.model_calls)) {
       const log = executionTrace(message);
       log.dataset.logKey = `${state.currentId}:${index}`;
       for (const detail of log.querySelectorAll('details')) {
@@ -658,6 +684,7 @@ async function readEvents(response, onEvent) {
 
 function applyEvent(run, event) {
   const message = run.message;
+  if (event.type === 'model_usage') message.usage = event.usage;
   if (event.type === 'status') run.status = safeText(event.message || event.text || '正在执行…');
   if (event.type === 'assistant_delta') message.content += String(event.text ?? event.delta ?? '');
   if (event.type === 'tool_start') {
@@ -675,9 +702,6 @@ function applyEvent(run, event) {
     message.actions ||= [];
     if (event.action) message.actions.push(event.action);
     workspace.load(run.sessionId).catch(() => {});
-    if (run.sessionId === state.currentId && !state.detailOpen && matchMedia('(min-width: 1181px)').matches) {
-      setDetails(true); setTab('workspace');
-    }
   }
   if (event.type === 'skill_loaded') {
     message.skills ||= [];
@@ -690,6 +714,7 @@ function applyEvent(run, event) {
     message.recipes = result.status === 'completed' ? result.recipes || [] : [];
     message.selected_recipe = result.status === 'completed' ? result.selected_recipe : null;
     message.snapshot = result.snapshot;
+    message.usage = result.usage;
     message.actions = result.actions || message.actions || [];
     message.skills = result.skills || message.skills || [];
     message.process = result.process || message.process || [];
@@ -871,6 +896,7 @@ function setDetails(open) {
   backdrop();
 }
 function setTab(tab, focus = false) {
+  if (!state.developer && ['query','skills'].includes(tab)) tab='workspace';
   state.tab = tab;
   for (const name of ['workspace', 'query', 'recipe', 'skills']) {
     ui[`${name}-tab`].classList.toggle('active', name === tab);
@@ -1058,10 +1084,11 @@ const panelTabs = ['workspace', 'query', 'recipe', 'skills'];
 for (const name of panelTabs) {
   ui[`${name}-tab`].addEventListener('click', () => setTab(name));
   ui[`${name}-tab`].addEventListener('keydown', (event) => {
-    const index = panelTabs.indexOf(name);
-    const next = event.key === 'ArrowLeft' ? (index + panelTabs.length - 1) % panelTabs.length
-      : event.key === 'ArrowRight' ? (index + 1) % panelTabs.length : event.key === 'Home' ? 0 : event.key === 'End' ? panelTabs.length - 1 : null;
-    if (next != null) { event.preventDefault(); setTab(panelTabs[next], true); }
+    const visibleTabs=panelTabs.filter(tab=>!ui[`${tab}-tab`].hidden);
+    const index = visibleTabs.indexOf(name);
+    const next = event.key === 'ArrowLeft' ? (index + visibleTabs.length - 1) % visibleTabs.length
+      : event.key === 'ArrowRight' ? (index + 1) % visibleTabs.length : event.key === 'Home' ? 0 : event.key === 'End' ? visibleTabs.length - 1 : null;
+    if (next != null) { event.preventDefault(); setTab(visibleTabs[next], true); }
   });
 }
 ui['drawer-backdrop'].addEventListener('click', () => { setSidebar(false); setDetails(false); ui['composer-input'].focus(); });

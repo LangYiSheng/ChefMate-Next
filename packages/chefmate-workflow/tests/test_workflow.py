@@ -240,6 +240,39 @@ def test_unknown_quantities_remain_unknown_and_separate(kitchen):
     assert all(item["estimated"] for item in shrimp)
 
 
+def test_single_dish_checklist_scope_preserves_other_dish_purchase_facts(kitchen):
+    choose(kitchen, ids=["r1", "r2"], servings={"r1": 4})
+    result = tool(kitchen, "show_shopping_list", {"recipe_ids": ["r1"]})
+    view = result["actions"][0]["component"]
+    shrimp = next(item for item in view["data"]["items"] if item["ingredient_id"] == "shrimp")
+    assert shrimp["amount_value"] == 200
+    assert shrimp["source_recipe_ids"] == ["r1"]
+    assert action(kitchen, "check_shopping_item", {"item_id": shrimp["id"], "checked": True}, view_id=view["id"])["status"] == "ok"
+    result = action(kitchen, "set_checklist_scope", {"recipe_ids": None}, view_id=view["id"])
+    aggregate = next(item for item in result["actions"][0]["component"]["data"]["items"] if item["ingredient_id"] == "shrimp")
+    assert aggregate["amount_value"] == 300 and aggregate["checked"] is False
+    assert action(kitchen, "check_shopping_item", {"item_id": aggregate["id"], "checked": True}, view_id=view["id"])["status"] == "ok"
+    result = action(kitchen, "set_checklist_scope", {"recipe_ids": ["r2"]}, view_id=view["id"])
+    single = next(item for item in result["actions"][0]["component"]["data"]["items"] if item["ingredient_id"] == "shrimp")
+    assert single["amount_value"] == 100 and single["checked"] is True
+    assert action(kitchen, "check_shopping_item", {"item_id": single["id"], "checked": False}, view_id=view["id"])["status"] == "ok"
+    restored = action(kitchen, "set_checklist_scope", {"recipe_ids": ["r1"]}, view_id=view["id"])
+    assert next(item for item in restored["actions"][0]["component"]["data"]["items"] if item["ingredient_id"] == "shrimp")["checked"] is True
+
+
+def test_scoped_checklists_reject_unselected_recipes_and_foreign_rows(kitchen):
+    choose(kitchen, ids=["r1", "r2"])
+    assert tool(kitchen, "show_shopping_list", {"recipe_ids": ["r3"]})["status"] == "invalid_reference"
+    result = tool(kitchen, "show_prep_checklist", {"recipe_ids": ["r1"]})
+    view = result["actions"][0]["component"]
+    assert all(item["recipe_id"] == "r1" for item in view["data"]["items"])
+    assert action(kitchen, "set_checklist_scope", {"recipe_ids": ["r3"]}, view_id=view["id"])["status"] == "invalid_reference"
+    action(kitchen, "change_stage", {"stage": "prep"})
+    # Refresh a scoped view after stage advancement, which deliberately resets the stage's default view.
+    view = tool(kitchen, "show_prep_checklist", {"recipe_ids": ["r1"]})["actions"][0]["component"]
+    assert action(kitchen, "check_prep_item", {"item_id": "r2:ingredient:0", "status": "ready"}, view_id=view["id"])["status"] == "invalid_reference"
+
+
 def test_stage_guards_and_all_steps_done_before_completion(kitchen):
     choose(kitchen)
     assert action(kitchen, "change_stage", {"stage": "cooking"})["status"] == "stage_conflict"

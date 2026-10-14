@@ -241,6 +241,35 @@ def test_budget_checks_entire_batch_before_execution():
     assert service.calls == []
 
 
+def test_duplicate_read_queries_share_evidence_without_repeating_database_work():
+    batch = [AIMessageChunk(content="", tool_call_chunks=[
+        {"name": "search_recipes", "args": '{}', "id": "one", "index": 0},
+        {"name": "search_recipes", "args": '{"ingredient_groups":[]}', "id": "two", "index": 1},
+    ])]
+    core, _, service = agent([batch, answer()])
+    result = asyncio.run(core.run_turn([{"role": "user", "content": "推荐一道菜"}]))
+    assert result.status == "completed"
+    assert len(service.calls) == 1
+    records = {record.call_id: record.result for record in result.tool_calls}
+    assert records["one"]["status"] == "ok" and records["two"]["status"] == "duplicate_query"
+    assert records["two"]["previous_call_id"] == "one"
+    assert result.recipes[0]["recipe_id"] == "white-shrimp"
+
+
+def test_failed_read_can_be_retried_with_the_same_arguments():
+    class RecoveringService(Service):
+        def search_recipes(self, request):
+            result = super().search_recipes(request)
+            if len(self.calls) == 1:
+                result["status"] = "snapshot_changed"
+            return result
+    core, _, service = agent([tool("search_recipes", {}, "one"), tool("search_recipes", {}, "two"), answer()],
+                              RecoveringService())
+    result = asyncio.run(core.run_turn([{"role": "user", "content": "找菜"}]))
+    assert result.status == "completed" and len(service.calls) == 2
+    assert result.tool_calls[1].result["status"] == "ok"
+
+
 def test_cancellation_closes_stream_and_does_not_commit_partial_history():
     async def exercise():
         started = asyncio.Event()

@@ -150,15 +150,18 @@ class ShoppingItem(StrictModel):
     estimated: bool
     checked: bool
     source_recipe_ids: list[str]
+    source_item_ids: list[str] = Field(default_factory=list)
 
 
 class ShoppingData(StrictModel):
     items: list[ShoppingItem]
+    recipe_ids: list[str] | None = None
     notes: list[str] = Field(default_factory=list)
 
 
 class PrepData(StrictModel):
     items: list[IngredientView]
+    recipe_ids: list[str] | None = None
     notes: list[str] = Field(default_factory=list)
 
 
@@ -301,6 +304,11 @@ class EmptyInput(ToolInput):
     pass
 
 
+class ChecklistInput(ToolInput):
+    recipe_ids: Annotated[list[Text], Field(min_length=1, max_length=4)] | None = Field(
+        default=None, description="只看指定菜品的可勾选食材；必须来自当前餐单。null展示整餐合并清单。")
+
+
 class PreferenceFormInput(ToolInput):
     fields: Annotated[list[PreferenceName], Field(min_length=1, max_length=8)] = Field(
         default_factory=lambda: ["ingredient_terms", "servings", "max_total_time_min", "taste_tags", "available_tools"])
@@ -367,6 +375,10 @@ class ShoppingPayload(StrictModel):
     checked: bool
 
 
+class ChecklistScopePayload(StrictModel):
+    recipe_ids: Annotated[list[Text], Field(min_length=1, max_length=4)] | None = None
+
+
 class PrepPayload(StrictModel):
     item_id: Text
     status: PrepStatus
@@ -405,6 +417,7 @@ ACTION_PAYLOAD_MODELS = {
     "update_preferences": PreferencePayload, "select_recipes": RecipeIdsPayload,
     "open_recipe_detail": RecipeIdPayload, "change_servings": ServingsPayload,
     "check_shopping_item": ShoppingPayload, "check_prep_item": PrepPayload,
+    "set_checklist_scope": ChecklistScopePayload,
     "set_active_recipe": RecipeIdPayload, "set_active_step": StepPayload,
     "complete_step": CompleteStepPayload, "change_stage": StagePayload,
     "start_timer": TimerPayload, "pause_timer": TimerIdPayload,
@@ -425,7 +438,7 @@ class UserActionRequest(RootModel[Annotated[Union[_action_types], Field(discrimi
 TOOL_REQUEST_MODELS = {
     "show_preference_form": PreferenceFormInput, "show_recipe_choices": RecipeChoicesInput,
     "show_recipe_details": RecipeDetailInput, "set_meal_plan": MealPlanInput,
-    "show_meal_plan": EmptyInput, "show_shopping_list": EmptyInput, "show_prep_checklist": EmptyInput,
+    "show_meal_plan": EmptyInput, "show_shopping_list": ChecklistInput, "show_prep_checklist": ChecklistInput,
     "show_cooking_guide": CookingGuideInput, "set_cooking_timer": TimerInput,
     "show_timers": EmptyInput, "get_cooking_workspace": EmptyInput, "advance_cooking_stage": StageInput,
 }

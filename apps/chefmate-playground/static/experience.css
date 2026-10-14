@@ -12,8 +12,9 @@ button,input,select,textarea{font:inherit}
 .session-stage{display:block;font-size:10px;line-height:1.5;color:#818f78;font-weight:400;margin-top:3px}
 .trace-mode-label{display:flex;align-items:center;gap:7px;font-size:11px;color:#7e8a74}
 .trace-mode-label select{background:#fafcf8;border:1px solid #e0e7d9;border-radius:7px;color:#5f7351;padding:6px;max-width:118px;font-size:12px}
-.conversation,.panel-content,.sessions{scrollbar-width:none}
-.conversation::-webkit-scrollbar,.panel-content::-webkit-scrollbar,.sessions::-webkit-scrollbar{display:none}
+.conversation,.panel-content,.sessions{scrollbar-width:thin;scrollbar-color:#c6ccc2 transparent}
+.conversation::-webkit-scrollbar,.panel-content::-webkit-scrollbar,.sessions::-webkit-scrollbar{width:7px}
+.conversation::-webkit-scrollbar-thumb,.panel-content::-webkit-scrollbar-thumb,.sessions::-webkit-scrollbar-thumb{background:#c6ccc2;border-radius:8px}
 .messages{width:min(900px,100%);padding:28px 38px 32px}
 .assistant-body,.user-bubble{font-size:14px;line-height:1.9}
 .assistant-heading{font-size:12px;margin-bottom:13px}
@@ -23,7 +24,7 @@ button,input,select,textarea{font:inherit}
 .assistant-body th,.assistant-body td{overflow-wrap:anywhere}
 .composer-area{width:min(930px,100%);padding:0 38px 18px}
 .composer textarea{font-size:14px}
-.composer textarea,textarea.ui-input{scrollbar-width:none}.composer textarea::-webkit-scrollbar,textarea.ui-input::-webkit-scrollbar{display:none}
+.composer textarea,textarea.ui-input{scrollbar-width:thin;scrollbar-color:#c6ccc2 transparent}.composer textarea::-webkit-scrollbar,textarea.ui-input::-webkit-scrollbar{width:6px}
 .composer-note{font-size:10px}
 .workspace-context{font-size:11px;padding-bottom:8px;color:#7b8871}
 .detail-panel{background:#f8faf6}
@@ -98,7 +99,13 @@ button,input,select,textarea{font:inherit}
 @media(max-width:1180px){.app,.app.panel-open{grid-template-columns:210px minmax(0,1fr)}.detail-panel{width:min(480px,96vw)}.topbar-title>span:first-of-type{max-width:210px}}
 @media(max-width:760px){.app,.app.panel-open{grid-template-columns:minmax(0,1fr)}.topbar{padding:0 14px;min-height:72px;height:72px;gap:8px}.topbar-title{gap:5px;max-width:45%;font-size:12px}.topbar-title>span:first-of-type{max-width:135px}.conversation-stage{font-size:10px}.topbar-actions{gap:6px}.trace-mode-label>span{display:none}.trace-mode-label select{font-size:11px;max-width:95px}.status-pill{display:none}.messages{padding:23px 19px}.composer-area{padding:0 17px 12px}.assistant-body,.user-bubble{font-size:14px}.detail-panel{width:100%;box-shadow:none}.panel-header{padding:0 17px}.panel-content{padding:20px 17px}.ui-component{padding:18px}.message-components{grid-template-columns:1fr}.trace-summary{padding:11px}.panel-tabs{gap:20px}}
 @media(prefers-reduced-motion:reduce){.trace-orbit.active,.trace-row.running .trace-marker{animation:none}}
-.settings-link{display:flex;align-items:center;gap:10px;padding:12px 0;margin-bottom:12px;font-size:13px;color:#748565;text-decoration:none}
+.settings-link{display:flex;align-items:center;gap:10px;padding:10px;border-radius:8px;font-size:13px;color:#748565;text-decoration:none}
+.settings-link:hover{background:#eaece6}
+.brand-row,.new-chat,.sidebar-heading,.topbar,.composer-area{flex-shrink:0}
+.checklist-scope{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 16px}
+.checklist-scope button{padding:6px 10px;border-radius:7px;font-size:12px;color:#7a8870}
+.checklist-scope button[aria-pressed=true]{background:#eef2e9;color:#4b633e}
+.usage-summary{font-size:11px;color:#849477;line-height:1.9;margin:6px 0}
 .topbar-actions>a.icon-button{display:grid;place-items:center;text-decoration:none;color:#879b76;font-size:18px}
 .message-components{display:flex;flex-direction:column;gap:12px}
 .message-components .inline-component{width:100%;background:transparent;border:0;border-top:1px solid #e6ebdf;border-bottom:1px solid #e6ebdf;border-radius:0;padding:20px 0;box-shadow:none}

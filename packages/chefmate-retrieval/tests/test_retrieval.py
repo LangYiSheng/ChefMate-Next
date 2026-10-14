@@ -12,6 +12,11 @@ from chefmate_retrieval import IngredientLookupRequest, RecipeSearchRequest, Ret
 SNAPSHOT = {"data_version": "fixture", "imported_at": "2026-10-13T00:00:00+00:00"}
 
 
+def test_default_search_page_is_small_and_explicit_paging_remains_available():
+    assert RecipeSearchRequest().limit == 8
+    assert RecipeSearchRequest(limit=20, offset=8).limit == 20
+
+
 class MemorySession:
     def __init__(self):
         self.calls = []

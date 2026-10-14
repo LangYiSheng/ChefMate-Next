@@ -92,4 +92,5 @@ class AgentTurnResult(BaseModel):
     selected_recipe: dict[str, Any] | None = None
     snapshot: dict[str, Any] | None = None
     actions: list[dict[str, Any]] = Field(default_factory=list)
+    usage: dict[str, Any] = Field(default_factory=dict)
     error: AgentError | None = None

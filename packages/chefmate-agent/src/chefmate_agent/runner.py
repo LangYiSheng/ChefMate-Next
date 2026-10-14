@@ -22,6 +22,8 @@ class TurnRuntimeContext:
     tool_calls: int = 0
     skill_chars: int = 0
     loaded_skills: set[str] = field(default_factory=set)
+    usage: list[dict] = field(default_factory=list)
+    read_queries: dict[str, str] = field(default_factory=dict)
 
 
 class ChefMateMiddleware(AgentMiddleware):
@@ -44,14 +46,9 @@ class ChefMateMiddleware(AgentMiddleware):
 
     async def awrap_model_call(self, request, handler):
         context = request.runtime.context
-        stage = context.ui_context.get("stage")
-        tools = [tool for tool in request.tools if (
-            tool.name not in self.owner._extra_tools
-            or self.owner._extra_tools[tool.name].allowed_stages is None
-            or stage in self.owner._extra_tools[tool.name].allowed_stages
-        )]
+        messages = self.owner._model_messages(request.messages)
         prompt = self.owner._context_prompt(context, request.state["messages"])
-        return await handler(request.override(system_message=SystemMessage(content=prompt), tools=tools))
+        return await handler(request.override(system_message=SystemMessage(content=prompt), messages=messages))
 
     async def aafter_model(self, state, runtime):
         from .core import _AgentFailure
@@ -59,9 +56,11 @@ class ChefMateMiddleware(AgentMiddleware):
         response = state["messages"][-1]
         if not isinstance(response, AIMessage):
             raise _AgentFailure("invalid_response", "模型返回了不支持的消息格式。", True)
+        context = runtime.context
+        context.usage.append(self.owner._usage_record(response, context.model_rounds))
+        await self.owner._emit(context.on_event, {"type": "model_usage", "usage": self.owner._usage_summary(context)})
         self.owner._validate_response(response)
         calls = self.owner._validate_tool_batch(response)
-        context = runtime.context
         if context.tool_calls + len(calls) > self.owner.config.max_tool_calls:
             raise _AgentFailure("tool_budget_exceeded", "本轮工具调用达到上限，请缩小需求后重试。")
         context.tool_calls += len(calls)
@@ -91,6 +90,7 @@ class ChefMateMiddleware(AgentMiddleware):
 
             raise _AgentFailure("invalid_tool_result", "工具必须返回结构化JSON结果。")
         result = self.owner._parse_tool_result(response.content)
+        response = response.model_copy(update={"content": _dump(result)})
         record = ToolCallRecord(call_id=call["id"], name=call["name"], arguments=call["args"], result=result)
         context.records.append(record)
         self.owner._collect_result(call["name"], result, context.view_state)

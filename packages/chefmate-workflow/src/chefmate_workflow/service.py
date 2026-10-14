@@ -224,12 +224,16 @@ class WorkflowService:
             return None
         return number if math.isfinite(number) and number >= 0 else None
 
-    def _prep_items(self, state):
-        return [ingredient for recipe in state.meal_plan for ingredient in self._recipe_view(recipe, state).ingredients]
+    def _prep_items(self, state, recipe_ids=None):
+        if recipe_ids is not None and not set(recipe_ids) <= {recipe.recipe_id for recipe in state.meal_plan}:
+            raise DomainConflict("invalid_reference", "清单菜品必须来自当前餐单。")
+        return [ingredient for recipe in state.meal_plan if recipe_ids is None or recipe.recipe_id in recipe_ids
+                for ingredient in self._recipe_view(recipe, state).ingredients]
 
-    def _shopping(self, state):
+    def _shopping(self, state, recipe_ids=None):
         merged = {}
-        for item in self._prep_items(state):
+        legacy_ids = {}
+        for item in self._prep_items(state, recipe_ids):
             if item.status in {"ready", "skipped"}:
                 continue
             # Unknown quantities do not merge: doing so would hide a missing amount from another dish.
@@ -239,13 +243,20 @@ class WorkflowService:
                 merged[key] = ShoppingItem(id=identity, ingredient_id=item.ingredient_id,
                     canonical_name=item.canonical_name, unit=item.unit, amount_value=item.amount_value,
                     amount_text=item.amount_text, estimated=item.estimated, checked=identity in state.shopping_checked,
-                    source_recipe_ids=[item.recipe_id])
+                    source_recipe_ids=[item.recipe_id], source_item_ids=[item.id])
+                legacy_ids[key] = identity
             else:
                 target = merged[key]
                 target.amount_value += item.amount_value
                 target.amount_text = _amount(target.amount_value, target.unit)
                 target.estimated = target.estimated or item.estimated
                 target.source_recipe_ids = list(dict.fromkeys([*target.source_recipe_ids, item.recipe_id]))
+                target.source_item_ids.append(item.id)
+        for key, target in merged.items():
+            # A purchase confirmation applies to actual dish contributions, not every dish sharing its name.
+            target.id = "shopping:" + hashlib.sha256(_dump([key, sorted(target.source_item_ids)]).encode()).hexdigest()[:20]
+            target.checked = legacy_ids[key] in state.shopping_checked or all(
+                identity in state.shopping_checked for identity in target.source_item_ids)
         return list(merged.values())
 
     def _component_data(self, component, state):
@@ -270,9 +281,11 @@ class WorkflowService:
                 raise DomainConflict("stale_view", "未选中的旧详情不属于当前执行任务。")
             return RecipeDetailData(recipe=self._recipe_view(source, state))
         if kind == "shopping_list":
-            return ShoppingData(items=self._shopping(state), notes=[PREP_NOTE])
+            return ShoppingData(items=self._shopping(state, component.data.recipe_ids),
+                                recipe_ids=component.data.recipe_ids, notes=[PREP_NOTE])
         if kind == "prep_checklist":
-            return PrepData(items=self._prep_items(state), notes=[PREP_NOTE])
+            return PrepData(items=self._prep_items(state, component.data.recipe_ids),
+                            recipe_ids=component.data.recipe_ids, notes=[PREP_NOTE])
         if kind == "cooking_guide":
             identity = state.active_recipe_id
             recipe = self._find_recipe(state, identity) if identity else None
@@ -317,11 +330,11 @@ class WorkflowService:
                 data = {"recipe_id": recipe["recipe_id"], "name": recipe["name"], "source": recipe["source"]}
             elif view.kind == "shopping_list":
                 data = {"items": [{key: item[key] for key in ("id", "canonical_name", "checked", "amount_text")}
-                                  for item in raw["items"]]}
+                                  for item in raw["items"]], "recipe_ids": raw["recipe_ids"]}
             elif view.kind == "prep_checklist":
                 data = {"items": [{key: item[key] for key in ("id", "recipe_id", "canonical_name", "status",
                                   "amount_text", "amount_value", "unit", "scaled", "estimated")}
-                                  for item in raw["items"]]}
+                                  for item in raw["items"]], "recipe_ids": raw["recipe_ids"]}
             elif view.kind == "cooking_guide":
                 data = {"recipe_id": raw["recipe_id"], "active_step_id": raw["active_step_id"],
                         "steps": [{"id": step["id"], "ordinal": step["ordinal"], "status": step["status"]}
@@ -619,9 +632,11 @@ class WorkflowService:
                 return self._show(state, MealPlan, "这次的餐单", RecipeListData(
                     recipes=[self._recipe_view(recipe, state, summary=True) for recipe in state.meal_plan]))
             if name == "show_shopping_list":
-                return self._show(state, ShoppingList, "需要准备的食材", ShoppingData(items=self._shopping(state), notes=[PREP_NOTE]))
+                return self._show(state, ShoppingList, "需要准备的食材", ShoppingData(
+                    items=self._shopping(state, validated.recipe_ids), recipe_ids=validated.recipe_ids, notes=[PREP_NOTE]))
             if name == "show_prep_checklist":
-                return self._show(state, PrepChecklist, "逐项确认备料", PrepData(items=self._prep_items(state), notes=[PREP_NOTE]))
+                return self._show(state, PrepChecklist, "逐项确认备料", PrepData(
+                    items=self._prep_items(state, validated.recipe_ids), recipe_ids=validated.recipe_ids, notes=[PREP_NOTE]))
             if name == "show_cooking_guide":
                 if validated.recipe_id:
                     self._find_recipe(state, validated.recipe_id)
@@ -695,18 +710,41 @@ class WorkflowService:
                     if timer.recipe_id == recipe.recipe_id and timer.status in {"running", "paused"}:
                         timer.status, timer.deadline_at = "cancelled", None
                 state.shopping_checked = []
+            elif kind == "set_checklist_scope":
+                component = next((view for view in state.components if view.id == value.view_id
+                                  and view.kind in {"shopping_list", "prep_checklist"}), None)
+                if component is None:
+                    raise DomainConflict("invalid_reference", "请在当前食材清单上选择菜品。")
+                self._prep_items(state, payload.get("recipe_ids"))
+                component.data.recipe_ids = payload.get("recipe_ids")
+                return component
             elif kind == "check_shopping_item":
                 if state.stage not in {"planning", "shopping", "prep"}:
                     raise DomainConflict("stage_conflict", "当前阶段不能修改购物勾选。")
-                if payload["item_id"] not in {item.id for item in self._shopping(state)}:
+                origin = next((view for view in state.components if view.id == value.view_id
+                               and view.kind == "shopping_list"), None)
+                scope = origin.data.recipe_ids if origin else None
+                item = next((item for item in self._shopping(state, scope) if item.id == payload["item_id"]), None)
+                if item is None:
                     raise DomainConflict("invalid_reference", "清单条目已变化，请复核当前清单。")
                 selected = set(state.shopping_checked)
-                selected.add(payload["item_id"]) if payload["checked"] else selected.discard(payload["item_id"])
+                # Expand old aggregate confirmations once, retaining existing purchase facts across scope changes.
+                for previous in self._shopping(state):
+                    if previous.checked:
+                        selected.update(previous.source_item_ids)
+                selected = {identity for identity in selected if not identity.startswith("shopping:")}
+                if payload["checked"]:
+                    selected.update(item.source_item_ids)
+                else:
+                    selected.difference_update(item.source_item_ids)
                 state.shopping_checked = sorted(selected)
             elif kind == "check_prep_item":
                 if state.stage not in {"shopping", "prep"}:
                     raise DomainConflict("stage_conflict", "只有备料阶段可以确认准备状态。")
-                if payload["item_id"] not in {item.id for item in self._prep_items(state)}:
+                origin = next((view for view in state.components if view.id == value.view_id
+                               and view.kind == "prep_checklist"), None)
+                scope = origin.data.recipe_ids if origin else None
+                if payload["item_id"] not in {item.id for item in self._prep_items(state, scope)}:
                     raise DomainConflict("invalid_reference", "食材不属于本次餐单。")
                 state.prep_status[payload["item_id"]] = payload["status"]
             elif kind == "set_active_recipe":
