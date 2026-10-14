@@ -54,8 +54,8 @@ class ModelSettings(BaseModel):
 
 class RuntimeSettings(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
-    turn_timeout_s: int = Field(ge=10, le=300)
-    model_timeout_s: int = Field(ge=10, le=300)
+    turn_timeout_s: float = Field(ge=10, le=300, allow_inf_nan=False)
+    model_timeout_s: float = Field(ge=10, le=300, allow_inf_nan=False)
     model_max_retries: int = Field(ge=0, le=2)
     max_model_rounds: int = Field(ge=2, le=30)
     max_tool_calls: int = Field(ge=2, le=50)

@@ -153,25 +153,6 @@ function render() {
     return;
   }
   if (current === "model") {
-    const tip = node("div", "protocol-tip");
-    tip.append(node("p", "", "测试配置：apiclaude · gpt-5.6-luna"));
-    const preset = node("button", "secondary-button", "填入测试配置");
-    preset.type = "button";
-    preset.addEventListener("click", () => {
-      drafts.set("model", {
-        ...drafts.get("model"),
-        base_url: "https://apiclaude.cc/v1",
-        model: "gpt-5.6-luna",
-        api_key: "",
-        api_format: "chat_completions",
-        stream_tool_calls: false,
-      });
-      dirty.add("model");
-      render();
-      message("已填入端点和模型，请填写 apiclaude 的专用密钥。", true);
-    });
-    tip.append(preset);
-    $("settings-form").append(tip);
     heading("连接信息");
     field("API 端点", "base_url", { hint: "OpenAI 兼容端点通常以 /v1 结尾。" });
     field("模型名称", "model");

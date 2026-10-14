@@ -6,7 +6,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from chefmate_playground import PlaygroundConfig, create_app
-from chefmate_playground.settings import load_overrides, public_settings, resolve_model
+from chefmate_playground.settings import load_overrides, persist_settings, public_settings, resolve_model
 from test_app import Agent, Service
 
 
@@ -23,6 +23,16 @@ def test_secrets_are_never_returned_and_new_host_cannot_reuse_old_key(tmp_path):
     assert resolve_model(initial, {"model": "new", "base_url": initial.base_url}).api_key == initial.api_key
     with pytest.raises(ValueError):
         resolve_model(initial, {"model": "new", "base_url": "https://user:password@new.example/v1"})
+
+
+def test_model_save_preserves_float_timeout_defaults_and_reloads(tmp_path):
+    initial = replace(config(tmp_path), turn_timeout_s=300.0, model_timeout_s=120.0)
+    candidate = resolve_model(initial, {"model": "new-model", "base_url": initial.base_url})
+    persist_settings(candidate)
+    restored = load_overrides(initial)
+    assert restored.model == "new-model"
+    assert restored.turn_timeout_s == 300.0
+    assert restored.model_timeout_s == 120.0
 
 
 def test_persisted_model_applies_atomically_survives_reload_and_rejects_stale_tab(tmp_path):
