@@ -9,6 +9,7 @@
   <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="/static/styles.css">
   <link rel="stylesheet" href="/static/workspace.css">
+  <link rel="stylesheet" href="/static/experience.css">
   <script type="module" src="/static/app.js"></script>
 </head>
 <body>
@@ -33,8 +34,10 @@
         <div class="topbar-title">
           <button class="icon-button mobile-only" id="open-sidebar" type="button" aria-label="展开会话导航" aria-controls="sidebar" aria-expanded="false">☰</button>
           <span id="chat-title">菜谱助手</span>
+          <span class="conversation-stage" id="conversation-stage" hidden></span>
         </div>
         <div class="topbar-actions">
+          <label class="trace-mode-label"><span>过程</span><select id="trace-mode" aria-label="过程显示"><option value="compact">单行摘要</option><option value="detailed">展开轨迹</option></select></label>
           <button class="status-pill" id="status-button" type="button" aria-label="查看连接状态"><span class="status-dot" id="status-dot" aria-hidden="true"></span><span id="status-label">连接中</span></button>
           <button class="icon-button panel-toggle" id="toggle-details" type="button" aria-label="展开查询与菜谱详情" aria-controls="detail-panel" aria-expanded="false">
             <svg width="19" height="19" viewBox="0 0 24 24" fill="none" aria-hidden="true"><rect x="3.5" y="4.5" width="17" height="15" rx="2.5" stroke="currentColor" stroke-width="1.5"/><path d="M15 5v14" stroke="currentColor" stroke-width="1.5"/></svg>
@@ -78,8 +81,8 @@
     <aside class="detail-panel" id="detail-panel" aria-label="厨房工作区" hidden>
       <div class="panel-header">
         <div class="panel-tabs" role="tablist" aria-label="详情内容">
-          <button type="button" class="panel-tab active" id="workspace-tab" role="tab" aria-selected="true" aria-controls="workspace-content">任务</button>
-          <button type="button" class="panel-tab" id="query-tab" role="tab" aria-selected="false" aria-controls="query-content">查询</button>
+          <button type="button" class="panel-tab active" id="workspace-tab" role="tab" aria-selected="true" aria-controls="workspace-content">工作区</button>
+          <button type="button" class="panel-tab" id="query-tab" role="tab" aria-selected="false" aria-controls="query-content">数据</button>
           <button type="button" class="panel-tab" id="recipe-tab" role="tab" aria-selected="false" aria-controls="recipe-content">菜谱详情</button>
           <button type="button" class="panel-tab" id="skills-tab" role="tab" aria-selected="false" aria-controls="skills-content">技能</button>
         </div>

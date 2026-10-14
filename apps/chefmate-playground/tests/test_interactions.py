@@ -91,6 +91,27 @@ def test_action_schema_and_id_collision_cannot_overwrite_values(tmp_path):
         assert len(client.get("/api/skills").json()["items"]) == 3
 
 
+def test_stage_is_agent_owned_and_published_on_conversation(tmp_path):
+    class StageAgent(Agent):
+        async def run_turn(self, messages, **kwargs):
+            result = kwargs["tool_context"].execute("advance_cooking_stage", {"stage": "planning"},
+                SimpleNamespace(messages=messages, call_id="stage"))
+            assert result["status"] == "ok"
+            return {"status": "completed", "assistant_text": "一起选菜吧", "messages": [
+                *messages, {"role": "assistant", "content": "一起选菜吧"}], "actions": result["actions"]}
+
+    with TestClient(form_app(tmp_path, StageAgent())) as client:
+        session_id = client.post("/api/sessions").json()["id"]
+        uri = f"/api/sessions/{session_id}"
+        denied = client.post(uri + "/actions", json={"type": "change_stage", "action_id": "jump",
+                                                    "base_revision": 0, "payload": {"stage": "planning"}})
+        assert denied.status_code == 403
+        assert client.get(uri + "/workspace").json()["ui_snapshot"]["revision"] == 0
+        assert events(client.post(uri + "/turn", json={"message": "帮我开始选菜"}))[-1]["status"] == "completed"
+        assert client.get(uri).json()["conversation_state"] == {"stage": "planning", "recipe_count": 0}
+        assert client.get("/api/sessions").json()["items"][0]["conversation_state"]["stage"] == "planning"
+
+
 def test_active_model_cannot_overwrite_concurrent_user_edit(tmp_path):
     async def exercise():
         repository = SessionRepository(tmp_path / "race.db")

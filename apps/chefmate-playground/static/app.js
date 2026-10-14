@@ -1,6 +1,7 @@
 import { WorkspaceController } from './workspace.js';
 import { renderView } from './ui-components.js';
 import { messageViews, legacyRecipeItems } from './ui-protocol.js';
+import { STAGE_NAMES, VIEW_LABELS, TOOL_NAMES, viewSummary, activityRows, latestActivity } from './presentation.js';
 
 const $ = (id) => document.getElementById(id);
 const ui = Object.fromEntries([
@@ -10,6 +11,7 @@ const ui = Object.fromEntries([
   'detail-panel', 'query-tab', 'recipe-tab', 'query-content', 'recipe-content',
   'drawer-backdrop', 'toast', 'announcer', 'open-sidebar', 'toggle-details',
   'workspace-tab', 'workspace-content', 'workspace-context', 'skills-tab', 'skills-content',
+  'trace-mode', 'conversation-stage',
 ].map((id) => [id, $(id)]));
 
 const state = {
@@ -17,7 +19,10 @@ const state = {
   runs: new Map(), selectionEpoch: 0, sessionsEpoch: 0, detailEpoch: 0,
   detailAbort: null, detailOpen: false, sidebarOpen: false, tab: 'query',
   selectedRecipe: null, remotePoll: null, renderFrame: null, creating: false, preparing: false, skills: [], skillsEpoch: 0,
+  traceMode: readTraceMode(),
 };
+function readTraceMode() { try { return localStorage.getItem('chefmate:trace-mode') === 'detailed' ? 'detailed' : 'compact'; } catch { return 'compact'; } }
+function storedSession() { try { return localStorage.getItem('chefmate:active-session'); } catch { return null; } }
 const labels = {
   find_ingredients: '查找食材', search_recipes: '查询菜谱', get_recipe: '读取菜谱',
   get_search_options: '读取查询选项', beginner: '新手', normal: '普通', advanced: '进阶',
@@ -28,12 +33,8 @@ const labels = {
 };
 const methods = { steam: '蒸', boil: '煮', stir_fry: '炒', deep_fry: '炸', pan_fry: '煎', bake: '烘焙', roast: '烤', stew: '炖', braise: '焖烧', cold_mix: '凉拌', other: '其他' };
 const tools = { stove: '炉灶', wok: '炒锅', pot: '锅', oven: '烤箱', air_fryer: '空气炸锅', microwave: '微波炉', rice_cooker: '电饭煲', steamer: '蒸锅', pressure_cooker: '高压锅' };
-const nutrients = [
-  ['calories_kcal', '能量', 'kcal'], ['protein_g', '蛋白质', 'g'], ['fat_g', '脂肪', 'g'],
-  ['carbohydrate_g', '碳水化合物', 'g'], ['sugar_g', '糖', 'g'], ['sodium_mg', '钠', 'mg'],
-];
 const workspace = new WorkspaceController({
-  api, notify: toast, onChange: () => updateComposer(),
+  api, notify: toast, onChange: () => { updateComposer(); updateConversationState(); },
   openPanel: (tab) => { setDetails(true); setTab(tab); },
 });
 
@@ -98,6 +99,18 @@ async function api(path, options = {}) {
 }
 
 function currentSession() { return state.cache.get(state.currentId); }
+function updateConversationState() {
+  const snapshot = workspace.snapshot(state.currentId);
+  const stage = snapshot?.stage || currentSession()?.conversation_state?.stage;
+  ui['conversation-stage'].hidden = !stage || !state.currentId;
+  ui['conversation-stage'].textContent = STAGE_NAMES[stage] || '厨房会话';
+  if (snapshot) {
+    const item = state.sessions.find(item => item.id === state.currentId);
+    if (item) item.conversation_state = {stage:snapshot.stage};
+    const badge = ui.sessions.querySelector(`[data-session-id="${CSS.escape(state.currentId)}"] .session-stage`);
+    if (badge) badge.textContent = STAGE_NAMES[stage] || '厨房会话';
+  }
+}
 function busy(id = state.currentId) { return state.runs.has(id) || Boolean(state.cache.get(id)?.running); }
 function blankTitle(title) { return !title || ['新会话', '新对话'].includes(title); }
 function resizeInput() {
@@ -157,9 +170,13 @@ function renderSessions() {
   if (!state.sessions.length) ui.sessions.append(element('div', 'session-empty', '从一个新会话开始吧。'));
   for (const session of state.sessions) {
     const row = element('div', `session-row${session.id === state.currentId ? ' active' : ''}`);
-    const link = element('button', 'session-link', session.title || '新会话');
+    row.dataset.sessionId = session.id;
+    const title = session.id === state.currentId ? currentSession()?.title || session.title : session.title;
+    const link = element('button', 'session-link', title || '新会话');
     link.type = 'button';
-    link.title = session.title || '新会话';
+    link.setAttribute('aria-label', title || '新会话');
+    link.append(element('small','session-stage',STAGE_NAMES[session.conversation_state?.stage] || '想吃什么'));
+    link.title = title || '新会话';
     link.setAttribute('aria-current', session.id === state.currentId ? 'page' : 'false');
     link.addEventListener('click', () => openSession(session.id));
     row.append(link);
@@ -194,6 +211,7 @@ function renderSessions() {
     row.append(remove);
     ui.sessions.append(row);
   }
+  updateConversationState();
 }
 
 async function loadSessions() {
@@ -217,6 +235,7 @@ function selectBlank() {
   persistDraft();
   state.selectionEpoch++;
   state.currentId = null;
+  try { localStorage.removeItem('chefmate:active-session'); } catch { /* In-memory selection remains usable. */ }
   workspace.select(null);
   state.skillsEpoch++;
   clearTimeout(state.remotePoll);
@@ -231,7 +250,7 @@ function selectBlank() {
 
 async function newSession() {
   if (state.creating) return;
-  const epoch = state.selectionEpoch;
+  const epoch = ++state.selectionEpoch;
   state.creating = true;
   ui['new-chat'].disabled = true;
   updateComposer();
@@ -289,6 +308,7 @@ async function openSession(id) {
   persistDraft();
   const epoch = ++state.selectionEpoch;
   state.currentId = id;
+  try { localStorage.setItem('chefmate:active-session',id); } catch { /* In-memory selection remains usable. */ }
   workspace.select(id);
   state.skills = [];
   loadSkills(id);
@@ -440,12 +460,36 @@ function toolCallNode(call) {
   return node;
 }
 
-function toolLog(calls, process = []) {
-  const log = element('details', 'tools-log');
-  log.append(element('summary', '', `过程记录 · ${calls.length} 次工具调用`));
-  for (const text of process) if (typeof text === 'string' && text.trim()) log.append(element('div', 'process-stream', text));
-  for (const call of calls) log.append(toolCallNode(call));
-  return log;
+function executionTrace(message) {
+  const rows = activityRows(message);
+  const trace = element('section', `execution-trace ${state.traceMode}`);
+  trace.setAttribute('aria-label','执行过程');
+  const summary = element('div','trace-summary');
+  summary.append(element('span',message.streaming ? 'trace-orbit active' : 'trace-orbit',message.streaming ? '◌' : message.error ? '!' : message.cancelled ? '◇' : '✓'),
+    element('span','trace-current',safeText(latestActivity(message))));
+  trace.append(summary);
+  if (state.traceMode === 'detailed') {
+    const timeline = element('ol','trace-timeline');
+    for (const row of rows) {
+      const item = element('li',`trace-row ${row.state || 'note'}`);
+      item.append(element('span','trace-marker',row.state==='running' ? '◌' : row.state==='failed' ? '!' : '✓'));
+      const copy = element('div','trace-copy');
+      if (row.kind === 'note') {
+        const note = element('details','trace-note');
+        note.append(element('summary','',safeText(row.text.split('\n')[0].replace(/\*\*/g,'').slice(0,120))),markdown(safeText(row.text)));
+        copy.append(note);
+      } else copy.append(element('p','',safeText(row.text)));
+      if (row.kind === 'tool') copy.append(element('small','',({running:'使用中',failed:'未完成，正在调整',interrupted:'已中断',done:'已完成'})[row.state]));
+      item.append(copy); timeline.append(item);
+    }
+    trace.append(timeline);
+    if (message.tool_calls?.length) {
+      const technical = element('details','trace-technical'); technical.append(element('summary','','查看工具记录'));
+      for (const call of message.tool_calls) technical.append(toolCallNode(call));
+      trace.append(technical);
+    }
+  }
+  return trace;
 }
 
 function recipeId(recipe) { return recipe.recipe_id || recipe.id; }
@@ -498,23 +542,16 @@ function renderConversation(forceScroll = false) {
     const body = element('div', 'assistant-body');
     const processOnly = message.streaming && !message.resultComplete || Boolean(message.error || message.cancelled);
     if (message.content && !processOnly) body.append(markdown(message.content));
-    else if (message.content && processOnly) {
-      const process = element('details', 'tools-log'); process.open = Boolean(message.streaming);
-      process.append(element('summary', '', message.streaming ? '正在处理需求' : '未完成的回复'));
-      process.append(element('div', 'process-stream', message.content)); body.append(process);
-    }
-    else if (message.streaming) {
-      const thinking = element('div', 'thinking');
-      thinking.append(element('span', 'thinking-dot'), document.createTextNode('正在查看菜谱库…'));
-      body.append(thinking);
-    }
     node.append(body);
     const typedViews = messageViews(message);
     if (typedViews.length) {
       const components = element('div', 'message-components');
-      for (const view of typedViews) components.append(renderView(view, { historical: true, busy: false,
-        action: async () => toast('请在当前任务中操作。'), openCurrent: (kind) => workspace.openCurrent(kind),
-        onDraft: () => {}, dirty: () => false, savePreferences: async () => {}, discardDraft: () => {} }));
+      for (const view of typedViews.filter(view=>view.kind!=='task_progress')) {
+        const receipt = element('button','view-receipt'); receipt.type='button';
+        receipt.append(element('span','view-receipt-icon',({recipe_choices:'◫',preference_form:'☷',cooking_guide:'▶',timers:'◷'})[view.kind] || '◇'),
+          element('span','view-receipt-copy',view.title || VIEW_LABELS[view.kind]),element('small','',viewSummary(view)),element('span','','↗'));
+        receipt.addEventListener('click',()=>workspace.openCurrent(view.kind)); components.append(receipt);
+      }
       node.append(components);
     }
     const recipeItems = legacyRecipeItems(message, typedViews);
@@ -523,10 +560,13 @@ function renderConversation(forceScroll = false) {
       for (const recipe of recipeItems) recipes.append(recipeButton(recipe, message.snapshot));
       node.append(recipes);
     } else if (message.resultTotal === 0) node.append(element('div', 'empty-results', '没有找到同时满足这些条件的菜谱，可以继续调整条件。'));
-    if (message.tool_calls?.length || message.process?.length) {
-      const log = toolLog(message.tool_calls || [], message.process || []);
+    if (message.tool_calls?.length || message.process?.length || message.streaming) {
+      const log = executionTrace(message);
       log.dataset.logKey = `${state.currentId}:${index}`;
-      log.open = openedLogs.has(log.dataset.logKey);
+      for (const detail of log.querySelectorAll('details')) {
+        detail.dataset.logKey = `${log.dataset.logKey}:${detail.querySelector('summary')?.textContent}`;
+        detail.open = openedLogs.has(detail.dataset.logKey);
+      }
       node.append(log);
     }
     if (message.error) {
@@ -551,6 +591,7 @@ function renderConversation(forceScroll = false) {
     ui.messages.append(node);
   }
   if (nearBottom || forceScroll) ui.conversation.scrollTop = ui.conversation.scrollHeight;
+  updateConversationState();
 }
 
 function scheduleRender(id) {
@@ -612,7 +653,7 @@ function applyEvent(run, event) {
   if (event.type === 'tool_start') {
     if (message.content) { message.process ||= []; message.process.push(message.content); message.content = ''; }
     message.tool_calls.push({ ...event, running: true });
-    run.status = `${labels[event.name] || '查询数据'}…`;
+    run.status = `${TOOL_NAMES[event.name] || '使用厨房工具'}…`;
   }
   if (event.type === 'tool_end') {
     const call = message.tool_calls.find((item) => item.call_id === event.call_id);
@@ -971,78 +1012,21 @@ function amountLabel(item) {
   if (item.grams != null) return `${Number(item.grams)} g`;
   return '用量未知';
 }
-function numberLabel(value, unit) {
-  if (value == null || !Number.isFinite(Number(value))) return '未知';
-  return `${Math.round(Number(value) * 10) / 10} ${unit}`;
-}
-
-function renderRecipe(recipe, snapshot) {
-  const panel = ui['recipe-content'];
-  panel.replaceChildren(); panel.scrollTop = 0;
-  panel.append(element('h2', 'panel-recipe-title', recipe.name));
-  const facts = element('div', 'recipe-facts');
-  const factValues = [timeLabel(recipe.total_time_min), labels[recipe.difficulty] || recipe.difficulty || '难度未知',
-    recipe.servings == null ? '份量未知' : `${recipe.servings} 人份${recipe.estimated_servings ? '（估算）' : ''}`];
-  for (const value of factValues) facts.append(element('span', '', value));
-  panel.append(facts);
-  if (recipe.description) panel.append(element('p', 'panel-recipe-description', recipe.description));
-  const ingredients = panelSection('食材与用量');
-  for (const item of recipe.ingredients || []) {
-    const row = element('div', 'ingredient-row');
-    const name = element('div', 'ingredient-name', item.canonical_name || item.raw_name || item.ingredient_id);
-    if (item.raw_text) name.append(element('span', 'ingredient-original', item.raw_text));
-    const amount = element('div', 'ingredient-amount', amountLabel(item));
-    if (item.amount_evidence === 'estimated' || item.estimated_grams) amount.append(element('span', 'tag', '估算'));
-    row.append(name, amount); ingredients.append(row);
-  }
-  panel.append(ingredients);
-  const steps = panelSection('做法');
-  const list = element('ol', 'recipe-steps');
-  for (const step of recipe.steps || []) list.append(element('li', '', typeof step === 'string' ? step : step.description || step.text));
-  steps.append(list); panel.append(steps);
-  if (recipe.required_tools?.length || recipe.cooking_methods?.length) {
-    const section = panelSection('厨具与烹饪');
-    if (recipe.required_tools?.length) section.append(element('p', 'query-summary', `所需厨具：${recipe.required_tools.map((v) => tools[v] || v).join('、')}`));
-    if (recipe.cooking_methods?.length) section.append(element('p', 'query-summary', `烹饪方式：${recipe.cooking_methods.map((v) => methods[v] || v).join('、')}`));
-    panel.append(section);
-  }
-  const nutrition = recipe.nutrition || {};
-  const values = nutrition.per_serving || recipe.nutrition_per_serving || {};
-  const estimatedFields = nutrition.estimated_per_serving_fields || [];
-  const section = panelSection('每份营养');
-  const grid = element('div', 'nutrition-grid');
-  for (const [key, name, unit] of nutrients) {
-    const item = element('div', 'nutrition-value');
-    item.append(element('small', '', name));
-    const value = element('strong', '', numberLabel(values[key], unit));
-    if (estimatedFields.includes(key)) value.append(element('span', 'tag', '估算'));
-    item.append(value); grid.append(item);
-  }
-  section.append(grid);
-  const note = nutrition.estimated || recipe.nutrition_estimated
-    ? '含估算数据。每项估算已标注，未知数值保持未知。'
-    : '数值来自菜谱数据库，未知数值保持未知。';
-  section.append(element('p', 'nutrition-note', `${note}${nutrition.estimated_servings ? ' 当前每份所用人数也是估算值。' : ''}`));
-  panel.append(section);
-  const warnings = [...(recipe.warnings || []), ...(recipe.blocking_reasons || [])];
-  if (warnings.length) {
-    const warningSection = panelSection('原文说明与注意事项');
-    const box = element('div', 'recipe-warnings');
-    for (const warning of warnings) box.append(element('p', '', warning));
-    warningSection.append(box); panel.append(warningSection);
-  }
-  if (recipe.references?.length) {
-    const refs = panelSection('参考来源');
-    for (const ref of recipe.references) {
-      const href = safeLink(ref.url);
-      if (!href) continue;
-      const link = element('a', 'reference-link', ref.title || '查看来源');
-      link.href = href; link.target = '_blank'; link.rel = 'noopener noreferrer'; refs.append(link);
-    }
-    panel.append(refs);
-  }
-  const version = snapshot?.data_version || state.status?.database?.data_version;
-  if (version) panel.append(element('p', 'nutrition-note', `数据版本 ${version}`));
+function renderRecipe(recipe, snapshot, viewState = {}) {
+  const shown = {name:recipe.name,description:recipe.description,servings:recipe.servings,
+    original_servings:recipe.servings,estimated_servings:recipe.estimated_servings,
+    total_time_min:recipe.total_time_min,difficulty:recipe.difficulty,
+    ingredients:(recipe.ingredients || []).map(item=>({canonical_name:item.canonical_name || item.raw_name || item.ingredient_id,
+      amount_text:amountLabel(item),estimated:item.amount_evidence==='estimated' || item.estimated_grams})),
+    steps:(recipe.steps || []).map(step=>({instruction:typeof step==='string' ? step : step.description || step.text})),
+    nutrition:recipe.nutrition || {per_serving:recipe.nutrition_per_serving},
+    references:recipe.references || [],
+    warnings:[...(recipe.warnings || []),...(recipe.blocking_reasons || []),
+      ...(recipe.required_tools?.length ? [`所需厨具：${recipe.required_tools.map(v=>tools[v] || v).join('、')}`] : []),
+      ...(recipe.cooking_methods?.length ? [`烹饪方式：${recipe.cooking_methods.map(v=>methods[v] || v).join('、')}`] : [])],
+    source:{data_snapshot:snapshot}};
+  ui['recipe-content'].replaceChildren(renderView({id:'source-detail',kind:'recipe_detail',title:'菜谱详情',revision:0,editable:false,data:{recipe:shown}},
+    {historical:false,busy:false,viewState,onViewState:()=>renderRecipe(recipe,snapshot,viewState),action:async()=>{}}));
 }
 
 ui.composer.addEventListener('submit', (event) => { event.preventDefault(); sendMessage(ui['composer-input'].value); });
@@ -1053,6 +1037,12 @@ ui['composer-input'].addEventListener('keydown', (event) => {
   }
 });
 ui['new-chat'].addEventListener('click', newSession);
+ui['trace-mode'].value = state.traceMode;
+ui['trace-mode'].addEventListener('change', () => {
+  state.traceMode = ui['trace-mode'].value === 'detailed' ? 'detailed' : 'compact';
+  try { localStorage.setItem('chefmate:trace-mode',state.traceMode); } catch { /* Session preference still applies. */ }
+  renderConversation();
+});
 ui['stop-button'].addEventListener('click', cancelTurn);
 ui['open-sidebar'].addEventListener('click', () => setSidebar(true));
 $('close-sidebar').addEventListener('click', () => { setSidebar(false); ui['open-sidebar'].focus(); });
@@ -1091,12 +1081,13 @@ document.querySelectorAll('[data-prompt]').forEach((button) => button.addEventLi
 }));
 
 async function initialize() {
+  const epoch = state.selectionEpoch;
   workspace.renderInto(ui['workspace-content']);
   setTab('workspace'); renderRecipeEmpty(); renderConversation(); backdrop();
   const results = await Promise.allSettled([loadStatus(), loadSessions(), loadSkills()]);
   if (results[1].status === 'rejected') toast('会话列表暂时无法读取，请刷新页面重试。');
-  const initial = state.sessions[0];
-  if (initial) await openSession(initial.id);
+  const initial = state.sessions.find(session=>session.id===storedSession()) || state.sessions[0];
+  if (initial && epoch === state.selectionEpoch && !state.creating && !state.currentId) await openSession(initial.id);
   updateComposer();
 }
 initialize();

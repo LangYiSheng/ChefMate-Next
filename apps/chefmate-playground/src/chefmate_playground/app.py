@@ -136,8 +136,8 @@ def create_app(config: PlaygroundConfig | None = None, *, service=None, agent=No
 
     @app.get("/api/sessions")
     async def sessions():
-        return {"items": [{key: value for key, value in state.items()
-                           if key in {"id", "title", "updated_at", "running", "last_status"}}
+        return {"items": [{key: value for key, value in public_session(state).items()
+                           if key in {"id", "title", "updated_at", "running", "last_status", "conversation_state"}}
                           for state in repo.list()]}
 
     @app.post("/api/sessions")
@@ -165,6 +165,8 @@ def create_app(config: PlaygroundConfig | None = None, *, service=None, agent=No
     @app.post("/api/sessions/{session_id}/actions")
     async def ui_action(session_id: str, body: UserActionRequest):
         require_session(session_id)
+        if body.root.type == "change_stage":
+            raise HTTPException(403, "会话阶段由助手根据你的需求管理，请通过对话告诉助手下一步想做什么。")
         if workspace_binding is None:
             raise HTTPException(503, "厨房任务尚未连接菜谱库。")
         # Keep partial-form field presence; Pydantic defaults must not overwrite untouched values.

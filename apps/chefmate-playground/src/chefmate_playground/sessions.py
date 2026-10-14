@@ -87,4 +87,7 @@ class SessionRepository:
 
 
 def public_session(state: dict) -> dict:
-    return {key: value for key, value in state.items() if key not in {"history", "workspace"}}
+    workspace = state.get("workspace") or {}
+    return {**{key: value for key, value in state.items() if key not in {"history", "workspace"}},
+            "conversation_state": {"stage": workspace.get("stage", "idea"),
+                                   "recipe_count": len(workspace.get("meal_plan", []))}}

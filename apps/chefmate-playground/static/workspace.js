@@ -1,4 +1,5 @@
-import { clone, changedValues, makeAction, remainingSeconds, clockText, STAGES, EXECUTION_STAGES, visibleWorkspaceViews } from './ui-protocol.js';
+import { clone, changedValues, makeAction, remainingSeconds, clockText, EXECUTION_STAGES } from './ui-protocol.js';
+import { viewChoices, VIEW_LABELS, STAGE_NAMES } from './presentation.js';
 import { node, renderView } from './ui-components.js';
 
 const keyFor = (id) => `chefmate:workspace-drafts:${id}`;
@@ -13,7 +14,8 @@ export class WorkspaceController {
   }
   entry(id) {
     if (!this.entries.has(id)) this.entries.set(id, { snapshot: null, views: [], drafts: id ? readDrafts(id) : {},
-      generation: 0, loading: false, saving: false, error: '', conflict: null, failedRequest: null });
+      generation: 0, loading: false, saving: false, error: '', conflict: null, failedRequest: null,
+      activeKind: null, viewState: {} });
     return this.entries.get(id);
   }
   select(id) { this.activeId = id; this.render(); if (id) this.load(id).catch(() => {}); this.onChange(); }
@@ -42,9 +44,15 @@ export class WorkspaceController {
     const entry = this.entry(id); const snapshot = response?.workspace || response?.ui_snapshot;
     if (!snapshot || !Number.isInteger(snapshot.revision)) return false;
     if (entry.snapshot && snapshot.revision < entry.snapshot.revision) return false;
+    const previousStage = entry.snapshot?.stage;
+    const oldIds = new Set(entry.views.map(view=>view.id));
     entry.snapshot = clone(snapshot);
     // 完整呈现与模型短快照分开；短快照不能被当作食材、菜谱详情。
     entry.views = Array.isArray(response.views) ? clone(response.views) : entry.views;
+    const choices = viewChoices(entry.views,snapshot.stage);
+    const introduced = choices.filter(view=>!oldIds.has(view.id));
+    if (previousStage !== snapshot.stage || !choices.some(view=>view.kind === entry.activeKind)) entry.activeKind = choices[0]?.kind;
+    else if (introduced.length) entry.activeKind = introduced.at(-1).kind;
     for (const [oldId, draft] of Object.entries(entry.drafts)) {
       if (!entry.views.some((view) => view.id === oldId)) {
         const replacement = entry.views.find((view) => view.kind === draft.kind);
@@ -80,7 +88,7 @@ export class WorkspaceController {
     if (Object.values(entry?.drafts || {}).some((draft) => draft.conflict)) return '任务已变化，表单待复核';
     if (Object.values(entry?.drafts || {}).some((draft) => draft.kind === 'recipe_choices')) return '菜谱选择尚未确认';
     if (Object.keys(entry?.drafts || {}).length) return '条件尚未保存';
-    if (entry?.snapshot) return `任务已同步 · 第 ${entry.snapshot.revision} 版`;
+    if (entry?.snapshot) return '当前内容已保存';
     return entry?.error ? '任务暂时不可用' : '正在读取任务…';
   }
   async prepareTurn(id) {
@@ -199,8 +207,10 @@ export class WorkspaceController {
   openCurrent(kind) {
     this.openPanel('workspace');
     if (!this.activeId) return;
-    const target = this.container?.querySelector(`[data-view-kind="${CSS.escape(kind)}"]`);
-    if (target) { const disclosure = target.closest('details'); if (disclosure) disclosure.open = true; target.scrollIntoView({ block: 'start', behavior: 'smooth' }); target.classList.add('ui-highlight'); setTimeout(() => target.classList.remove('ui-highlight'), 1400); }
+    const entry = this.entry(this.activeId);
+    if (viewChoices(entry.views,entry.snapshot?.stage).some(view=>view.kind===kind)) {
+      entry.activeKind=kind; this.render();
+    }
     else if (kind === 'recipe_choices' && EXECUTION_STAGES.includes(this.entry(this.activeId).snapshot?.stage)) this.notify('当前正在执行已选餐单。需要改选菜谱时，请先返回选菜阶段。');
     else this.notify('当前任务还没有这项内容，可以继续向助手提出需求。');
   }
@@ -214,10 +224,10 @@ export class WorkspaceController {
     const id = this.activeId;
     if (!id) { this.container.append(node('div', 'panel-empty', '从一个会话开始。选菜、购物、备菜、步骤和计时都会随当前任务保存。')); return; }
     const entry = this.entry(id); const header = node('div', 'workspace-heading');
-    header.append(node('span', 'workspace-stage', STAGES[entry.snapshot?.stage] || '厨房任务'));
+    header.append(node('span', 'workspace-stage', STAGE_NAMES[entry.snapshot?.stage] || '厨房任务'));
     const refresh = node('button', 'ui-text-button', entry.loading ? '读取中…' : '刷新'); refresh.type = 'button'; refresh.disabled = entry.loading || entry.saving;
     refresh.addEventListener('click', () => this.load(id).catch(() => {})); header.append(refresh); this.container.append(header);
-    const sync = node('p', 'workspace-sync', this.syncLabel(id)); sync.setAttribute('role', 'status'); this.container.append(sync);
+    const sync = node('p', 'workspace-sync', entry.saving ? '正在保存…' : this.unsaved(id) ? '有修改待确认' : '操作会自动保存，下一条消息带上当前状态'); sync.setAttribute('role', 'status'); this.container.append(sync);
     if (entry.error) {
       const error = node('div', 'error-box', entry.error);
       if (entry.conflict && !entry.conflict.clearDraft) {
@@ -248,20 +258,34 @@ export class WorkspaceController {
       });
       warning.append(node('br'),discard); this.container.append(warning);
     }
-    for (const view of visibleWorkspaceViews(entry.views, entry.snapshot?.stage)) {
+    const choices = viewChoices(entry.views,entry.snapshot?.stage);
+    const navigation = node('nav','workspace-navigation'); navigation.setAttribute('aria-label','工作区内容');
+    for (const view of choices) {
+      const control = node('button',`workspace-nav${entry.activeKind===view.kind ? ' active' : ''}`,VIEW_LABELS[view.kind]);
+      control.type='button'; control.setAttribute('aria-pressed',String(entry.activeKind===view.kind));
+      control.addEventListener('click',()=>{entry.activeKind=view.kind;this.render();}); navigation.append(control);
+    }
+    this.container.append(navigation);
+    const activeView = choices.find(view=>view.kind===entry.activeKind) || choices[0];
+    if (!activeView && !entry.loading) this.container.append(node('div','panel-empty','告诉助手你的想法，合适的表单、菜品和清单会在这里打开。'));
+    for (const view of activeView ? [activeView] : []) {
       const draft = entry.drafts[view.id];
       const content = renderView(view, { historical: false, busy: entry.saving, draft, selectedRecipeIds: selected,
         stage: entry.snapshot?.stage,
+        activeRecipeId: entry.snapshot?.active_recipe_id,
+        viewState: entry.viewState[view.id] ||= {},
+        onViewState: () => this.render(),
+        openRecipeSection: async (recipeId,section) => {
+          await this.dispatch('open_recipe_detail',{recipe_id:recipeId},view,{sessionId:id});
+          const detail=entry.views.find(item=>item.kind==='recipe_detail' && item.data.recipe?.recipe_id===recipeId);
+          if(detail) { (entry.viewState[detail.id] ||= {}).detailSection=section;entry.activeKind='recipe_detail';this.refresh(id); }
+        },
         action: (type, payload, origin) => this.dispatch(type, payload, origin),
         openCurrent: (kind) => this.openCurrent(kind), onDraft: (origin, values) => this.setDraft(origin, values),
         dirty: (origin, values) => Object.keys(changedValues(entry.drafts[origin.id]?.baseline || origin.data.values || {}, values)).length > 0,
         savePreferences: (origin, values) => this.savePreferences(origin, values), discardDraft: (origin) => this.discardDraft(origin),
         onSelection: (origin, ids) => this.setSelectionDraft(origin, ids), saveSelection: (origin, ids) => this.saveSelection(origin, ids) });
-      if (execution && view.kind === 'preference_form') {
-        const conditions = node('details','workspace-conditions'); conditions.open = Boolean(draft || entry.conditionsOpen);
-        const summary = node('summary'); summary.append(node('strong','','这顿饭的条件'),node('span','ui-badge muted',draft ? '未保存' : '展开查看'));
-        conditions.append(summary,content); conditions.addEventListener('toggle',()=>{entry.conditionsOpen=conditions.open;}); this.container.append(conditions);
-      } else this.container.append(content);
+      this.container.append(content);
     }
     this.tick();
     this.container.scrollTop = scrollTop;
