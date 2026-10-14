@@ -17,7 +17,7 @@ from .config import APP_ROOT, PlaygroundConfig
 from .interactions import WorkspaceBinding
 from .runtime import TurnConflict, TurnManager, encode_event
 from .sessions import SessionRepository, public_session
-from .settings import (SKILLS, RuntimeSettings, build_agent, persist_settings, probe_model,
+from .settings import (SKILLS, ContextSettings, RuntimeSettings, build_agent, persist_settings, probe_model,
                        public_settings, resolve_model)
 
 
@@ -136,6 +136,8 @@ def create_app(config: PlaygroundConfig | None = None, *, service=None, agent=No
                     candidate = resolve_model(settings, body.values)
                 elif body.section == "runtime":
                     candidate = replace(settings, **RuntimeSettings.model_validate(body.values).model_dump())
+                elif body.section == "context":
+                    candidate = replace(settings, **ContextSettings.model_validate(body.values).model_dump())
                 elif body.section == "skills":
                     names = body.values.get("enabled_skills")
                     if (set(body.values) != {"enabled_skills"} or not isinstance(names, list)

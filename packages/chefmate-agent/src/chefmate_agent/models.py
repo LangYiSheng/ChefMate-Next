@@ -25,9 +25,9 @@ class AgentConfig(BaseModel):
     turn_timeout_s: float = Field(default=300, gt=0, le=900)
     max_model_rounds: int = Field(default=10, ge=1, le=30)
     max_tool_calls: int = Field(default=16, ge=1, le=50)
-    max_history_chars: int = Field(default=90000, ge=4000, le=300000)
+    max_history_chars: int = Field(default=400000, ge=4000, le=2000000)
     max_user_chars: int = Field(default=8000, ge=100, le=32000)
-    max_tool_result_chars: int = Field(default=28000, ge=2000, le=100000)
+    max_tool_result_chars: int = Field(default=60000, ge=2000, le=200000)
     max_ui_context_chars: int = Field(default=24000, ge=1000, le=24000)
     max_skill_chars: int = Field(default=24000, ge=1000, le=64000)
 

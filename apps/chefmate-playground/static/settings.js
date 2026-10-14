@@ -6,6 +6,7 @@ const names = {
   display: ["界面显示", "把注意力留给菜谱和下一步。"],
   skills: ["厨房技能", "让助手按需使用你启用的厨房知识。"],
   runtime: ["执行设置", "设置一次任务的等待时间和操作上限。"],
+  context: ["上下文预算", "给查询结果和连续对话留出足够空间。"],
   data: ["数据与状态", "查看当前菜谱库和本地工作台状态。"],
 };
 const skillLabels = {
@@ -226,6 +227,17 @@ function render() {
         "启用后，助手会按需读取技能指引。勾选技能不会直接执行厨房操作。",
       ),
     );
+  } else if (current === "context") {
+    heading("信息容量");
+    field("会话上下文上限", "max_history_chars", {
+      type: "number", min: 4000, max: 2000000,
+      hint: "字符，包含对话历史与本轮工具信息。默认 400,000。",
+    });
+    field("单次工具结果上限", "max_tool_result_chars", {
+      type: "number", min: 2000, max: 200000,
+      hint: "字符，控制每次查询送给模型的信息量。默认 60,000。",
+    });
+    $("settings-form").append(node("p", "settings-note", "这里按字符计量，和模型的 token 上限不同。提高预算可以容纳更多结果，也会增加每轮发送的信息量。"));
   } else if (current === "runtime") {
     heading("等待与重试");
     field("单轮任务时限", "turn_timeout_s", {
@@ -293,7 +305,7 @@ async function load() {
     ]);
     loaded = result[0];
     status = result[1];
-    for (const section of ["model", "skills", "runtime", "display"])
+    for (const section of ["model", "skills", "runtime", "context", "display"])
       if (!dirty.has(section)) {
         draftRevisions.set(section,loaded.revision);
         drafts.set(
@@ -309,6 +321,8 @@ async function load() {
                 )
               : section === "runtime"
                 ? { ...loaded.runtime }
+                : section === "context"
+                  ? { ...loaded.context }
                 : readDisplay(),
         );
       }

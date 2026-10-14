@@ -35,6 +35,26 @@ def test_model_save_preserves_float_timeout_defaults_and_reloads(tmp_path):
     assert restored.model_timeout_s == 120.0
 
 
+def test_context_budget_saves_applies_and_survives_reload(tmp_path):
+    initial = config(tmp_path)
+    app = create_app(initial, service=Service(), agent=Agent())
+    with TestClient(app) as client:
+        before = client.get("/api/settings").json()
+        values = {"max_history_chars": 450000, "max_tool_result_chars": 75000}
+        saved = client.patch("/api/settings", json={"revision": before["revision"], "section": "context", "values": values})
+        assert saved.status_code == 200
+        assert saved.json()["context"] == values
+        assert app.state.manager.agent.config.max_history_chars == 450000
+        assert app.state.manager.agent.config.max_tool_result_chars == 75000
+        restored = load_overrides(initial)
+        assert restored.max_history_chars == 450000
+        assert restored.max_tool_result_chars == 75000
+        invalid = client.patch("/api/settings", json={"revision": saved.json()["revision"], "section": "context",
+            "values": {**values, "max_history_chars": 2000001}})
+        assert invalid.status_code == 422
+        assert load_overrides(initial).max_history_chars == 450000
+
+
 def test_persisted_model_applies_atomically_survives_reload_and_rejects_stale_tab(tmp_path):
     initial = config(tmp_path)
     app = create_app(initial, service=Service(), agent=Agent())

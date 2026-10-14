@@ -24,6 +24,8 @@ class PlaygroundConfig:
     model_max_retries: int = 0
     max_model_rounds: int = 10
     max_tool_calls: int = 20
+    max_history_chars: int = 400000
+    max_tool_result_chars: int = 60000
     stream_tool_calls: bool = False
     api_format: str = "chat_completions"
     port: int = 18765
@@ -59,6 +61,8 @@ class PlaygroundConfig:
             model_max_retries=min(2, max(0, int(values.get("CHEFMATE_AGENT_MODEL_RETRIES", "0")))),
             max_model_rounds=min(30, max(2, int(values.get("CHEFMATE_AGENT_MAX_ROUNDS", "10")))),
             max_tool_calls=min(50, max(2, int(values.get("CHEFMATE_AGENT_MAX_TOOL_CALLS", "20")))),
+            max_history_chars=int(values.get("CHEFMATE_AGENT_MAX_HISTORY_CHARS", "400000")),
+            max_tool_result_chars=int(values.get("CHEFMATE_AGENT_MAX_TOOL_RESULT_CHARS", "60000")),
             stream_tool_calls=(values.get("CHEFMATE_AGENT_STREAM_TOOL_CALLS", "false") or "false").lower() == "true",
             port=int(values.get("CHEFMATE_PLAYGROUND_PORT", "18765")),
             enabled_skills=skill_names,

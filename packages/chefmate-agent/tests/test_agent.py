@@ -304,6 +304,27 @@ def test_context_pruning_keeps_complete_newest_turn():
     assert len(model.histories[0]) == 2  # owned system prompt + most recent user
 
 
+@pytest.mark.parametrize("history_limit,expected", [(90000, "error"), (400000, "completed")])
+def test_large_tool_round_can_continue_with_increased_context_budget(history_limit, expected):
+    class LargeOptionsService(Service):
+        def get_search_options(self):
+            return {"status": "ok", "snapshot": SNAPSHOT,
+                    "available_tools": [{"code": f"tool-{index}", "description": "资料" * 650} for index in range(40)]}
+    core, model, _ = agent([tool("get_search_options", {}), answer("已读取厨具选项。")],
+                          service=LargeOptionsService(), max_history_chars=history_limit)
+    result = asyncio.run(core.run_turn([
+        {"role": "user", "content": "之前的资料"},
+        {"role": "assistant", "content": "记录" * 25000},
+        {"role": "user", "content": "看看厨具选项"},
+    ]))
+    assert result.status == expected
+    if expected == "completed":
+        assert len(model.histories) == 2
+        assert sum(len(message.content) for message in model.histories[-1] if isinstance(message.content, str)) > 90000
+    else:
+        assert result.error.code == "history_limit"
+
+
 def test_production_never_falls_back_to_mock():
     with pytest.raises(ValueError, match="real provider API key"):
         ChefMateAgent(Service(), AgentConfig(model="configured-model"), request_models=REQUESTS)

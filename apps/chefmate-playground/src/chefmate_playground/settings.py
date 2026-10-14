@@ -15,7 +15,8 @@ from .config import APP_ROOT
 
 SKILLS = ("meal-planning", "pantry-preparation", "cooking-guide")
 PERSISTED = {"model", "base_url", "api_key", "api_format", "stream_tool_calls", "enabled_skills",
-             "turn_timeout_s", "model_timeout_s", "model_max_retries", "max_model_rounds", "max_tool_calls"}
+             "turn_timeout_s", "model_timeout_s", "model_max_retries", "max_model_rounds", "max_tool_calls",
+             "max_history_chars", "max_tool_result_chars"}
 
 
 class ModelSettings(BaseModel):
@@ -61,6 +62,12 @@ class RuntimeSettings(BaseModel):
     max_tool_calls: int = Field(ge=2, le=50)
 
 
+class ContextSettings(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+    max_history_chars: int = Field(ge=4000, le=2000000)
+    max_tool_result_chars: int = Field(ge=2000, le=200000)
+
+
 def settings_path(config):
     return config.sessions_database.parent / "settings.json"
 
@@ -86,7 +93,9 @@ def load_overrides(config):
         updated["enabled_skills"] = tuple(dict.fromkeys(values["enabled_skills"]))
     runtime = RuntimeSettings.model_validate({key: values.get(key, int(getattr(config, key)))
                                              for key in RuntimeSettings.model_fields})
-    return replace(config, **updated, **runtime.model_dump())
+    context = ContextSettings.model_validate({key: values.get(key, getattr(config, key))
+                                             for key in ContextSettings.model_fields})
+    return replace(config, **updated, **runtime.model_dump(), **context.model_dump())
 
 
 def resolve_model(config, value):
@@ -110,7 +119,8 @@ def public_settings(config):
             "model": {key: payload[key] for key in ("model", "base_url", "api_format", "stream_tool_calls")},
             "api_key_set": bool(config.api_key), "enabled_skills": list(config.enabled_skills),
             "available_skills": list(SKILLS),
-            "runtime": {key: payload[key] for key in RuntimeSettings.model_fields}}
+            "runtime": {key: payload[key] for key in RuntimeSettings.model_fields},
+            "context": {key: payload[key] for key in ContextSettings.model_fields}}
 
 
 def persist_settings(config):
@@ -150,6 +160,7 @@ def build_agent(config, service):
         turn_timeout_s=config.turn_timeout_s, model_timeout_s=config.model_timeout_s,
         max_model_retries=config.model_max_retries, max_model_rounds=config.max_model_rounds,
         max_tool_calls=config.max_tool_calls,
+        max_history_chars=config.max_history_chars, max_tool_result_chars=config.max_tool_result_chars,
     ), extra_tools=make_tool_specs(), ui_context_model=UISnapshot, action_model=UIAction, skills=skills)
     return agent, skills
 
