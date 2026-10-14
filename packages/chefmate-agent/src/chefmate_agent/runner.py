@@ -4,7 +4,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from langchain.agents.middleware import AgentMiddleware
-from langchain_core.messages import AIMessage, SystemMessage, ToolMessage
+from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
 from pydantic import ValidationError
 
 from .models import ToolCallRecord
@@ -24,6 +24,7 @@ class TurnRuntimeContext:
     loaded_skills: set[str] = field(default_factory=set)
     usage: list[dict] = field(default_factory=list)
     read_queries: dict[str, str] = field(default_factory=dict)
+    image_contents: dict[str, str] = field(default_factory=dict)
 
 
 class ChefMateMiddleware(AgentMiddleware):
@@ -47,6 +48,18 @@ class ChefMateMiddleware(AgentMiddleware):
     async def awrap_model_call(self, request, handler):
         context = request.runtime.context
         messages = self.owner._model_messages(request.messages)
+        for index, message in enumerate(messages):
+            if not isinstance(message, HumanMessage):
+                continue
+            images = message.additional_kwargs.get("chefmate_images", [])
+            if images and self.owner.config.supports_images:
+                content = [{"type": "text", "text": message.content}]
+                content.extend({"type": "image_url", "image_url": {"url": context.image_contents[image["id"]], "detail": "auto"}}
+                               for image in images)
+                messages[index] = message.model_copy(update={"content": content})
+            elif images:
+                messages[index] = message.model_copy(update={"content": message.content +
+                    "\n用户此前上传过图片；当前模型未开启图片能力，不能声称直接看到了图片。"})
         prompt = self.owner._context_prompt(context, request.state["messages"])
         return await handler(request.override(system_message=SystemMessage(content=prompt), messages=messages))
 

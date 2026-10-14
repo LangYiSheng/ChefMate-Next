@@ -40,15 +40,18 @@ class ActiveTurn:
 
 
 class TurnManager:
-    def __init__(self, repository: SessionRepository, agent, workspace_binding=None):
+    def __init__(self, repository: SessionRepository, agent, workspace_binding=None, images=None):
         self.repository = repository
         self.agent = agent
         self.workspace_binding = workspace_binding
+        self.images = images
         self.active: dict[str, ActiveTurn] = {}
         self._lock = asyncio.Lock()
 
     async def begin(self, session_id: str, message: str, *, retry: bool = False,
-                    request_id: str | None = None, ui_snapshot: dict | None = None) -> tuple[ActiveTurn | None, dict | None]:
+                    request_id: str | None = None, ui_snapshot: dict | None = None,
+                    image_ids: list[str] | None = None) -> tuple[ActiveTurn | None, dict | None]:
+        image_ids = image_ids or []
         async with self._lock:
             state = self.repository.get(session_id)
             if state is None:
@@ -60,29 +63,33 @@ class TurnManager:
                 previous_message = last.get("message")
                 if previous_message is None and len(state["messages"]) >= 2:
                     previous_message = state["messages"][-2].get("content")
-                if previous_message != message:
+                if previous_message != message or last.get("image_ids", []) != image_ids:
                     raise TurnConflict("请求标识已经用于另一条消息，请重新发送。")
                 return None, last["result"]
             turn = ActiveTurn(str(uuid4()), session_id, request_id or str(uuid4()), message)
             def prepare(current):
+                references = self.images.references(current, image_ids) if self.images else []
                 # This snapshot is rebuilt from the authoritative aggregate, not client recipe/form JSON.
                 snapshot = self.workspace_binding.service(session_id).model_snapshot() if self.workspace_binding else None
                 if ui_snapshot is not None and snapshot is not None and ui_snapshot["revision"] != snapshot["revision"]:
                     raise TurnConflict("界面已更新，请同步最新任务状态后再发送；你的文字没有丢失。")
                 tail = current["messages"][-1] if current["messages"] else None
                 reuse = (retry and current.get("last_status") in {"error", "cancelled", "interrupted"}
-                         and tail and tail.get("role") == "user" and tail.get("content") == message)
+                         and tail and tail.get("role") == "user" and tail.get("content") == message
+                         and [image["id"] for image in tail.get("images", [])] == image_ids)
                 if retry and not reuse:
                     raise TurnConflict("上一轮已改变，无法重试这条消息；请重新发送。")
                 if not reuse:
                     user = {"id": str(uuid4()), "role": "user", "content": message, "created_at": now()}
+                    if references:
+                        user["images"] = references
                     if snapshot is not None:
                         user["ui_context"] = snapshot
                     current["messages"].append(user)
                 elif snapshot is not None:
                     tail["ui_context"] = snapshot
                 if current["title"] == "新对话":
-                    current["title"] = message[:32]
+                    current["title"] = message[:32] or "图片对话"
                 current.update(running=True, last_status="running", last_error=None, updated_at=now(),
                                active_turn={"id": turn.id, "request_id": turn.request_id, "message": message,
                                             "status": "starting", "text": "", "process": [],
@@ -90,7 +97,7 @@ class TurnManager:
                 turn.progress = copy.deepcopy(current["active_turn"])
                 last_assistant = next((i for i in range(len(current["messages"]) - 1, -1, -1)
                                        if current["messages"][i].get("role") == "assistant"), -1)
-                pending = [{key: item[key] for key in ("role", "content", "ui_context") if key in item}
+                pending = [{key: item[key] for key in ("role", "content", "ui_context", "images") if key in item}
                            for item in current["messages"][last_assistant + 1:] if item.get("role") == "user"]
                 return copy.deepcopy([*current["history"], *pending]), snapshot
             history, turn.ui_context = self.repository.mutate(session_id, prepare)
@@ -139,6 +146,8 @@ class TurnManager:
             if turn.cancel.is_set():
                 raise asyncio.CancelledError
             arguments = {"on_event": on_event, "cancel_event": turn.cancel}
+            if self.images and any(message.get("images") for message in history):
+                arguments["image_loader"] = lambda reference: self.images.data_url(turn.session_id, reference)
             if turn.ui_context is not None:
                 arguments.update(ui_context=turn.ui_context, tool_context=turn.host_context)
             result = await self.agent.run_turn(history, **arguments)
@@ -177,7 +186,7 @@ class TurnManager:
                 state.update(running=False, active_turn=None, updated_at=now(), last_status=status,
                              last_error=data.get("error"),
                              last_run={"id": turn.id, "request_id": turn.request_id, "status": status,
-                                       "message": turn.message, "result": visible})
+                                       "message": turn.message, "image_ids": image_ids_for_turn(history), "result": visible})
             self.repository.mutate(turn.session_id, finish)
             self.active.pop(turn.session_id, None)
         if status == "error":
@@ -213,3 +222,8 @@ class TurnManager:
 
 def encode_event(event: dict) -> str:
     return "data: " + json.dumps(event, ensure_ascii=False, allow_nan=False) + "\n\n"
+
+
+def image_ids_for_turn(history):
+    last_user = next((message for message in reversed(history) if message.get("role") == "user"), {})
+    return [image["id"] for image in last_user.get("images", [])]

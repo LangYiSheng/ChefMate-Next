@@ -13,6 +13,38 @@ function controller(t, api = async () => response(0)) {
   return item;
 }
 
+test('composer choices keep their originating session and discard resets focused view', async t=>{
+  const item=controller(t);item.receive('session',response(0));
+  const view=preference(0);item.setDraft(view,{...view.data.values,servings:3});
+  const actions=item.composerActions('session');
+  assert.deepEqual(actions.map(action=>action.label),['保存条件','放弃修改']);
+  item.activeId='other';await actions[1].run();
+  assert.deepEqual(item.entry('session').drafts,{});
+  assert.equal(item.entry('session').viewState[view.id].draftEpoch,1);
+  assert.deepEqual(item.composerActions('other'),[]);
+});
+
+test('servings choices commit sequential revisions and timer draft clears after a replaced view', async t=>{
+  globalThis.document ||= {querySelectorAll:()=>[]};
+  const requests=[];let revision=0;
+  const meal={id:'meal',kind:'meal_plan',revision:0,editable:true,data:{recipes:[{recipe_id:'a',target_servings:1},{recipe_id:'b',target_servings:2}]}};
+  const item=controller(t,async(path,options)=>{
+    requests.push(JSON.parse(options.body));revision++;
+    return {status:'ok',workspace:{revision,stage:'planning',components:[]},views:[{...meal,revision}]};
+  });
+  item.receive('session',{workspace:{revision:0,stage:'planning'},views:[meal]});
+  item.setServingsDraft(meal,'a',3);item.setServingsDraft(meal,'b',4);
+  assert.equal(item.canSubmit(),false);
+  await item.composerActions()[0].run();
+  assert.deepEqual(requests.map(request=>request.base_revision),[0,1]);assert.equal(item.canSubmit(),true);
+  const timers={id:'timer-old',kind:'timers',editable:true,revision:2,data:{timers:[]}};
+  item.receive('session',{workspace:{revision:2,stage:'cooking'},views:[timers]});
+  item.api=async()=>({status:'ok',workspace:{revision:3,stage:'cooking'},views:[{...timers,id:'timer-new',revision:3}]});
+  item.setTimerDraft(timers,'面条',2);
+  assert.deepEqual(item.composerActions().map(action=>action.label),['开始计时','放弃修改']);
+  await item.composerActions()[0].run();assert.deepEqual(item.entry('session').drafts,{});
+});
+
 test('closed actions carry revision and preserve only supplied fields', () => {
   const action = makeAction('update_preferences', { values: { servings: 3 } }, 2, 'preferences', 'request');
   assert.deepEqual(action, { action_id: 'request', base_revision: 2, view_id: 'preferences', type: 'update_preferences', payload: { values: { servings: 3 } } });

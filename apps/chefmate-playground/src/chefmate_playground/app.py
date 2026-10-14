@@ -10,11 +10,12 @@ from fastapi.exception_handlers import request_validation_exception_handler
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 from chefmate_workflow import UISnapshot, UserActionRequest
 
 from .config import APP_ROOT, PlaygroundConfig
 from .interactions import WorkspaceBinding
+from .images import ImageError, MAX_UPLOAD_BYTES, SessionImages
 from .runtime import TurnConflict, TurnManager, encode_event
 from .sessions import SessionRepository, public_session
 from .settings import (SKILLS, ContextSettings, RuntimeSettings, build_agent, persist_settings, probe_model,
@@ -30,7 +31,8 @@ class SettingsRequest(BaseModel):
 
 class TurnRequest(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
-    message: str = Field(min_length=1, max_length=8000)
+    message: str = Field(default="", max_length=8000)
+    images: list[str] = Field(default_factory=list, max_length=3)
     retry: bool = False
     request_id: str | None = Field(default=None, min_length=1, max_length=100)
     ui_snapshot: UISnapshot | None = None
@@ -38,9 +40,15 @@ class TurnRequest(BaseModel):
     @field_validator("message")
     @classmethod
     def nonempty(cls, value):
-        if not value.strip():
-            raise ValueError("请输入消息")
         return value.strip()
+
+    @model_validator(mode="after")
+    def content_present(self):
+        if not self.message and not self.images:
+            raise ValueError("请输入消息或上传图片")
+        if len(set(self.images)) != len(self.images):
+            raise ValueError("图片不能重复")
+        return self
 
 
 def create_app(config: PlaygroundConfig | None = None, *, service=None, agent=None,
@@ -66,7 +74,8 @@ def create_app(config: PlaygroundConfig | None = None, *, service=None, agent=No
         agent = agent if agent is not None else configured_agent
     except (ValueError, OSError):
         setup_error = "模型或厨房技能配置无效，请打开设置检查。"
-    manager = TurnManager(repo, agent, workspace_binding)
+    images = SessionImages(settings.sessions_database.parent / "images", repo)
+    manager = TurnManager(repo, agent, workspace_binding, images)
 
     @asynccontextmanager
     async def lifespan(_app):
@@ -178,6 +187,7 @@ def create_app(config: PlaygroundConfig | None = None, *, service=None, agent=No
         return {
             "ready": bool(database["ready"] and agent is not None), "configured": agent is not None,
             "model": settings.model or None, "database": database,
+            "supports_images": settings.supports_images,
             "active_sessions": len(manager.active), "error": setup_error,
         }
 
@@ -209,6 +219,40 @@ def create_app(config: PlaygroundConfig | None = None, *, service=None, agent=No
         except Exception:
             raise HTTPException(503, "暂时无法读取任务状态。") from None
 
+    @app.post("/api/sessions/{session_id}/images")
+    async def upload_image(session_id: str, request: Request):
+        require_session(session_id)
+        if not settings.supports_images:
+            raise HTTPException(422, "当前模型未开启图片能力，请在模型连接中配置。")
+        data = bytearray()
+        async for chunk in request.stream():
+            data.extend(chunk)
+            if len(data) > MAX_UPLOAD_BYTES:
+                raise HTTPException(413, "图片过大，请压缩后再上传。")
+        try:
+            return await asyncio.to_thread(images.save, session_id, bytes(data), request.query_params.get("name", "照片.jpg"))
+        except (ImageError, ValueError, KeyError):
+            raise HTTPException(422, "图片未保存，请选择有效且尺寸合适的 JPG、PNG 或 WebP。") from None
+
+    @app.get("/api/sessions/{session_id}/images/{image_id}")
+    async def image(session_id: str, image_id: str):
+        state = require_session(session_id)
+        try:
+            images.references(state, [image_id])
+            path = images.path(session_id, image_id)
+        except (ValueError, ImageError):
+            raise HTTPException(404, "图片不存在。") from None
+        return FileResponse(path, media_type="image/jpeg")
+
+    @app.delete("/api/sessions/{session_id}/images/{image_id}")
+    async def remove_image(session_id: str, image_id: str):
+        require_session(session_id)
+        try:
+            await asyncio.to_thread(images.remove, session_id, image_id)
+        except (ValueError, ImageError):
+            raise HTTPException(409, "图片已经发送或已移除，请刷新当前会话。") from None
+        return {"removed": True}
+
     @app.post("/api/sessions/{session_id}/actions")
     async def ui_action(session_id: str, body: UserActionRequest):
         require_session(session_id)
@@ -226,10 +270,11 @@ def create_app(config: PlaygroundConfig | None = None, *, service=None, agent=No
 
     @app.delete("/api/sessions/{session_id}")
     async def delete_session(session_id: str):
-        require_session(session_id)
+        state = require_session(session_id)
         if session_id in manager.active:
             raise HTTPException(409, "请先停止这段对话。")
-        repo.delete(session_id)
+        removed = repo.delete(session_id)
+        await asyncio.to_thread(images.remove_session_files, removed or state)
         return {"deleted": True}
 
     @app.post("/api/sessions/{session_id}/turn")
@@ -237,10 +282,14 @@ def create_app(config: PlaygroundConfig | None = None, *, service=None, agent=No
         require_session(session_id)
         if agent is None:
             raise HTTPException(503, "智能体尚未配置，请检查应用 .env 中的数据库、模型和 API Key。")
+        if body.images and not settings.supports_images:
+            raise HTTPException(422, "当前模型没有开启图片能力。")
         try:
             active, replay = await manager.begin(session_id, body.message, retry=body.retry, request_id=body.request_id,
                                                  ui_snapshot=body.ui_snapshot.model_dump(mode="json")
-                                                 if body.ui_snapshot is not None else None)
+                                                 if body.ui_snapshot is not None else None, image_ids=body.images)
+        except ImageError:
+            raise HTTPException(422, "图片未上传或不属于当前会话，请重新上传。") from None
         except TurnConflict as error:
             raise HTTPException(409, str(error)) from None
 

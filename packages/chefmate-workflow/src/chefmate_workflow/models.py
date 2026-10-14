@@ -100,6 +100,8 @@ class StepView(StrictModel):
     instruction: str
     status: StepStatus = "pending"
     timer_seconds: int | None = None
+    adapted_instruction: str | None = None
+    adaptation_reason: str | None = None
 
 
 class RecipeView(StrictModel):
@@ -163,6 +165,7 @@ class PrepData(StrictModel):
     items: list[IngredientView]
     recipe_ids: list[str] | None = None
     notes: list[str] = Field(default_factory=list)
+    guidance: list[str] = Field(default_factory=list)
 
 
 class CookingData(StrictModel):
@@ -170,6 +173,7 @@ class CookingData(StrictModel):
     recipe_name: str | None
     steps: list[StepView]
     active_step_id: str | None
+    guidance: list[str] = Field(default_factory=list)
 
 
 class TimersData(StrictModel):
@@ -262,6 +266,13 @@ class UISnapshot(StrictModel):
     recent_actions: list[ActionRecord] = Field(default_factory=list)
 
 
+class CookingAdaptation(StrictModel):
+    recipe_id: Text
+    step_id: Text | None = None
+    instruction: Annotated[str, Field(min_length=1, max_length=2000)]
+    reason: Annotated[str, Field(min_length=1, max_length=500)]
+
+
 class WorkspaceState(StrictModel):
     schema_version: Literal[1] = 1
     revision: Annotated[int, Field(ge=0)] = 0
@@ -277,6 +288,7 @@ class WorkspaceState(StrictModel):
     timers: list[TimerState] = Field(default_factory=list)
     components: list[ViewComponent] = Field(default_factory=list)
     recent_actions: list[ActionRecord] = Field(default_factory=list)
+    adaptations: list[CookingAdaptation] = Field(default_factory=list)
 
 
 class UIAction(StrictModel):
@@ -346,6 +358,13 @@ class TimerInput(ToolInput):
 
 class StageInput(ToolInput):
     stage: Stage
+
+
+class AdaptCookingInput(ToolInput):
+    recipe_id: Text
+    step_id: Text | None = Field(default=None, description="当前任务里的真实步骤ID；null表示这道菜的通用备菜/烹饪建议。")
+    instruction: Annotated[str, Field(min_length=1, max_length=2000)]
+    reason: Annotated[str, Field(min_length=1, max_length=500)]
 
 
 class ActionBase(StrictModel):
@@ -441,4 +460,5 @@ TOOL_REQUEST_MODELS = {
     "show_meal_plan": EmptyInput, "show_shopping_list": ChecklistInput, "show_prep_checklist": ChecklistInput,
     "show_cooking_guide": CookingGuideInput, "set_cooking_timer": TimerInput,
     "show_timers": EmptyInput, "get_cooking_workspace": EmptyInput, "advance_cooking_stage": StageInput,
+    "update_cooking_guidance": AdaptCookingInput,
 }

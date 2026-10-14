@@ -11,6 +11,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from chefmate_agent import AgentConfig, ChefMateAgent, InjectedToolSpec, SkillRegistry
 from test_agent import REQUESTS, ScriptedModel, Service, answer, tool
+from uuid import uuid4
 
 
 class UISnapshot(BaseModel):
@@ -34,6 +35,50 @@ class EmptyInput(BaseModel):
 def make_core(responses, **kwargs):
     model = ScriptedModel(responses)
     return ChefMateAgent(Service(), AgentConfig(model="test"), model=model, request_models=REQUESTS, **kwargs), model
+
+
+def image_ref():
+    return {"id":str(uuid4()),"name":"test.jpg","mime_type":"image/jpeg","width":20,"height":10,"byte_size":10}
+
+
+def test_images_are_native_request_blocks_and_only_metadata_is_persisted():
+    reference=image_ref();model=ScriptedModel([answer("看见了图片。")])
+    core=ChefMateAgent(Service(),AgentConfig(model="test",supports_images=True),model=model,request_models=REQUESTS)
+    result=asyncio.run(core.run_turn([{"role":"user","content":"","images":[reference]}],
+                                   image_loader=lambda ref:"data:image/jpeg;base64,/9j/test"))
+    assert result.status=="completed"
+    message=model.histories[0][1]
+    assert message.content[1]["type"]=="image_url"
+    assert message.content[1]["image_url"]["url"].startswith("data:image/jpeg;base64,")
+    assert result.messages[0]["images"]==[reference] and result.messages[0]["content"]==""
+    assert "base64" not in json.dumps(result.model_dump(mode="json"))
+    disabled,plain=make_core([answer("无法看图片。")])
+    rejected=asyncio.run(disabled.run_turn([{"role":"user","content":"查看","images":[reference]}]))
+    assert rejected.error.code=="images_not_supported" and plain.histories==[]
+    replay=asyncio.run(disabled.run_turn([*result.messages,{"role":"user","content":"继续聊"}]))
+    assert replay.status=="completed" and isinstance(plain.histories[0][1].content,str)
+    assert "当前模型未开启图片能力" in plain.histories[0][1].content
+
+
+def test_image_history_budget_prunes_complete_old_turns():
+    core,_=make_core([])
+    source=[]
+    for label in ("one","two","three"):
+        source.append({"role":"user","content":label,"images":[image_ref() for _ in range(3)]})
+        if label!="three":source.append({"role":"assistant","content":"收到"})
+    prepared=core._prepare_history(source)
+    assert prepared[0]["content"]=="two"
+    assert sum(len(item.get("images",[])) for item in prepared)==6
+
+
+def test_missing_image_is_reported_before_any_provider_request():
+    model=ScriptedModel([])
+    core=ChefMateAgent(Service(),AgentConfig(model="test",supports_images=True),model=model,request_models=REQUESTS)
+    def unavailable(reference):
+        raise FileNotFoundError('removed')
+    result=asyncio.run(core.run_turn([{"role":"user","content":"查看","images":[image_ref()]}],image_loader=unavailable))
+    assert result.error.code=='image_unavailable'
+    assert model.histories==[]
 
 
 def test_stable_catalog_still_denies_stage_restricted_execution():

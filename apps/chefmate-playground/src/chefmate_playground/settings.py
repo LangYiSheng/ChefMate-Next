@@ -14,7 +14,7 @@ from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator
 from .config import APP_ROOT
 
 SKILLS = ("meal-planning", "pantry-preparation", "cooking-guide")
-PERSISTED = {"model", "base_url", "api_key", "api_format", "stream_tool_calls", "enabled_skills",
+PERSISTED = {"model", "base_url", "api_key", "api_format", "stream_tool_calls", "supports_images", "enabled_skills",
              "turn_timeout_s", "model_timeout_s", "model_max_retries", "max_model_rounds", "max_tool_calls",
              "max_history_chars", "max_tool_result_chars"}
 
@@ -26,6 +26,7 @@ class ModelSettings(BaseModel):
     api_key: SecretStr | None = Field(default=None, repr=False)
     api_format: str = "chat_completions"
     stream_tool_calls: bool = False
+    supports_images: bool = False
 
     @field_validator("model")
     @classmethod
@@ -80,7 +81,7 @@ def load_overrides(config):
     if not isinstance(values, dict) or set(values) - PERSISTED:
         raise ValueError("本地设置文件无效")
     model_values = {key: values.get(key, getattr(config, key)) for key in
-                    ("model", "base_url", "api_key", "api_format", "stream_tool_calls")}
+                    ("model", "base_url", "api_key", "api_format", "stream_tool_calls", "supports_images")}
     model_name = model_values["model"]
     model_values["model"] = model_name or "unconfigured"
     model = ModelSettings.model_validate(model_values)
@@ -116,7 +117,7 @@ def public_settings(config):
     revision = hashlib.sha256(json.dumps(payload, sort_keys=True, default=list).encode()).hexdigest()
     payload.pop("api_key")
     return {"revision": revision,
-            "model": {key: payload[key] for key in ("model", "base_url", "api_format", "stream_tool_calls")},
+            "model": {key: payload[key] for key in ("model", "base_url", "api_format", "stream_tool_calls", "supports_images")},
             "api_key_set": bool(config.api_key), "enabled_skills": list(config.enabled_skills),
             "available_skills": list(SKILLS),
             "runtime": {key: payload[key] for key in RuntimeSettings.model_fields},
@@ -157,6 +158,7 @@ def build_agent(config, service):
     agent = ChefMateAgent(service, AgentConfig(
         model=config.model, api_key=config.api_key, base_url=config.base_url,
         use_responses_api=config.api_format == "responses", stream_tool_calls=config.stream_tool_calls,
+        supports_images=config.supports_images,
         turn_timeout_s=config.turn_timeout_s, model_timeout_s=config.model_timeout_s,
         max_model_retries=config.model_max_retries, max_model_rounds=config.max_model_rounds,
         max_tool_calls=config.max_tool_calls,

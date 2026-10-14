@@ -31,6 +31,7 @@ TOOL_DESCRIPTIONS = {
     "show_timers": "展示已保存的计时器，用户可暂停、继续或取消，刷新不会丢失截止时间。",
     "get_cooking_workspace": "读取用户最新表单、选菜、备菜勾选、步骤和计时状态；版本冲突后先读取，不覆盖用户修改。",
     "advance_cooking_stage": "按照真实任务状态推进或回退做饭阶段；备菜/完成条件由业务服务强制校验。",
+    "update_cooking_guidance": "根据用户明确补充的条件调整当前任务的备菜/步骤指导。recipe_id/step_id来自已选餐单。instruction为建议做法、reason为调整原因；保留原步骤、真实用量和勾选/完成状态，不修改源菜谱，不编造未知量。",
 }
 
 TOOL_STAGES = {
@@ -40,6 +41,7 @@ TOOL_STAGES = {
     "show_prep_checklist": ("planning", "shopping", "prep", "cooking"),
     "show_cooking_guide": ("planning", "shopping", "prep", "cooking", "completed"),
     "set_cooking_timer": ("cooking",),
+    "update_cooking_guidance": ("planning", "shopping", "prep", "cooking"),
 }
 
 

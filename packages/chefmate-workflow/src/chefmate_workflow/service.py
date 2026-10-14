@@ -14,7 +14,7 @@ from chefmate_storage.queries import NUTRIENTS
 from .models import (
     TOOL_REQUEST_MODELS, ActionRecord, ApprovedRecipeRef, CompactComponentSnapshot,
     CookingData, CookingGuide, FrozenRecipe, IngredientView, MealPlan, PreferenceField, PreferenceForm,
-    PreferenceFormData, PreferenceValues, PrepChecklist, PrepData, ProgressData, RecipeChoices,
+    CookingAdaptation, PreferenceFormData, PreferenceValues, PrepChecklist, PrepData, ProgressData, RecipeChoices,
     RecipeDetail, RecipeDetailData, RecipeListData, RecipeView, ShoppingData, ShoppingItem, ShoppingList,
     SourceInfo, StepView, TaskProgress, TimerState, Timers, TimersData, UIAction, UISnapshot,
     UserActionRequest, WorkspaceState,
@@ -33,6 +33,7 @@ TOOL_DESCRIPTIONS = {
     "show_timers": "展示当前计时器与剩余时间，刷新和重启后依据截止时间继续。",
     "get_cooking_workspace": "读取餐单、阶段、用户已确认操作和界面短快照。",
     "advance_cooking_stage": "显式推进或回退厨房阶段；备料未确认或步骤未完成时拒绝越级。",
+    "update_cooking_guidance": "按用户条件为当前任务追加备菜或步骤建议，保留冻结原步骤及真实进度。",
 }
 PREP_NOTE = "源菜谱没有可靠的必选/可选字段；这里逐项展示原文，跳过需由用户明确确认，不代表已证明可省略。"
 FIELD_META = {
@@ -285,13 +286,21 @@ class WorkflowService:
                                 recipe_ids=component.data.recipe_ids, notes=[PREP_NOTE])
         if kind == "prep_checklist":
             return PrepData(items=self._prep_items(state, component.data.recipe_ids),
-                            recipe_ids=component.data.recipe_ids, notes=[PREP_NOTE])
+                            recipe_ids=component.data.recipe_ids, notes=[PREP_NOTE],
+                            guidance=[note.instruction for note in state.adaptations if note.step_id is None
+                                      and (component.data.recipe_ids is None or note.recipe_id in component.data.recipe_ids)])
         if kind == "cooking_guide":
             identity = state.active_recipe_id
             recipe = self._find_recipe(state, identity) if identity else None
             view = self._recipe_view(recipe, state) if recipe else None
+            if view:
+                for step in view.steps:
+                    note = next((note for note in state.adaptations if note.recipe_id == identity and note.step_id == step.id), None)
+                    if note:
+                        step.adapted_instruction, step.adaptation_reason = note.instruction, note.reason
             return CookingData(recipe_id=identity, recipe_name=view.name if view else None,
-                               steps=view.steps if view else [], active_step_id=state.active_step_id)
+                               steps=view.steps if view else [], active_step_id=state.active_step_id,
+                               guidance=[note.instruction for note in state.adaptations if note.recipe_id == identity and note.step_id is None])
         if kind == "timers":
             return TimersData(timers=state.timers)
         items = self._prep_items(state)
@@ -334,12 +343,13 @@ class WorkflowService:
             elif view.kind == "prep_checklist":
                 data = {"items": [{key: item[key] for key in ("id", "recipe_id", "canonical_name", "status",
                                   "amount_text", "amount_value", "unit", "scaled", "estimated")}
-                                  for item in raw["items"]], "recipe_ids": raw["recipe_ids"]}
+                                  for item in raw["items"]], "recipe_ids": raw["recipe_ids"], "guidance": raw["guidance"]}
             elif view.kind == "cooking_guide":
                 data = {"recipe_id": raw["recipe_id"], "active_step_id": raw["active_step_id"],
                         "steps": [{"id": step["id"], "ordinal": step["ordinal"], "status": step["status"]}
                                   for step in raw["steps"]],
                         "current_step": next((step for step in raw["steps"] if step["id"] == raw["active_step_id"]), None)}
+                data["guidance"] = raw["guidance"]
             else:
                 data = raw
             components.append(CompactComponentSnapshot(id=view.id, kind=view.kind, title=view.title,
@@ -469,6 +479,7 @@ class WorkflowService:
         state.step_status = {}
         state.shopping_checked = []
         state.timers = []
+        state.adaptations = []
         state.active_recipe_id = state.meal_plan[0].recipe_id if state.meal_plan else None
         first = self._recipe_view(state.meal_plan[0], state).steps if state.meal_plan else []
         state.active_step_id = first[0].id if first else None
@@ -499,6 +510,7 @@ class WorkflowService:
         if stage == "idea":
             state.meal_plan, state.prep_status, state.step_status, state.shopping_checked = [], {}, {}, []
             state.active_recipe_id, state.active_step_id, state.timers = None, None, []
+            state.adaptations = []
             state.components = [view for view in state.components if view.kind == "preference_form"]
         if stage == "cooking":
             recipe = self._find_recipe(state, state.active_recipe_id or state.meal_plan[0].recipe_id)
@@ -651,6 +663,28 @@ class WorkflowService:
                         state.active_step_id = steps[0].id if steps else None
                 return self._show(state, CookingGuide, "烹饪步骤", CookingData(recipe_id=state.active_recipe_id,
                     recipe_name=None, steps=[], active_step_id=state.active_step_id))
+            if name == "update_cooking_guidance":
+                if state.stage not in {"planning", "shopping", "prep", "cooking"}:
+                    raise DomainConflict("stage_conflict", "请先确认本次餐单。")
+                recipe = self._find_recipe(state, validated.recipe_id)
+                if validated.step_id is not None and validated.step_id not in {step.id for step in self._recipe_view(recipe, state).steps}:
+                    raise DomainConflict("invalid_reference", "步骤不属于当前任务菜谱。")
+                note = CookingAdaptation(recipe_id=validated.recipe_id, step_id=validated.step_id,
+                                         instruction=validated.instruction, reason=validated.reason)
+                state.adaptations = [item for item in state.adaptations if (item.recipe_id, item.step_id) != (note.recipe_id, note.step_id)]
+                state.adaptations.append(note)
+                state.adaptations = state.adaptations[-20:]
+                if state.stage == "cooking" or note.step_id is not None:
+                    state.active_recipe_id = recipe.recipe_id
+                    steps = self._recipe_view(recipe, state).steps
+                    if note.step_id is not None:
+                        state.active_step_id = note.step_id
+                    elif state.active_step_id not in {step.id for step in steps}:
+                        state.active_step_id = next((step.id for step in steps if step.status != "done"), steps[0].id if steps else None)
+                    return self._ensure_component(state, CookingGuide, "烹饪步骤", CookingData(
+                        recipe_id=recipe.recipe_id, recipe_name=None, steps=[], active_step_id=state.active_step_id))
+                return self._ensure_component(state, PrepChecklist, "逐项确认备料", PrepData(
+                    items=self._prep_items(state, [recipe.recipe_id]), recipe_ids=[recipe.recipe_id], notes=[PREP_NOTE]))
             if name == "set_cooking_timer":
                 return self._start_timer(state, args, validated.basis)
             if name == "show_timers":

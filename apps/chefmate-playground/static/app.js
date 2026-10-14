@@ -1,7 +1,11 @@
 import { WorkspaceController } from './workspace.js';
 import { renderView } from './ui-components.js';
 import { messageViews, legacyRecipeItems } from './ui-protocol.js';
-import { STAGE_NAMES, VIEW_LABELS, TOOL_NAMES, viewSummary, activityRows, latestActivity } from './presentation.js';
+import { STAGE_NAMES, VIEW_LABELS, TOOL_NAMES, viewSummary, activityRows, latestActivity, conversationLabel, snapshotStatus } from './presentation.js';
+import {brandImage,applyBranding} from './branding.js';
+import {CookingFocus} from './focus.js';
+import {compressImage,imageURL,MAX_IMAGES} from './image-input.js';
+applyBranding();
 
 const $ = (id) => document.getElementById(id);
 const ui = Object.fromEntries([
@@ -12,14 +16,16 @@ const ui = Object.fromEntries([
   'drawer-backdrop', 'toast', 'announcer', 'open-sidebar', 'toggle-details',
   'workspace-tab', 'workspace-content', 'workspace-context', 'skills-tab', 'skills-content',
   'conversation-stage',
+  'attach-image','image-input','image-drafts','image-status','composer-choices',
 ].map((id) => [id, $(id)]));
 
 const state = {
   status: null, sessions: [], currentId: null, cache: new Map(), drafts: new Map(),
   runs: new Map(), selectionEpoch: 0, sessionsEpoch: 0, detailEpoch: 0,
   detailAbort: null, detailOpen: false, sidebarOpen: false, tab: 'query',
-  selectedRecipe: null, remotePoll: null, renderFrame: null, creating: false, preparing: false, skills: [], skillsEpoch: 0,
+  selectedRecipe: null, remotePoll: null, renderFrame: null, creating: false, preparing: false, initializing:true, skills: [], skillsEpoch: 0,
   traceMode: readTraceMode(), developer: readDeveloper(), uiPreferences: readUIPreferences(),
+  imageDrafts:new Map(),imageUploads:new Map(),
 };
 function readDeveloper() { try { return JSON.parse(localStorage.getItem('chefmate:developer-settings') || '{}').enabled === true; } catch { return false; } }
 function readTraceMode() { try { return JSON.parse(localStorage.getItem('chefmate:developer-settings') || '{}').trace_mode === 'detailed' ? 'detailed' : 'compact'; } catch { return 'compact'; } }
@@ -30,6 +36,7 @@ function refreshDisplayPreferences() {
   ui['query-tab'].hidden=!state.developer;ui['skills-tab'].hidden=!state.developer;
   if (!state.developer && ['query','skills'].includes(state.tab)) setTab('workspace');
   document.body.classList.toggle('compact-density',state.uiPreferences.density==='compact');
+  applyBranding();
   renderConversation();
 }
 window.addEventListener('pageshow',refreshDisplayPreferences);
@@ -55,6 +62,8 @@ const workspace = new WorkspaceController({
   },
   openPanel: (tab) => { setDetails(true); setTab(tab); },
 });
+const cookingFocus=new CookingFocus(workspace,{session:currentSession,onChange:updateComposer});
+workspace.onFocus=(view,id)=>{setSidebar(false);setDetails(false);cookingFocus.open(view,id);};
 
 function element(tag, className, text) {
   const node = document.createElement(tag);
@@ -117,16 +126,65 @@ async function api(path, options = {}) {
 }
 
 function currentSession() { return state.cache.get(state.currentId); }
+function hasRetry(message) { return message.retryMessage!=null && (Boolean(message.retryMessage) || Boolean(message.retryImages?.length)); }
+function renderComposerActions() {
+  const actions=workspace.composerActions(state.currentId);
+  ui['composer-choices'].hidden=!actions.length;ui['composer-choices'].replaceChildren();
+  if(actions[0]?.context)ui['composer-choices'].append(element('span','choice-context',actions[0].context));
+  for(const action of actions) {
+    const button=element('button','composer-choice',action.label);button.type='button';button.disabled=Boolean(action.disabled || busy());
+    button.addEventListener('click',()=>Promise.resolve(action.run()).catch(error=>toast(error.message || '操作没有保存，请复核。')));
+    ui['composer-choices'].append(button);
+  }
+}
+function renderImageDrafts() {
+  const id=state.currentId,images=state.imageDrafts.get(id) || [],uploading=state.imageUploads.get(id) || 0;
+  ui['image-drafts'].hidden=!images.length;ui['image-drafts'].replaceChildren();
+  ui['image-status'].hidden=!uploading;ui['image-status'].textContent=uploading?'正在压缩并上传图片…':'';
+  for(const image of images) {
+    const tile=element('div','attachment-draft'),preview=element('img');preview.src=imageURL(id,image);preview.alt=image.name;
+    const remove=element('button','','×');remove.type='button';remove.setAttribute('aria-label',`移除图片：${image.name}`);remove.disabled=busy(id) || state.preparing;
+    remove.addEventListener('click',async()=>{
+      try {
+        await api(imageURL(id,image),{method:'DELETE'});
+        state.imageDrafts.set(id,(state.imageDrafts.get(id) || []).filter(item=>item.id!==image.id));
+        if(id===state.currentId)updateComposer();
+      }catch(error){toast(error.message);}
+    });
+    tile.append(preview,remove,element('small','',`${image.width}×${image.height} · ${Math.round(image.byte_size/1024)} KB`));ui['image-drafts'].append(tile);
+  }
+}
+async function uploadImages(files) {
+  if(!files.length || state.initializing || state.preparing || busy() || !state.status?.supports_images)return;
+  let id=state.currentId;
+  if(!id)id=await newSession();
+  if(!id)return;
+  if(state.imageUploads.has(id)){toast('图片正在处理，请稍等再添加。');return;}
+  const current=state.imageDrafts.get(id) || [];
+  if(current.length+files.length>MAX_IMAGES){toast('每条消息最多三张图片。');return;}
+  state.imageUploads.set(id,files.length);updateComposer();
+  try {
+    for(const file of files) {
+      const blob=await compressImage(file);
+      const image=await api(`/api/sessions/${encodeURIComponent(id)}/images?name=${encodeURIComponent(file.name)}`,{
+        method:'POST',headers:{'Content-Type':'image/jpeg'},body:blob});
+      state.imageDrafts.set(id,[...(state.imageDrafts.get(id) || []),image]);
+    }
+  }catch(error){toast(error.message || '图片上传失败，请重新选择。');}
+  finally{state.imageUploads.delete(id);if(id===state.currentId)updateComposer();}
+}
 function updateConversationState() {
   const snapshot = workspace.snapshot(state.currentId);
   const stage = snapshot?.stage || currentSession()?.conversation_state?.stage;
   ui['conversation-stage'].hidden = !stage || !state.currentId;
-  ui['conversation-stage'].textContent = STAGE_NAMES[stage] || '厨房会话';
+  const status=snapshot?snapshotStatus(snapshot):currentSession()?.conversation_state || {};
+  ui['conversation-stage'].textContent = conversationLabel(status);
+  ui['conversation-stage'].title=conversationLabel(status);
   if (snapshot) {
     const item = state.sessions.find(item => item.id === state.currentId);
-    if (item) item.conversation_state = {stage:snapshot.stage};
+    if (item) item.conversation_state = status;
     const badge = ui.sessions.querySelector(`[data-session-id="${CSS.escape(state.currentId)}"] .session-stage`);
-    if (badge) badge.textContent = STAGE_NAMES[stage] || '厨房会话';
+    if (badge) {badge.textContent = conversationLabel(status);badge.title=badge.textContent;}
   }
 }
 function busy(id = state.currentId) { return state.runs.has(id) || Boolean(state.cache.get(id)?.running); }
@@ -143,7 +201,12 @@ function updateComposer() {
   ui['send-button'].hidden = running;
   ui['stop-button'].hidden = !running;
   ui['stop-button'].disabled = Boolean(localRun?.cancelling);
-  ui['send-button'].disabled = !ready || state.creating || state.preparing || !ui['composer-input'].value.trim() || !workspace.canSubmit(state.currentId);
+  const imageDraft=state.imageDrafts.get(state.currentId) || [],uploading=state.imageUploads.get(state.currentId) || 0;
+  ui['send-button'].disabled = state.initializing || !ready || state.creating || state.preparing || uploading ||
+    (!ui['composer-input'].value.trim() && !imageDraft.length) || (imageDraft.length && !state.status?.supports_images) || !workspace.canSubmit(state.currentId);
+  ui['attach-image'].hidden=!state.status?.supports_images;
+  ui['attach-image'].disabled=state.initializing || !ready || running || state.creating || state.preparing || uploading || imageDraft.length>=MAX_IMAGES;
+  renderImageDrafts();renderComposerActions();cookingFocus.refresh();
   ui['composer-input'].disabled = state.creating;
   ui['turn-status'].hidden = !running;
   ui['turn-status'].textContent = localRun?.cancelling ? '正在停止，请稍等…'
@@ -193,7 +256,8 @@ function renderSessions() {
     const link = element('button', 'session-link', title || '新会话');
     link.type = 'button';
     link.setAttribute('aria-label', title || '新会话');
-    link.append(element('small','session-stage',STAGE_NAMES[session.conversation_state?.stage] || '想吃什么'));
+    const stageLabel=conversationLabel(session.conversation_state || {});
+    const badge=element('small','session-stage',stageLabel);badge.title=stageLabel;link.append(badge);
     link.title = title || '新会话';
     link.setAttribute('aria-current', session.id === state.currentId ? 'page' : 'false');
     link.addEventListener('click', () => openSession(session.id));
@@ -280,6 +344,7 @@ async function newSession() {
       await openSession(session.id);
       ui['composer-input'].focus();
     }
+    return session.id;
   } catch (error) { toast(error.message); }
   finally { state.creating = false; ui['new-chat'].disabled = false; updateComposer(); }
 }
@@ -316,6 +381,7 @@ function normalizeSession(session) {
     const message = { role: 'assistant', content: result.text || '', tool_calls: (result.tool_calls || []).map(normalizeToolCall),
       recipes: result.recipes || [], snapshot: result.snapshot, actions: result.actions || [], process: result.process || [], usage:result.usage, cancelled,
       retryMessage: session.last_error?.retryable === false ? null : lastUser?.content };
+    message.retryImages=lastUser?.images || [];
     if (!cancelled) message.error = session.last_error?.message
       || (session.last_status === 'interrupted' ? '服务重启中断了这次执行，可以重试。' : '这次执行没有完成，可以重试。');
     messages.push(message);
@@ -324,6 +390,7 @@ function normalizeSession(session) {
 }
 
 async function openSession(id) {
+  if(cookingFocus.active?.sessionId!==id)cookingFocus.close();
   persistDraft();
   const epoch = ++state.selectionEpoch;
   state.currentId = id;
@@ -561,14 +628,22 @@ function renderConversation(forceScroll = false) {
     if (message.role === 'user') {
       const node = element('article', 'message user');
       node.setAttribute('aria-label', '你的消息');
-      node.append(element('div', 'user-bubble', message.content));
+      if(message.content)node.append(element('div', 'user-bubble', message.content));
+      if(message.images?.length) {
+        const images=element('div','message-images');
+        for(const image of message.images) {
+          const link=element('a');link.href=imageURL(state.currentId,image);link.target='_blank';link.rel='noopener';
+          const preview=element('img');preview.src=link.href;preview.alt=image.name;preview.loading='lazy';
+          link.append(preview);images.append(link);
+        }node.append(images);
+      }
       ui.messages.append(node);
       continue;
     }
     const node = element('article', 'message assistant');
     node.setAttribute('aria-label', 'ChefMate 的回复');
     const heading = element('div', 'assistant-heading');
-    heading.append(element('span', 'assistant-mark', '✳'), element('span', '', 'ChefMate'));
+    heading.append(brandImage('assistant-icon'), element('span', '', 'ChefMate'));
     node.append(heading);
     const body = element('div', 'assistant-body');
     const processOnly = message.streaming && !message.resultComplete || Boolean(message.error || message.cancelled);
@@ -607,7 +682,7 @@ function renderConversation(forceScroll = false) {
     }
     if (message.error) {
       const error = element('div', 'error-box', safeText(message.error));
-      if (message.retryMessage && !busy()) {
+      if (hasRetry(message) && !busy()) {
         const retry = element('button', 'retry-button', '重试这次请求');
         retry.type = 'button';
         retry.addEventListener('click', () => sendMessage(message.retryMessage, !message.retryAsNew, message));
@@ -617,7 +692,7 @@ function renderConversation(forceScroll = false) {
     }
     if (message.cancelled) {
       const note = element('div', 'message-meta', '本次执行已停止。');
-      if (message.retryMessage && !busy()) {
+      if (hasRetry(message) && !busy()) {
         const retry = element('button', 'retry-button', '重新执行');
         retry.type = 'button'; retry.addEventListener('click', () => sendMessage(message.retryMessage, !message.retryAsNew, message));
         note.append(document.createTextNode(' '), retry);
@@ -628,6 +703,7 @@ function renderConversation(forceScroll = false) {
   }
   if (nearBottom || forceScroll) ui.conversation.scrollTop = ui.conversation.scrollHeight;
   updateConversationState();
+  cookingFocus.refresh();
 }
 
 function scheduleRender(id) {
@@ -753,7 +829,9 @@ function applyEvent(run, event) {
 
 async function sendMessage(text, retry = false, replacedMessage = null) {
   const input = text.trim();
-  if (!input || busy() || state.creating || state.preparing) return;
+  const draftImages=replacedMessage?.retryImages || state.imageDrafts.get(state.currentId) || [];
+  if (state.initializing || (!input && !draftImages.length) || busy() || state.creating || state.preparing || state.imageUploads.get(state.currentId)) return;
+  if(draftImages.length && !state.status?.supports_images){toast('当前模型没有开启图片能力。');return;}
   if (!state.status?.ready) { toast('请先完成模型与数据库连接。'); return; }
   if (input.length > 8000) { toast('消息最多 8000 个字符，请缩短后发送。'); return; }
   let id = state.currentId;
@@ -791,11 +869,12 @@ async function sendMessage(text, retry = false, replacedMessage = null) {
     const last = session.messages.at(-1);
     if (last?.role === 'assistant' && (last.error || last.cancelled) && last.retryMessage === input) session.messages.pop();
   }
-  if (!(retry && session.messages.at(-1)?.role === 'user' && session.messages.at(-1)?.content === input)) session.messages.push({ role: 'user', content: input });
+  if (!(retry && session.messages.at(-1)?.role === 'user' && session.messages.at(-1)?.content === input)) session.messages.push({ role: 'user', content: input,images:draftImages });
   const assistant = { role: 'assistant', content: '', recipes: [], tool_calls: [], actions: [], skills: [], process: [], streaming: true };
+  assistant.retryImages=draftImages;
   session.messages.push(assistant);
   session.running = true;
-  if (blankTitle(session.title)) session.title = input.slice(0, 26);
+  if (blankTitle(session.title)) session.title = input.slice(0, 26) || '图片对话';
   const controller = new AbortController();
   const run = { sessionId: id, controller, message: assistant, input, requestId: crypto.randomUUID(),
     status: '正在理解需求…', done: false, resultReceived: false, httpRejected: false };
@@ -811,13 +890,14 @@ async function sendMessage(text, retry = false, replacedMessage = null) {
   try {
     const response = await fetch(`/api/sessions/${encodeURIComponent(id)}/turn`, {
       method: 'POST', headers: { 'Content-Type': 'application/json', Accept: 'text/event-stream' },
-      body: JSON.stringify({ message: input, request_id: run.requestId, retry, ui_snapshot: uiSnapshot }), signal: controller.signal,
+      body: JSON.stringify({ message: input, request_id: run.requestId, retry, ui_snapshot: uiSnapshot,images:draftImages.map(image=>image.id) }), signal: controller.signal,
     });
     if (!response.ok) {
       run.httpRejected = true;
       const payload = await response.json().catch(() => null);
       throw new Error(safeText(typeof payload?.detail === 'string' ? payload.detail : payload?.message || `请求失败（${response.status}）。`));
     }
+    state.imageDrafts.delete(id);updateComposer();
     await readEvents(response, (event) => applyEvent(run, event));
     if (!run.resultReceived && !run.failed && !assistant.cancelled && (!run.done || run.terminalStatus === 'completed')) throw new Error('连接在结果返回前中断，正在恢复执行状态。');
     if (assistant.cancelled) assistant.retryMessage = input;
@@ -1073,6 +1153,14 @@ ui['composer-input'].addEventListener('keydown', (event) => {
   }
 });
 ui['new-chat'].addEventListener('click', newSession);
+ui['attach-image'].addEventListener('click',()=>ui['image-input'].click());
+ui['image-input'].addEventListener('change',()=>{
+  const files=[...ui['image-input'].files];ui['image-input'].value='';uploadImages(files);
+});
+ui['composer-input'].addEventListener('paste',event=>{
+  const files=[...(event.clipboardData?.files || [])];
+  if(files.length && state.status?.supports_images){event.preventDefault();uploadImages(files);}
+});
 ui['stop-button'].addEventListener('click', cancelTurn);
 ui['open-sidebar'].addEventListener('click', () => setSidebar(true));
 $('close-sidebar').addEventListener('click', () => { setSidebar(false); ui['open-sidebar'].focus(); });
@@ -1119,6 +1207,7 @@ async function initialize() {
   if (results[1].status === 'rejected') toast('会话列表暂时无法读取，请刷新页面重试。');
   const initial = state.sessions.find(session=>session.id===storedSession()) || state.sessions[0];
   if (initial && epoch === state.selectionEpoch && !state.creating && !state.currentId) await openSession(initial.id);
+  state.initializing=false;
   updateComposer();
 }
 initialize();

@@ -79,6 +79,64 @@ export class WorkspaceController {
     const entry = this.entries.get(id);
     return Boolean(entry && (entry.saving || entry.failedRequest || entry.conflict || Object.keys(entry.drafts).length));
   }
+  composerActions(id = this.activeId) {
+    if(!id)return [];
+    const entry=this.entry(id),actions=[];
+    for(const [viewId,draft] of Object.entries(entry.drafts)) {
+      const view=entry.views.find(item=>item.id===viewId);
+      if(!view || !view.editable)continue;
+      if(draft.kind==='preference_form') {
+        actions.push({label:draft.conflict?'复核后保存条件':'保存条件',context:'条件已修改',disabled:entry.saving,
+          run:async()=>{
+            for(const form of document.querySelectorAll(`[data-view-id="${view.id}"] form`)) if(!form.reportValidity())return;
+            await this.savePreferences(view,draft.values,id);
+          }});
+      } else if(draft.kind==='recipe_choices') {
+        const locked=['prep','cooking','completed'].includes(entry.snapshot?.stage);
+        actions.push({label:draft.conflict?'复核后确认菜品':'确认菜品',context:`已选${draft.selectedIds?.length || 0}道菜`,
+          disabled:entry.saving || locked || !draft.selectedIds?.length || draft.selectedIds.length>4,
+          run:()=>this.saveSelection(view,draft.selectedIds,id)});
+      } else if(draft.kind==='meal_plan') {
+        actions.push({label:'更新份量',context:'份量已修改',disabled:entry.saving || !['planning','shopping','prep'].includes(entry.snapshot?.stage),
+          run:async()=>{
+            for(const form of document.querySelectorAll(`[data-view-id="${view.id}"] form`))if(!form.reportValidity())return;
+            for(const [recipeId,servings] of Object.entries({...draft.servings})) {
+              const current=entry.views.find(item=>item.kind==='meal_plan');
+              await this.dispatch('change_servings',{recipe_id:recipeId,servings},current,{sessionId:id,
+                revision:draft.conflict?entry.snapshot.revision:draft.baseRevision});
+              delete draft.servings[recipeId];draft.baseline[recipeId]=servings;
+              draft.baseRevision=entry.snapshot.revision;draft.conflict=false;
+              if(!Object.keys(draft.servings).length)delete entry.drafts[viewId];
+              writeDrafts(id,entry.drafts);this.refresh(id);
+            }
+          }});
+      } else if(draft.kind==='timers') {
+        actions.push({label:'开始计时',context:'新计时器',disabled:entry.saving || entry.snapshot?.stage!=='cooking' || !(draft.minutes>=.1 && draft.minutes<=1440),
+          run:async()=>{
+            await this.dispatch('start_timer',{seconds:Math.round(draft.minutes*60),label:draft.label.trim() || '厨房计时'},view,
+              {sessionId:id,revision:draft.conflict?entry.snapshot.revision:draft.baseRevision});
+            for(const [key,value] of Object.entries(entry.drafts))if(value.nonce===draft.nonce)delete entry.drafts[key];
+            writeDrafts(id,entry.drafts);this.refresh(id);
+          }});
+      } else continue;
+      actions.push({label:'放弃修改',disabled:entry.saving,run:()=>this.discardDraft(view,id)});
+    }
+    return actions;
+  }
+  setServingsDraft(view,recipeId,value,id=this.activeId) {
+    const entry=this.entry(id),draft=entry.drafts[view.id] ||= {kind:'meal_plan',servings:{},
+      baseline:Object.fromEntries(view.data.recipes.map(recipe=>[recipe.recipe_id,recipe.target_servings ?? recipe.servings])),baseRevision:view.revision,conflict:false};
+    if(value===draft.baseline[recipeId])delete draft.servings[recipeId];else draft.servings[recipeId]=value;
+    if(!Object.keys(draft.servings).length)delete entry.drafts[view.id];
+    writeDrafts(id,entry.drafts);this.onChange();
+  }
+  setTimerDraft(view,label,minutes,id=this.activeId) {
+    const entry=this.entry(id),prior=entry.drafts[view.id];
+    if(!label.trim() && minutes==null)delete entry.drafts[view.id];
+    else entry.drafts[view.id]={kind:'timers',label,minutes,baseRevision:prior?.baseRevision ?? view.revision,
+      conflict:Boolean(prior?.conflict),nonce:prior?.nonce || crypto.randomUUID()};
+    writeDrafts(id,entry.drafts);this.onChange();
+  }
   syncLabel(id = this.activeId) {
     const entry = this.entries.get(id);
     if (!id) return '';
@@ -95,7 +153,7 @@ export class WorkspaceController {
     const entry = this.entry(id);
     // 每次发消息都核对服务端版本；已编辑草稿不会被这次读取覆盖。
     await this.load(id);
-    if (!this.canSubmit(id)) throw new Error('请先复核未保存的修改或确认菜谱选择，再发送消息。');
+    if (!this.canSubmit(id)) throw new Error('请先用输入框上方的候选按钮保存或放弃修改，再发送消息。');
     for (const [viewId, draft] of Object.entries(entry.drafts)) {
       if (draft.kind !== 'preference_form') continue;
       const view = entry.views.find((item) => item.id === viewId && item.kind === 'preference_form');
@@ -140,6 +198,7 @@ export class WorkspaceController {
   discardDraft(view, id = this.activeId) {
     const entry = this.entry(id); delete entry.drafts[view.id];
     entry.autoSaveError = false;
+    entry.viewState[view.id] = {...entry.viewState[view.id], draftEpoch:(entry.viewState[view.id]?.draftEpoch || 0)+1};
     if (entry.conflict?.clearDraft === view.id || entry.conflict?.kind === view.kind) { entry.conflict = null; entry.error = ''; }
     writeDrafts(id, entry.drafts); this.refresh(id);
   }
@@ -219,6 +278,9 @@ export class WorkspaceController {
     return { historical: false, busy: entry.saving, draft, selectedRecipeIds: entry.snapshot?.selected_recipe_ids || [],
         stage: entry.snapshot?.stage,
         activeRecipeId: entry.snapshot?.active_recipe_id,
+        onServings:(origin,recipeId,value)=>this.setServingsDraft(origin,recipeId,value,id),
+        onTimer:(origin,label,minutes)=>this.setTimerDraft(origin,label,minutes,id),
+        openFocus: origin => this.onFocus?.(origin,id),
         mealRecipes: entry.views.find(item => item.kind === 'meal_plan')?.data.recipes ||
           entry.snapshot?.components?.find(item => item.kind === 'meal_plan')?.data.recipes || [],
         viewState: entry.viewState[view.id] ||= {},

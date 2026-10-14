@@ -16,7 +16,7 @@ from langchain_openai import ChatOpenAI
 from langgraph.graph.message import add_messages
 from pydantic import BaseModel, ConfigDict, ValidationError
 
-from .models import AgentConfig, AgentError, AgentTurnResult
+from .models import AgentConfig, AgentError, AgentTurnResult, ImageReference
 from .prompt import SYSTEM_PROMPT
 from .extensions import InjectedToolSpec, ToolExecutionContext
 from .runner import ChefMateMiddleware, TurnRuntimeContext
@@ -417,6 +417,8 @@ class ChefMateAgent:
                 snapshot = message.additional_kwargs.get("chefmate_ui_context")
                 if snapshot is not None:
                     item["ui_context"] = copy.deepcopy(snapshot)
+                if message.additional_kwargs.get("chefmate_images"):
+                    item["images"] = copy.deepcopy(message.additional_kwargs["chefmate_images"])
             elif isinstance(message, ToolMessage):
                 item = {"role": "tool", "content": _text_content(message), "name": message.name,
                         "tool_call_id": message.tool_call_id}
@@ -439,11 +441,28 @@ class ChefMateAgent:
         *,
         ui_context: dict[str, Any] | BaseModel | None = None,
         tool_context: Any = None,
+        image_loader: Callable | None = None,
     ) -> AgentTurnResult:
         original = copy.deepcopy(list(messages))
         context = TurnRuntimeContext(on_event=on_event, host_context=tool_context)
         try:
             working = self._prepare_history(original)
+            if working[-1].get("images") and not self.config.supports_images:
+                raise _AgentFailure("images_not_supported", "当前模型没有开启图片能力，请更换模型或开启支持图片。")
+            if self.config.supports_images:
+                for message in working:
+                    for reference in message.get("images", []):
+                        if reference["id"] in context.image_contents:
+                            continue
+                        if image_loader is None:
+                            raise _AgentFailure("image_unavailable", "图片无法读取，请重新上传。")
+                        try:
+                            value = await asyncio.to_thread(image_loader, reference)
+                        except (ValueError, OSError):
+                            raise _AgentFailure("image_unavailable", "图片无法读取，请重新上传。") from None
+                        if not isinstance(value, str) or not value.startswith("data:image/jpeg;base64,") or len(value) > 2800000:
+                            raise _AgentFailure("image_unavailable", "图片格式无效，请重新上传。")
+                        context.image_contents[reference["id"]] = value
             context.ui_context = self._validate_ui_context(ui_context)
             if context.ui_context:
                 working[-1]["ui_context"] = copy.deepcopy(context.ui_context)
@@ -737,11 +756,16 @@ class ChefMateAgent:
                 raise _AgentFailure("invalid_history", "仅支持文本user、assistant、tool消息。")
             if role != "tool" and pending:
                 raise _AgentFailure("invalid_history", "对话历史含有未完成的工具调用。")
-            if role == "user" and (not content.strip() or len(content) > self.config.max_user_chars):
+            if role == "user" and ((not content.strip() and not message.get("images")) or len(content) > self.config.max_user_chars):
                 raise _AgentFailure("input_limit", "用户消息为空或超过长度限制。")
             clean: dict[str, Any] = {"role": role, "content": content}
             if role == "user" and message.get("ui_context") is not None:
                 clean["ui_context"] = self._validate_ui_context(message["ui_context"])
+            if role == "user" and message.get("images") is not None:
+                images = message["images"]
+                if not isinstance(images, list) or len(images) > 3:
+                    raise _AgentFailure("invalid_history", "每条消息最多支持三张图片。")
+                clean["images"] = [ImageReference.model_validate(item).model_dump(mode="json") for item in images]
             if role == "assistant" and message.get("tool_calls"):
                 clean["tool_calls"] = []
                 for call in message["tool_calls"]:
@@ -768,7 +792,8 @@ class ChefMateAgent:
         if pending or normalized[-1]["role"] != "user":
             raise _AgentFailure("invalid_history", "历史必须以本轮用户消息结束，且工具结果必须完整。")
         # Drop complete older human turns only; never split an assistant/tool batch.
-        while len(_dump(normalized)) > self.config.max_history_chars:
+        while (len(_dump(normalized)) > self.config.max_history_chars
+               or sum(len(message.get("images", [])) for message in normalized) > 6):
             next_user = next((i for i in range(1, len(normalized)) if normalized[i]["role"] == "user"), None)
             if next_user is None:
                 raise _AgentFailure("history_limit", "本轮对话超过上下文预算，请开始新会话。")
@@ -781,6 +806,8 @@ class ChefMateAgent:
         for message in history:
             if message["role"] == "user":
                 extra = {"chefmate_ui_context": copy.deepcopy(message["ui_context"])} if "ui_context" in message else {}
+                if message.get("images"):
+                    extra["chefmate_images"] = copy.deepcopy(message["images"])
                 result.append(HumanMessage(content=message["content"], additional_kwargs=extra))
             elif message["role"] == "tool":
                 result.append(ToolMessage(

@@ -1,0 +1,50 @@
+/* Shared visual language for chat, settings and cooking mode. */
+:root{--text:#303b2e;--muted:#7d8776;--accent:#526b46;--line:#e4e9dd;--border:var(--line);--surface:#fbfcf9;--soft:#f6f8f2;--sidebar-bg:#f4f6ef;--selection:#e8eee0}
+body{font-family:Inter,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;background:#fff;color:var(--text);font-size:14px}
+button,input,select,textarea{font-family:inherit}
+.sidebar,.settings-nav{background:var(--sidebar-bg);border-color:var(--line)}
+.brand,.settings-brand{font-size:19px;font-weight:650;letter-spacing:-.5px;gap:10px;color:var(--text)}
+.settings-brand>span{font-size:19px}.brand-icon{width:34px;height:34px;display:block;flex:none}
+.assistant-icon{width:24px;height:24px;display:block}.welcome-icon{width:68px;height:68px;margin:0 auto 22px}
+.assistant-body,.user-bubble,.ui-step-instruction{color:var(--text)}
+.ui-component-heading h3,.ui-recipe-name,.ui-check-row strong,.ui-plan-recipe>strong{color:#526447}
+.setting-label,.setting-control input,.setting-control select,.ui-input{color:var(--text)}
+.setting-control input,.setting-control select,.ui-input,.composer{background:var(--surface);border-color:var(--line);border-radius:10px}
+.session-row.active,.settings-nav>button[aria-current=page]{background:var(--selection);color:var(--accent)}
+.settings-page{max-width:none;grid-template-columns:220px minmax(0,1fr)}
+.settings-nav{padding:27px 15px 18px;overflow:auto}.settings-header{background:#fff;border-color:var(--line)}
+.settings-workspace{background:#fff}.settings-footer{background:var(--surface);border-color:var(--line)}
+.primary-button,.ui-button{background:var(--accent);color:white;border-radius:9px}
+.settings-note,.setting-control small,.setting-label small{color:var(--muted)}
+.setting-field{padding:22px 0}.settings-content{padding-top:8px}.settings-nav>small{display:none}
+.brand-candidates{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin:20px 0 28px}
+.brand-candidate{display:flex;flex-direction:column;gap:10px;align-items:center;text-align:center;padding:18px 10px;border:1px solid var(--line);border-radius:12px;background:var(--surface);cursor:pointer}
+.brand-candidate:has(input:checked){border-color:#8ba474;background:var(--selection)}
+.brand-candidate img{width:66px;height:66px}.brand-candidate input{accent-color:var(--accent)}.brand-candidate small{font-size:11px;line-height:1.7;color:var(--muted)}
+.composer-choices{display:flex;align-items:center;flex-wrap:wrap;gap:8px;margin:0 0 10px}
+.composer-choices .choice-context{font-size:11px;color:var(--muted);margin-right:4px}
+.composer-choice{font-size:12px;border:1px solid var(--line);border-radius:20px;padding:7px 13px;background:var(--surface);color:var(--accent)}
+.composer-choice:hover{border-color:#94a980;background:var(--selection)}
+.image-drafts,.message-images{display:flex;gap:10px;flex-wrap:wrap;margin:0 0 12px}.message-images{margin:12px 0}
+.attachment-draft{position:relative}.attachment-draft img,.message-images img{width:100px;height:88px;object-fit:cover;border-radius:10px;border:1px solid var(--line)}
+.attachment-draft button{position:absolute;right:-5px;top:-5px;border-radius:50%;width:24px;height:24px;background:white;border:1px solid var(--line)}
+.attachment-draft small{display:block;color:var(--muted);font-size:10px;max-width:110px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.attach-button{font-size:18px;width:30px;height:30px;display:grid;place-items:center;color:var(--muted)}
+.composer-bottom .composer-hint{flex:1}.image-status{font-size:11px;color:var(--muted)}
+.focus-button{font-size:11px;color:var(--accent);padding:6px 9px;border:1px solid var(--line);border-radius:7px}
+.kitchen-focus{position:fixed;inset:0;z-index:65;background:var(--surface);display:flex;flex-direction:column;min-height:0}
+.focus-header{display:flex;align-items:center;gap:12px;border-bottom:1px solid var(--line);padding:16px 25px;flex:none;background:white}
+.focus-header h2{margin:0;font-size:17px;flex:1}.focus-header small{display:block;font-size:11px;color:var(--muted);margin-top:5px;font-weight:400}
+.focus-content{overflow:auto;min-height:0;flex:1;padding:32px max(24px,calc((100vw - 1000px)/2));scrollbar-width:thin}
+.focus-content .ui-component{background:transparent;border:0;padding:0;margin:0}.focus-content .ui-component-heading h3{font-size:24px}
+.focus-content .ui-step-instruction{font-size:26px;line-height:1.85}.focus-content .ui-check-row{padding:20px 4px}.focus-content .ui-check-row strong{font-size:20px}.focus-content .ui-check-row small{font-size:16px}
+.focus-content .ui-check-row input{width:24px;height:24px}.focus-content .ui-button{font-size:17px;padding:12px 24px}
+.focus-content .ui-adaptation{font-size:21px;line-height:1.8}.ui-adaptation{border-left:3px solid #99af85;padding:12px 16px;background:var(--soft);margin:16px 0;white-space:pre-wrap}
+.focus-reply{padding:13px 24px;border-top:1px solid var(--line);font-size:14px;line-height:1.8;max-height:25vh;overflow:auto;color:var(--text)}
+.kitchen-focus>.composer-area{width:min(100%,1000px);align-self:center;padding:12px 24px 15px}.focus-quick-prompts{display:flex;gap:7px;flex-wrap:wrap;padding:12px 24px 0;align-self:center}
+.kitchen-focus .composer-note{display:none}.kitchen-focus .composer textarea{font-size:15px}
+.focus-talk-toggle{flex:none;align-self:center;color:var(--accent);border:1px solid var(--line);background:white;border-radius:18px;padding:9px 22px;margin:10px 0 16px;font-size:13px}
+.focus-header h2{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.session-stage{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.compact-density .assistant-body{font-size:14px}
+@media(max-width:760px){.settings-page{grid-template-columns:minmax(0,1fr)}.settings-nav{padding:14px 17px}.settings-brand{font-size:17px}.brand-candidates{grid-template-columns:repeat(2,minmax(0,1fr))}.focus-header{padding:14px 17px}.focus-content{padding:24px 20px}.focus-content .ui-step-instruction{font-size:22px}.focus-content .ui-component-heading h3{font-size:21px}.kitchen-focus>.composer-area{padding:10px 16px 14px}.focus-quick-prompts{padding:10px 16px 0}.focus-content .ui-check-row strong{font-size:19px}.settings-content{padding:10px 22px 24px}}

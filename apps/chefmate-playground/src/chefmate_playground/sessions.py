@@ -81,13 +81,22 @@ class SessionRepository:
         self.save(state)
         return state
 
-    def delete(self, session_id: str) -> None:
+    def delete(self, session_id: str) -> dict | None:
         with self._lock, self._connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            row = connection.execute("SELECT state FROM sessions WHERE id=?", (session_id,)).fetchone()
             connection.execute("DELETE FROM sessions WHERE id=?", (session_id,))
+            return json.loads(row[0]) if row else None
 
 
 def public_session(state: dict) -> dict:
     workspace = state.get("workspace") or {}
-    return {**{key: value for key, value in state.items() if key not in {"history", "workspace"}},
-            "conversation_state": {"stage": workspace.get("stage", "idea"),
-                                   "recipe_count": len(workspace.get("meal_plan", []))}}
+    recipes = workspace.get("meal_plan", [])
+    active = next((recipe for recipe in recipes if recipe.get("recipe_id") == workspace.get("active_recipe_id")),
+                  recipes[0] if recipes else {})
+    return {**{key: value for key, value in state.items() if key not in {"history", "workspace", "image_uploads"}},
+            "conversation_state": {"stage": workspace.get("stage", "idea"), "recipe_count": len(recipes),
+                "recipe_names": [recipe.get("recipe", {}).get("name", "菜品") for recipe in recipes],
+                "active_recipe_name": active.get("recipe", {}).get("name"),
+                "choosing": bool(workspace.get("candidates")) or any(
+                    view.get("kind") == "preference_form" for view in workspace.get("components", []))}}

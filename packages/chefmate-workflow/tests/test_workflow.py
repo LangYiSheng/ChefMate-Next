@@ -260,6 +260,25 @@ def test_single_dish_checklist_scope_preserves_other_dish_purchase_facts(kitchen
     assert next(item for item in restored["actions"][0]["component"]["data"]["items"] if item["ingredient_id"] == "shrimp")["checked"] is True
 
 
+def test_adapted_guidance_keeps_source_quantities_and_confirmed_progress(kitchen):
+    choose(kitchen)
+    tool(kitchen,"advance_cooking_stage",{"stage":"prep"})
+    action(kitchen,"check_prep_item",{"item_id":"r1:ingredient:0","status":"ready"})
+    _,host,_,_=kitchen
+    before=copy.deepcopy(host.state)
+    result=tool(kitchen,"update_cooking_guidance",{"recipe_id":"r1","step_id":"r1:step:0",
+                "instruction":"按用户指定的小锅分批加热。","reason":"用户只有小锅。"})
+    assert result["status"]=="ok"
+    guide=next(view for view in result["views"] if view["kind"]=="cooking_guide")
+    assert guide["data"]["steps"][0]["adapted_instruction"]=="按用户指定的小锅分批加热。"
+    assert guide["data"]["steps"][0]["instruction"]=="加入食材煮5分钟"
+    assert host.state["meal_plan"]==before["meal_plan"]
+    assert host.state["prep_status"]==before["prep_status"] and host.state["step_status"]==before["step_status"]
+    assert host.state["stage"]==before["stage"]
+    assert tool(kitchen,"update_cooking_guidance",{"recipe_id":"r1","step_id":"r2:step:0",
+                "instruction":"不应写入","reason":"非法步骤"})["status"]=="invalid_reference"
+
+
 def test_scoped_checklists_reject_unselected_recipes_and_foreign_rows(kitchen):
     choose(kitchen, ids=["r1", "r2"])
     assert tool(kitchen, "show_shopping_list", {"recipe_ids": ["r3"]})["status"] == "invalid_reference"

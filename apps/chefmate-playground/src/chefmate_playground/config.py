@@ -27,6 +27,7 @@ class PlaygroundConfig:
     max_history_chars: int = 400000
     max_tool_result_chars: int = 60000
     stream_tool_calls: bool = False
+    supports_images: bool = False
     api_format: str = "chat_completions"
     port: int = 18765
     sessions_database: Path = APP_ROOT / ".runtime" / "sessions.db"
@@ -64,6 +65,7 @@ class PlaygroundConfig:
             max_history_chars=int(values.get("CHEFMATE_AGENT_MAX_HISTORY_CHARS", "400000")),
             max_tool_result_chars=int(values.get("CHEFMATE_AGENT_MAX_TOOL_RESULT_CHARS", "60000")),
             stream_tool_calls=(values.get("CHEFMATE_AGENT_STREAM_TOOL_CALLS", "false") or "false").lower() == "true",
+            supports_images=(values.get("CHEFMATE_MODEL_SUPPORTS_IMAGES", "false") or "false").lower() == "true",
             port=int(values.get("CHEFMATE_PLAYGROUND_PORT", "18765")),
             enabled_skills=skill_names,
         )

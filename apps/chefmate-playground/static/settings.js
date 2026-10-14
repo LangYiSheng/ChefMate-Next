@@ -1,4 +1,6 @@
 import { node } from "./ui-components.js";
+import { BRAND_ICONS, iconPath, applyBranding } from "./branding.js";
+applyBranding();
 
 const $ = (id) => document.getElementById(id);
 const names = {
@@ -28,10 +30,10 @@ const drafts = new Map(),
   dirty = new Set();
 function readDisplay() {
   try {
-    const { inline_limit = 2, density = "comfortable" } = JSON.parse(localStorage.getItem("chefmate:ui-settings") || "{}");
-    return { inline_limit, density };
+    const { inline_limit = 2, density = "comfortable", brand_icon = "pot-c" } = JSON.parse(localStorage.getItem("chefmate:ui-settings") || "{}");
+    return { inline_limit, density, brand_icon };
   } catch {
-    return { inline_limit: 2, density: "comfortable" };
+    return { inline_limit: 2, density: "comfortable", brand_icon: "pot-c" };
   }
 }
 function readDeveloper() {
@@ -146,6 +148,7 @@ function field(
   return input;
 }
 function render() {
+  document.querySelector('.settings-content').scrollTop = 0;
   $("section-title").textContent = names[current][0];
   $("section-description").textContent = names[current][1];
   $("settings-form").replaceChildren();
@@ -163,6 +166,7 @@ function render() {
       hint: "密钥仅保存在本机，不回显，也不写进聊天记录。",
     });
     heading("连接方式");
+    field("支持图片输入", "supports_images", {type:"checkbox",note:"模型能看图片时开启；聊天输入框会出现上传图片入口。",hint:"照片会自动压缩，可发送食材、包装标签或做菜现场。不支持图片的模型请关闭。"});
     field("请求协议", "api_format", {
       options: [
         ["chat_completions", "OpenAI · Chat Completions"],
@@ -195,19 +199,31 @@ function render() {
     });
     $("settings-form").append(node("p", "settings-note", "用量来自模型服务实际返回。缓存或 token 数据未返回时显示“未报告”，不推测命中率。正在执行时仍显示一行当前操作。"));
   } else if (current === "display") {
+    heading("ChefMate 图标");
+    const candidates=node("div","brand-candidates");
+    for(const icon of BRAND_ICONS) {
+      const option=node("label","brand-candidate"),image=node("img"),radio=node("input");
+      image.src=iconPath(icon.id);image.alt=icon.name;radio.type="radio";radio.name="brand-icon";radio.value=icon.id;
+      radio.checked=drafts.get(current).brand_icon===icon.id;
+      radio.addEventListener("change",()=>{drafts.get("display").brand_icon=icon.id;changed();});
+      option.append(image,node("strong","",icon.name),node("small","",icon.note),radio);candidates.append(option);
+    }
+    $("settings-form").append(candidates);
     heading("核心内容");
-    field("每轮交互内容上限", "inline_limit", {
+    field("每次回复展开几项内容", "inline_limit", {
       options: [
-        [1, "一项 · 更专注"],
-        [2, "两项 · 默认"],
+        [1, "只展开一项，例如食材清单"],
+        [2, "最多两项，例如餐单和食材清单"],
       ],
-      note: "具体展示什么由助手决定。",
+      note: "控制聊天中展开的交互内容；更多内容仍可在工作区打开。",
+      hint: "助手决定展示哪些内容，这里只控制同时展开的数量，不限制查询数量或工具调用。",
     });
-    field("信息密度", "density", {
+    field("内容间距", "density", {
       options: [
-        ["comfortable", "舒适"],
-        ["compact", "紧凑"],
+        ["comfortable", "宽松 · 内容之间留白更多"],
+        ["compact", "紧凑 · 同一屏显示更多内容"],
       ],
+      hint:"只改变间距，不会省略食材、步骤或改变模型回答。全屏做菜模式会自动使用更大的文字。",
     });
     $("settings-form").append(
       node(
@@ -347,6 +363,7 @@ async function save() {
     } else if (section === "display") {
       values.inline_limit = Number(values.inline_limit);
       localStorage.setItem("chefmate:ui-settings", JSON.stringify(values));
+      applyBranding(values.brand_icon);
     } else {
       const payload =
         section === "skills"

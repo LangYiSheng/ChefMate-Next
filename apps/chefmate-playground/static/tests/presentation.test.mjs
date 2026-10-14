@@ -1,6 +1,13 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {pageWindow,viewChoices,activityRows,latestActivity} from '../presentation.js';
+import {pageWindow,viewChoices,activityRows,latestActivity,conversationLabel,snapshotStatus} from '../presentation.js';
+
+test('session labels follow model-owned selection and active dish state',()=>{
+  assert.equal(conversationLabel({stage:'idea'}),'闲聊');
+  assert.equal(conversationLabel(snapshotStatus({stage:'idea',components:[{kind:'preference_form'}]})),'正在选菜');
+  assert.equal(conversationLabel({stage:'planning',recipe_names:['意面']}),'已选菜 - 意面');
+  assert.equal(conversationLabel({stage:'cooking',recipe_names:['意面','荷包蛋'],active_recipe_name:'荷包蛋'}),'烹饪 - 荷包蛋 · 另1道');
+});
 test('paging preserves all choices and bounds stale pages after the source shrinks',()=>{
   const items=Array.from({length:11},(_,id)=>({id}));
   assert.deepEqual([0,1,2].flatMap(page=>pageWindow(items,page,4).items),items);

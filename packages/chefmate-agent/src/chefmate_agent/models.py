@@ -19,6 +19,7 @@ class AgentConfig(BaseModel):
         description="仅在实际验证供应商支持标准流式tool_calls后启用；默认使用完整工具响应。",
     )
     use_responses_api: bool = False
+    supports_images: bool = False
     max_output_tokens: int = Field(default=4096, ge=128, le=16384)
     model_timeout_s: float = Field(default=120, gt=0, le=300)
     max_model_retries: int = Field(default=0, ge=0, le=2)
@@ -74,6 +75,16 @@ class AgentError(BaseModel):
     code: str
     message: str
     retryable: bool = False
+
+
+class ImageReference(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+    id: str = Field(pattern=r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")
+    name: str = Field(max_length=100)
+    mime_type: Literal["image/jpeg"] = "image/jpeg"
+    width: int = Field(ge=1, le=1600)
+    height: int = Field(ge=1, le=1600)
+    byte_size: int = Field(ge=1, le=2000000)
 
 
 class ToolCallRecord(BaseModel):

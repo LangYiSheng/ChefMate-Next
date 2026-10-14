@@ -108,7 +108,9 @@ def test_stage_is_agent_owned_and_published_on_conversation(tmp_path):
         assert denied.status_code == 403
         assert client.get(uri + "/workspace").json()["ui_snapshot"]["revision"] == 0
         assert events(client.post(uri + "/turn", json={"message": "帮我开始选菜"}))[-1]["status"] == "completed"
-        assert client.get(uri).json()["conversation_state"] == {"stage": "planning", "recipe_count": 0}
+        state=client.get(uri).json()["conversation_state"]
+        assert state["stage"] == "planning" and state["recipe_count"] == 0
+        assert state["recipe_names"] == []
         assert client.get("/api/sessions").json()["items"][0]["conversation_state"]["stage"] == "planning"
 
 

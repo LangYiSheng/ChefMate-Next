@@ -57,6 +57,10 @@ export function renderView(view, context) {
   if (context.historical) heading.append(badge('历史记录', 'muted'));
   else if (context.draft) heading.append(badge('待确认', 'muted'));
   card.append(heading);
+  if (!context.historical && !context.focused && (['prep_checklist','cooking_guide','shopping_list'].includes(view.kind)
+      || view.kind==='recipe_detail' && context.viewState?.detailSection==='steps')) {
+    heading.append(button('全屏查看',()=>context.openFocus?.(view),false,'focus-button'));
+  }
   const renderer = rendererRegistry.get(view.kind);
   const ctx = { ...context, locked, viewState:context.viewState || {},onViewState:context.onViewState || (()=>{}),
     action: (type, payload) => context.action(type, payload, view) };
@@ -73,8 +77,6 @@ function preferenceForm(view, ctx) {
   const update = (name, value) => {
     values[name] = value;
     ctx.onDraft(view, values);
-    save.disabled = ctx.locked || !ctx.dirty(view, values);
-    discard.disabled = ctx.locked || !ctx.dirty(view, values);
     feedback.textContent = ctx.dirty(view, values) ? '未保存 · 发送消息时会先同步这些条件' : '已同步';
   };
   const fieldPage=pageWindow(view.data.fields || [],ctx.viewState.formPage || 0,3);
@@ -135,16 +137,13 @@ function preferenceForm(view, ctx) {
   }
   const feedback = node('div', 'ui-sync-label', ctx.historical ? '当时保存的条件' : ctx.draft?.conflict ? '已变化待重试 · 请复核当前任务' : ctx.draft ? '未保存 · 发送消息时会先同步这些条件' : '已同步');
   feedback.dataset.syncLabel = view.id;
-  const actions = node('div', 'ui-actions');
-  const save = button(ctx.draft?.conflict ? '复核后保存' : '保存条件', async () => {
+  const save = async () => {
     if (!root.reportValidity()) return;
     await ctx.savePreferences(view, values);
-  }, ctx.locked || !ctx.draft);
-  save.dataset.controlKey = 'save-preferences';
-  const discard = button('放弃修改', () => ctx.discardDraft(view), ctx.locked || !ctx.draft, 'ui-text-button');
-  actions.append(save, discard); root.append(feedback, actions);
+  };
+  root.append(feedback);
   if(ctx.stage && ctx.stage!=='idea') root.append(hint('条件用于后续查询；已选菜的份量请在餐单中调整。'));
-  root.addEventListener('submit', (event) => { event.preventDefault(); save.click(); });
+  root.addEventListener('submit', (event) => { event.preventDefault(); if(!ctx.locked) save(); });
   return root;
 }
 
@@ -157,11 +156,7 @@ function recipeChoices(view, ctx) {
   const selectedNames = node('div','selected-recipes');
   const updateSelectedNames = () => selectedNames.replaceChildren(...recipes.filter(recipe=>selection.has(recipe.recipe_id)).map(recipe=>badge(recipe.name,'muted')));
   updateSelectedNames();
-  const changed = () => JSON.stringify([...selection].sort()) !== JSON.stringify([...selected].sort());
   const locked = ctx.locked || EXECUTION_STAGES.includes(ctx.stage);
-  const confirm = button(ctx.draft?.conflict ? '复核后确认所选' : '确认所选菜谱', () => ctx.saveSelection(view, [...selection]), locked || !selection.size || selection.size > 4 || !changed());
-  const discard = button('放弃修改', () => ctx.discardDraft(view), locked || !ctx.draft, 'ui-text-button');
-  confirm.dataset.controlKey = 'confirm-recipes';
   const list = node('div', 'ui-recipe-list');
   list.append(pagedList(recipes,ctx,'choicesPage',(recipe)=>{
     const row = node('div', 'ui-recipe-choice'); const label = node('label', 'ui-choice-label');
@@ -169,11 +164,9 @@ function recipeChoices(view, ctx) {
     checkbox.dataset.controlKey = `choose:${recipe.recipe_id}`;
     checkbox.addEventListener('change', () => {
       if (checkbox.checked) selection.add(recipe.recipe_id); else selection.delete(recipe.recipe_id);
-      confirm.disabled = locked || !selection.size || selection.size > 4 || !changed();
       selectionNote.textContent = selection.size > 4 ? '最多选择 4 道菜，请减少选择。' : `已勾选 ${selection.size} 道，确认后保存到当前菜单。`;
       ctx.onSelection?.(view, [...selection]);
       updateSelectedNames();
-      discard.disabled = locked || !changed();
     });
     const copy = node('span'); copy.append(node('strong', '', recipe.name), node('small', '', recipeMeta(recipe)));
     label.append(checkbox, copy); row.append(label);
@@ -182,8 +175,7 @@ function recipeChoices(view, ctx) {
     return row;
   },3));
   if (ctx.draft?.conflict) root.append(hint('候选或菜单已经变化，请复核当前内容；需要时先放弃旧选择。'));
-  const actions = node('div', 'ui-actions'); actions.append(confirm, discard);
-  root.append(list, selectedNames, selectionNote, actions);
+  root.append(list, selectedNames, selectionNote);
   return root;
 }
 
@@ -233,11 +225,11 @@ function mealPlan(view, ctx) {
     card.append(node('strong', '', recipe.name), hint(recipeMeta(recipe)));
     if(recipe.recipe_id===ctx.activeRecipeId) card.append(badge('当前菜品','muted'));
     const form = node('form', 'ui-serving-form');
-    const label = node('label', '', '份量'); const input = node('input', 'ui-input'); input.type = 'number'; input.min = '0.5'; input.step = '0.5'; input.max = '100'; input.value = recipe.target_servings ?? recipe.servings ?? ''; input.disabled = servingsLocked; input.required = true;
+    const label = node('label', '', '份量'); const input = node('input', 'ui-input'); input.type = 'number'; input.min = '0.5'; input.step = '0.5'; input.max = '100'; input.value = ctx.draft?.servings?.[recipe.recipe_id] ?? recipe.target_servings ?? recipe.servings ?? ''; input.disabled = servingsLocked; input.required = true;
     input.setAttribute('aria-label', `${recipe.name}的人份`); label.append(input, document.createTextNode(' 人份')); form.append(label);
     input.dataset.controlKey = `servings:${recipe.recipe_id}`;
-    const save = button('调整', async () => { if (form.reportValidity()) await ctx.action('change_servings', { recipe_id: recipe.recipe_id, servings: Number(input.value) }); }, servingsLocked, 'ui-text-button');
-    form.append(save); form.addEventListener('submit', (event) => { event.preventDefault(); save.click(); }); card.append(form);
+    input.addEventListener('input',()=>ctx.onServings?.(view,recipe.recipe_id,input.value===''?null:Number(input.value)));
+    form.addEventListener('submit',event=>event.preventDefault());card.append(form);
     if (recipe.estimated_servings) card.append(hint('原配方人数含估算，份量调整仍保留这一依据。'));
     if (recipe.original_servings == null) card.append(hint(`原人数未知，暂不能换算${recipe.target_servings == null ? '。' : `；已记录目标 ${recipe.target_servings} 人份。`}`));
     const actions = node('div', 'ui-actions');
@@ -284,6 +276,7 @@ function shoppingList(view, ctx) {
 function prepChecklist(view, ctx) {
   const root = node('div');
   root.append(checklistScope(view,ctx));
+  for(const text of view.data.guidance || []) root.append(node('div','ui-adaptation',text));
   const locked = ctx.locked || !['shopping', 'prep'].includes(ctx.stage);
   const prepared=(view.data.items || []).filter(item=>['ready','skipped'].includes(item.status)).length;
   root.append(hint(`已确认 ${prepared} / ${view.data.items?.length || 0} 项`));
@@ -307,6 +300,7 @@ function cookingGuide(view, ctx) {
   const root = node('div'); const data = view.data;
   if (!data.recipe_id) { root.append(hint('在菜单中选择一道菜，开始查看步骤。')); return root; }
   root.append(node('h4', 'ui-recipe-name', data.recipe_name));
+  for(const text of data.guidance || []) root.append(node('div','ui-adaptation',text));
   const allSteps=data.steps || [];
   if(ctx.viewState.recipeId!==data.recipe_id) { ctx.viewState.recipeId=data.recipe_id;delete ctx.viewState.stepIndex; }
   const activeIndex=Math.max(0,allSteps.findIndex(step=>step.id===data.active_step_id));
@@ -318,11 +312,15 @@ function cookingGuide(view, ctx) {
   for (const step of allSteps[stepIndex] ? [allSteps[stepIndex]] : []) {
     const card = node('div', `ui-cooking-step ${step.status}`);
     const heading = node('div', 'ui-step-heading'); heading.append(badge(String(Number(step.ordinal) + 1)), node('span', '', step.status === 'done' ? '已完成' : step.id === data.active_step_id ? '当前步骤' : '待进行'));
-    card.append(heading, node('p', 'ui-step-instruction', step.instruction));
+    card.append(heading, node('p', 'ui-step-instruction', step.adapted_instruction || step.instruction));
+    if(step.adapted_instruction) {
+      card.append(hint(`按你的条件调整：${step.adaptation_reason || ''}`));
+      card.append(disclosure('查看原菜谱步骤',[step.instruction]));
+    }
     const actions = node('div', 'ui-actions');
     actions.append(button(step.status === 'done' ? '取消完成' : '完成这一步', () => ctx.action('complete_step', { recipe_id: data.recipe_id, step_id: step.id, completed: step.status !== 'done' }), ctx.locked || ctx.stage !== 'cooking'));
     if (step.status !== 'done' && step.id !== data.active_step_id) actions.append(button('从这一步继续', () => ctx.action('set_active_step', { recipe_id: data.recipe_id, step_id: step.id }), ctx.locked || ctx.stage !== 'cooking', 'ui-text-button'));
-    if (step.timer_seconds > 0) actions.append(button(`计时 ${Math.round(step.timer_seconds / 60 * 10) / 10} 分钟`, () => ctx.action('start_timer', { recipe_id: data.recipe_id, step_id: step.id, seconds: step.timer_seconds, label: `${data.recipe_name} · 第 ${Number(step.ordinal) + 1} 步` }), ctx.locked, 'ui-text-button'));
+    if (step.timer_seconds > 0 && !step.adapted_instruction) actions.append(button(`计时 ${Math.round(step.timer_seconds / 60 * 10) / 10} 分钟`, () => ctx.action('start_timer', { recipe_id: data.recipe_id, step_id: step.id, seconds: step.timer_seconds, label: `${data.recipe_name} · 第 ${Number(step.ordinal) + 1} 步` }), ctx.locked, 'ui-text-button'));
     card.append(actions); root.append(card);
   }
   root.append(hint('浏览步骤不会改变进度，完成后再确认。'));
@@ -346,8 +344,11 @@ function timers(view, ctx) {
   if (!view.data.timers?.length) root.append(hint('计时器随任务保存，关闭页面后仍可按截止时间恢复。'));
   const form = node('form', 'ui-timer-form'); const label = node('input', 'ui-input'); label.placeholder = '计时名称'; label.maxLength = 100; label.setAttribute('aria-label', '计时名称'); label.disabled = newTimerLocked;
   const minutes = node('input', 'ui-input'); minutes.type = 'number'; minutes.min = '0.1'; minutes.max = '1440'; minutes.step = '0.1'; minutes.required = true; minutes.placeholder = '分钟'; minutes.setAttribute('aria-label', '计时分钟数'); minutes.disabled = newTimerLocked;
-  const start = button('开始计时', async () => { if (form.reportValidity()) await ctx.action('start_timer', { seconds: Math.round(Number(minutes.value) * 60), label: label.value.trim() || '厨房计时' }); }, newTimerLocked);
-  form.append(label, minutes, start); form.addEventListener('submit', (event) => { event.preventDefault(); start.click(); }); root.append(form);
+  label.value=ctx.draft?.label || '';minutes.value=ctx.draft?.minutes ?? '';
+  label.dataset.controlKey='timer-label';minutes.dataset.controlKey='timer-minutes';
+  const changed=()=>ctx.onTimer?.(view,label.value,minutes.value===''?null:Number(minutes.value));
+  label.addEventListener('input',changed);minutes.addEventListener('input',changed);
+  form.append(label, minutes);form.addEventListener('submit',event=>event.preventDefault());root.append(form);
   return root;
 }
 
