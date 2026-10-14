@@ -641,7 +641,13 @@ class WorkflowService:
             if name == "show_timers":
                 return self._show(state, Timers, "厨房计时", TimersData(timers=state.timers))
             return self._set_stage(state, validated.stage)
-        return self._command(operation_id or str(uuid4()), name, args, base_revision, command)
+        result = self._command(operation_id or str(uuid4()), name, args, base_revision, command)
+        if validated.display == "none":
+            result["actions"] = []
+        else:
+            for action in result["actions"]:
+                action["placement"] = validated.display
+        return result
 
     def apply_action(self, request):
         value = UserActionRequest.model_validate(request.model_dump(exclude_unset=True)

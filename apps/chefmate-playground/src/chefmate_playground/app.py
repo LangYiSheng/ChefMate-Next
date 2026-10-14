@@ -2,18 +2,30 @@
 
 import asyncio
 from contextlib import asynccontextmanager
+from dataclasses import replace
 from urllib.parse import urlsplit
 
 from fastapi import FastAPI, HTTPException, Request
+from fastapi.exception_handlers import request_validation_exception_handler
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ConfigDict, Field, field_validator
-from chefmate_workflow import UIAction, UISnapshot, UserActionRequest
+from chefmate_workflow import UISnapshot, UserActionRequest
 
 from .config import APP_ROOT, PlaygroundConfig
-from .interactions import WorkspaceBinding, make_tool_specs
+from .interactions import WorkspaceBinding
 from .runtime import TurnConflict, TurnManager, encode_event
 from .sessions import SessionRepository, public_session
+from .settings import (SKILLS, RuntimeSettings, build_agent, persist_settings, probe_model,
+                       public_settings, resolve_model)
+
+
+class SettingsRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+    revision: str
+    section: str
+    values: dict
 
 
 class TurnRequest(BaseModel):
@@ -50,28 +62,10 @@ def create_app(config: PlaygroundConfig | None = None, *, service=None, agent=No
     workspace_binding = WorkspaceBinding(repo, service) if service is not None else None
     skill_registry = None
     try:
-        from chefmate_agent import SkillRegistry
-        skill_root = (APP_ROOT / "skills").resolve(strict=True)
-        skill_directories = [(skill_root / name).resolve(strict=True) for name in settings.enabled_skills]
-        if any(path.parent != skill_root for path in skill_directories):
-            raise ValueError("Kitchen skill escaped its enabled directory")
-        skill_registry = SkillRegistry(skill_directories)
+        configured_agent, skill_registry = build_agent(settings, service)
+        agent = agent if agent is not None else configured_agent
     except (ValueError, OSError):
-        setup_error = "厨房 Skills 配置无效，请检查启用的技能目录。"
-    if agent is None and service is not None and settings.model_configured and skill_registry is not None:
-        try:
-            from chefmate_agent import AgentConfig, ChefMateAgent
-
-            agent = ChefMateAgent(service, AgentConfig(
-                model=settings.model, api_key=settings.api_key, base_url=settings.base_url,
-                turn_timeout_s=settings.turn_timeout_s, max_model_rounds=settings.max_model_rounds,
-                max_tool_calls=settings.max_tool_calls,
-                model_timeout_s=settings.model_timeout_s, max_model_retries=settings.model_max_retries,
-                stream_tool_calls=settings.stream_tool_calls,
-            ), extra_tools=make_tool_specs(), ui_context_model=UISnapshot, action_model=UIAction,
-                skills=skill_registry)
-        except (ValueError, OSError):
-            setup_error = "模型配置无效，请检查应用的 .env。"
+        setup_error = "模型或厨房技能配置无效，请打开设置检查。"
     manager = TurnManager(repo, agent, workspace_binding)
 
     @asynccontextmanager
@@ -85,6 +79,12 @@ def create_app(config: PlaygroundConfig | None = None, *, service=None, agent=No
     app.state.service = service
     app.state.workspace = workspace_binding
     app.state.skills = skill_registry
+
+    @app.exception_handler(RequestValidationError)
+    async def invalid_request(request: Request, error: RequestValidationError):
+        if request.url.path.startswith("/api/settings"):
+            return JSONResponse({"detail": "设置请求无效，请检查字段和配置版本。"}, status_code=422)
+        return await request_validation_exception_handler(request, error)
 
     @app.middleware("http")
     async def local_origin(request: Request, call_next):
@@ -110,6 +110,51 @@ def create_app(config: PlaygroundConfig | None = None, *, service=None, agent=No
         if state is None:
             raise HTTPException(404, "对话不存在。")
         return state
+
+    @app.get("/api/settings")
+    async def get_settings():
+        return public_settings(settings)
+
+    @app.post("/api/settings/test-model")
+    async def test_model(values: dict):
+        try:
+            candidate = resolve_model(settings, values)
+        except ValueError:
+            raise HTTPException(422, "请填写有效的端点、模型和专用 API Key；换供应商不能沿用旧密钥。") from None
+        return await probe_model(candidate)
+
+    @app.patch("/api/settings")
+    async def update_settings(body: SettingsRequest):
+        nonlocal settings, agent, skill_registry, setup_error
+        async with manager._lock:
+            if manager.active:
+                raise HTTPException(409, "还有对话正在运行，请等它完成后再保存设置。")
+            if body.revision != public_settings(settings)["revision"]:
+                raise HTTPException(409, "设置已在另一页面更新；当前草稿保留，请重新读取后复核。")
+            try:
+                if body.section == "model":
+                    candidate = resolve_model(settings, body.values)
+                elif body.section == "runtime":
+                    candidate = replace(settings, **RuntimeSettings.model_validate(body.values).model_dump())
+                elif body.section == "skills":
+                    names = body.values.get("enabled_skills")
+                    if (set(body.values) != {"enabled_skills"} or not isinstance(names, list)
+                            or any(name not in SKILLS for name in names)):
+                        raise ValueError("无效技能")
+                    candidate = replace(settings, enabled_skills=tuple(dict.fromkeys(names)))
+                else:
+                    raise ValueError("无效设置分类")
+                replacement, registry = build_agent(candidate, service)
+                persist_settings(candidate)
+            except ValueError:
+                raise HTTPException(422, "设置值无效；更换供应商时必须填写专用密钥。") from None
+            except OSError:
+                raise HTTPException(503, "设置未保存，请检查本地配置目录。") from None
+            settings, agent, skill_registry = candidate, replacement, registry
+            manager.agent = agent
+            app.state.config, app.state.skills = settings, skill_registry
+            setup_error = None
+            return public_settings(settings)
 
     @app.get("/api/status")
     async def status():
@@ -258,6 +303,10 @@ def create_app(config: PlaygroundConfig | None = None, *, service=None, agent=No
     @app.get("/")
     async def index():
         return FileResponse(APP_ROOT / "static" / "index.html")
+
+    @app.get("/settings")
+    async def settings_page():
+        return FileResponse(APP_ROOT / "static" / "settings.html")
 
     app.mount("/static", StaticFiles(directory=APP_ROOT / "static", check_dir=False), name="static")
     return app

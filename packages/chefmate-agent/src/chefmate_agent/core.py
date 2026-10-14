@@ -192,6 +192,7 @@ class ChefMateAgent:
             "streaming": self.config.stream_tool_calls,
             "disable_streaming": False if self.config.stream_tool_calls else "tool_calling",
             "stream_usage": False,
+            "use_responses_api": self.config.use_responses_api,
             "model_kwargs": copy.deepcopy(self.config.model_kwargs),
         }
         if self.config.base_url:

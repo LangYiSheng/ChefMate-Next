@@ -114,42 +114,42 @@ export class WorkspaceController {
     if (!entry.snapshot) throw new Error('任务快照尚未读取，请刷新任务后重试。');
     return this.snapshot(id);
   }
-  setDraft(view, values) {
-    const entry = this.entry(this.activeId); const previous = entry.drafts[view.id];
+  setDraft(view, values, id = this.activeId) {
+    const entry = this.entry(id); const previous = entry.drafts[view.id];
     if (entry.autoSaveError) { entry.autoSaveError = false; if (!entry.conflict && !entry.failedRequest) entry.error = ''; }
     const baseline = previous?.baseline || clone(view.data.values || {});
     if (!Object.keys(changedValues(baseline, values)).length) delete entry.drafts[view.id];
     else entry.drafts[view.id] = { kind: view.kind, baseline, values: clone(values), baseRevision: previous?.baseRevision ?? view.revision,
       conflict: Boolean(previous?.conflict || previous && previous.baseRevision !== entry.snapshot?.revision) };
-    writeDrafts(this.activeId, entry.drafts); this.onChange();
+    writeDrafts(id, entry.drafts); this.onChange();
   }
-  setSelectionDraft(view, selectedIds) {
-    const entry = this.entry(this.activeId);
+  setSelectionDraft(view, selectedIds, id = this.activeId) {
+    const entry = this.entry(id);
     const selected = entry.views.find((item) => item.kind === 'meal_plan')?.data.recipes?.map((recipe) => recipe.recipe_id) || [];
     if (JSON.stringify([...selectedIds].sort()) === JSON.stringify([...selected].sort())) delete entry.drafts[view.id];
     else entry.drafts[view.id] = { kind: view.kind, selectedIds: [...selectedIds],
       baseRevision: entry.drafts[view.id]?.baseRevision ?? view.revision,
       conflict: Boolean(entry.drafts[view.id]?.conflict) };
-    writeDrafts(this.activeId, entry.drafts); this.onChange();
+    writeDrafts(id, entry.drafts); this.onChange();
   }
-  async saveSelection(view, selectedIds) {
-    const entry = this.entry(this.activeId); const draft = entry.drafts[view.id];
+  async saveSelection(view, selectedIds, id = this.activeId) {
+    const entry = this.entry(id); const draft = entry.drafts[view.id];
     await this.dispatch('select_recipes', { recipe_ids: selectedIds }, view,
-      { revision: draft?.conflict ? entry.snapshot.revision : draft?.baseRevision ?? view.revision, clearDraft: view.id });
+      { sessionId:id, revision: draft?.conflict ? entry.snapshot.revision : draft?.baseRevision ?? view.revision, clearDraft: view.id });
   }
-  discardDraft(view) {
-    const entry = this.entry(this.activeId); delete entry.drafts[view.id];
+  discardDraft(view, id = this.activeId) {
+    const entry = this.entry(id); delete entry.drafts[view.id];
     entry.autoSaveError = false;
     if (entry.conflict?.clearDraft === view.id || entry.conflict?.kind === view.kind) { entry.conflict = null; entry.error = ''; }
-    writeDrafts(this.activeId, entry.drafts); this.refresh(this.activeId);
+    writeDrafts(id, entry.drafts); this.refresh(id);
   }
-  async savePreferences(view, values) {
-    const entry = this.entry(this.activeId); const draft = entry.drafts[view.id];
+  async savePreferences(view, values, id = this.activeId) {
+    const entry = this.entry(id); const draft = entry.drafts[view.id];
     if (!draft) return;
     const current = entry.views.find((item) => item.kind === 'preference_form');
     const revision = draft.conflict ? entry.snapshot.revision : draft.baseRevision;
     await this.dispatch('update_preferences', { values: changedValues(draft.baseline, values) }, current || view,
-      { revision, clearDraft: view.id });
+      { sessionId:id, revision, clearDraft: view.id });
   }
   async dispatch(type, payload, view, options = {}) {
     const id = options.sessionId || this.activeId;
@@ -214,6 +214,55 @@ export class WorkspaceController {
     else if (kind === 'recipe_choices' && EXECUTION_STAGES.includes(this.entry(this.activeId).snapshot?.stage)) this.notify('当前正在执行已选餐单。需要改选菜谱时，请先返回选菜阶段。');
     else this.notify('当前任务还没有这项内容，可以继续向助手提出需求。');
   }
+  context(view, id = this.activeId) {
+    const entry = this.entry(id); const draft = entry.drafts[view.id];
+    return { historical: false, busy: entry.saving, draft, selectedRecipeIds: entry.snapshot?.selected_recipe_ids || [],
+        stage: entry.snapshot?.stage,
+        activeRecipeId: entry.snapshot?.active_recipe_id,
+        viewState: entry.viewState[view.id] ||= {},
+        onViewState: () => { this.render(); this.onInlineChange?.(); },
+        openRecipeSection: async (recipeId,section) => {
+          await this.dispatch('open_recipe_detail',{recipe_id:recipeId},view,{sessionId:id});
+          const detail=entry.views.find(item=>item.kind==='recipe_detail' && item.data.recipe?.recipe_id===recipeId);
+          if(detail) { (entry.viewState[detail.id] ||= {}).detailSection=section;entry.activeKind='recipe_detail';this.refresh(id); }
+        },
+        action: (type, payload, origin) => this.dispatch(type, payload, origin, {sessionId:id}),
+        openCurrent: (kind) => this.openCurrent(kind), onDraft: (origin, values) => this.setDraft(origin, values, id),
+        dirty: (origin, values) => Object.keys(changedValues(entry.drafts[origin.id]?.baseline || origin.data.values || {}, values)).length > 0,
+        savePreferences: (origin, values) => this.savePreferences(origin, values, id), discardDraft: (origin) => this.discardDraft(origin, id),
+        onSelection: (origin, ids) => this.setSelectionDraft(origin, ids, id), saveSelection: (origin, ids) => this.saveSelection(origin, ids, id) };
+  }
+  renderInline(view, sessionId, onChange) {
+    this.onInlineChange = onChange;
+    const entry = this.entries.get(sessionId);
+    const current = entry?.views.find(item => item.id === view.id && item.kind === view.kind);
+    if (!current || sessionId !== this.activeId) return null;
+    const context = this.context(current, sessionId);
+    const openRecipeSection = context.openRecipeSection;
+    const showDetail = async (recipeId, section) => {
+      await openRecipeSection(recipeId, section);
+      const detail = entry.views.find(item=>item.kind==='recipe_detail' && item.data.recipe?.recipe_id===recipeId);
+      if (detail) { entry.inlineDetail={parentId:current.id,viewId:detail.id}; onChange(); }
+    };
+    const originalAction=context.action;
+    context.openRecipeSection=showDetail;
+    context.action=(type,payload,origin)=>type==='open_recipe_detail'
+      ? showDetail(payload.recipe_id,'ingredients') : originalAction(type,payload,origin);
+    // 内联详情替换候选内容，返回时保留选择和分页，不在旁边再堆一张卡片。
+    const detail=entry.inlineDetail?.parentId===current.id && entry.views.find(item=>item.id===entry.inlineDetail.viewId);
+    let content;
+    if(detail) {
+      content=renderView(detail,this.context(detail,sessionId));
+      const back=node('button','ui-text-button','← 返回选择');back.type='button';
+      back.addEventListener('click',()=>{entry.inlineDetail=null;onChange();});content.prepend(back);
+    } else content=renderView(current,context);
+    if(entry.error) {
+      const error=node('div','error-box',entry.error);
+      const review=node('button','ui-text-button','查看保存状态');review.type='button';
+      review.addEventListener('click',()=>this.openCurrent(current.kind));error.append(review);content.append(error);
+    }
+    return content;
+  }
   renderInto(container) { this.container = container; this.render(); }
   render() {
     if (!this.container) return;
@@ -245,7 +294,6 @@ export class WorkspaceController {
       this.container.append(error);
     }
     if (!entry.views.length && entry.loading) this.container.append(node('div', 'panel-loading', '正在读取任务…'));
-    const selected = entry.snapshot?.selected_recipe_ids || entry.views.find((view) => view.kind === 'meal_plan')?.data.recipes?.map((recipe) => recipe.recipe_id) || [];
     const execution = EXECUTION_STAGES.includes(entry.snapshot?.stage);
     const hiddenChoiceDrafts = Object.entries(entry.drafts).filter(([,draft]) => draft.kind === 'recipe_choices');
     if (execution && hiddenChoiceDrafts.length) {
@@ -269,22 +317,7 @@ export class WorkspaceController {
     const activeView = choices.find(view=>view.kind===entry.activeKind) || choices[0];
     if (!activeView && !entry.loading) this.container.append(node('div','panel-empty','告诉助手你的想法，合适的表单、菜品和清单会在这里打开。'));
     for (const view of activeView ? [activeView] : []) {
-      const draft = entry.drafts[view.id];
-      const content = renderView(view, { historical: false, busy: entry.saving, draft, selectedRecipeIds: selected,
-        stage: entry.snapshot?.stage,
-        activeRecipeId: entry.snapshot?.active_recipe_id,
-        viewState: entry.viewState[view.id] ||= {},
-        onViewState: () => this.render(),
-        openRecipeSection: async (recipeId,section) => {
-          await this.dispatch('open_recipe_detail',{recipe_id:recipeId},view,{sessionId:id});
-          const detail=entry.views.find(item=>item.kind==='recipe_detail' && item.data.recipe?.recipe_id===recipeId);
-          if(detail) { (entry.viewState[detail.id] ||= {}).detailSection=section;entry.activeKind='recipe_detail';this.refresh(id); }
-        },
-        action: (type, payload, origin) => this.dispatch(type, payload, origin),
-        openCurrent: (kind) => this.openCurrent(kind), onDraft: (origin, values) => this.setDraft(origin, values),
-        dirty: (origin, values) => Object.keys(changedValues(entry.drafts[origin.id]?.baseline || origin.data.values || {}, values)).length > 0,
-        savePreferences: (origin, values) => this.savePreferences(origin, values), discardDraft: (origin) => this.discardDraft(origin),
-        onSelection: (origin, ids) => this.setSelectionDraft(origin, ids), saveSelection: (origin, ids) => this.saveSelection(origin, ids) });
+      const content = renderView(view, this.context(view, id));
       this.container.append(content);
     }
     this.tick();
@@ -298,11 +331,13 @@ export class WorkspaceController {
     const views = this.entries.get(this.activeId)?.views || [];
     const timers = views.find((view) => view.kind === 'timers')?.data.timers || [];
     for (const timer of timers) {
-      const target = this.container?.querySelector(`[data-timer-id="${CSS.escape(timer.id)}"]`);
+      const targets = document.querySelectorAll(`[data-timer-id="${CSS.escape(timer.id)}"]`);
+      for (const target of targets) {
       if (target) target.textContent = clockText(remainingSeconds(timer));
       if (target && timer.status === 'running' && remainingSeconds(timer) === 0) {
         const status = target.parentElement?.querySelector('.ui-badge');
         if (status) status.textContent = '时间到';
+      }
       }
     }
   }

@@ -9,7 +9,9 @@ export function node(tag, className, text) {
 }
 function button(text, callback, disabled = false, className = 'ui-button') {
   const item = node('button', className, text); item.type = 'button'; item.disabled = disabled;
-  item.addEventListener('click', () => Promise.resolve(callback()).catch(() => {})); return item;
+  item.addEventListener('click', () => Promise.resolve(callback()).catch(error => {
+    console.warn('界面操作未完成：', error?.message || '请重试。');
+  })); return item;
 }
 function badge(text, className = '') { return node('span', `ui-badge ${className}`, text); }
 function hint(text) { return node('p', 'ui-hint', text); }

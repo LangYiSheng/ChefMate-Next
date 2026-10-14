@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>设置 · ChefMate</title>
+    <link rel="icon" href="/static/favicon.svg" />
+    <link rel="stylesheet" href="/static/styles.css" />
+    <link rel="stylesheet" href="/static/settings.css" />
+    <script type="module" src="/static/settings.js"></script>
+  </head>
+  <body>
+    <main class="settings-page">
+      <nav class="settings-nav" aria-label="设置分类">
+        <a class="settings-brand" href="/">C <span>ChefMate</span></a>
+        <a class="back-link" href="/">← 返回对话</a>
+        <h2>个人偏好</h2>
+        <button type="button" data-section="display">
+          ◐ <span>界面显示</span>
+        </button>
+        <h2>模型与能力</h2>
+        <button type="button" data-section="model">
+          ◎ <span>模型连接</span>
+        </button>
+        <button type="button" data-section="skills">
+          ✳ <span>厨房技能</span>
+        </button>
+        <h2>运行与数据</h2>
+        <button type="button" data-section="runtime">
+          ⌘ <span>执行设置</span>
+        </button>
+        <button type="button" data-section="data">
+          ◫ <span>数据与状态</span>
+        </button>
+        <small>你的厨房，按你的习惯。</small>
+      </nav>
+      <section class="settings-workspace">
+        <header class="settings-header">
+          <div>
+            <h1 id="section-title">模型连接</h1>
+            <p id="section-description"></p>
+          </div>
+          <a href="/" aria-label="返回工作台">×</a>
+        </header>
+        <div class="settings-content">
+          <p id="settings-message" role="status" hidden></p>
+          <form id="settings-form"></form>
+        </div>
+        <footer class="settings-footer">
+          <span id="save-state" role="status">正在读取设置…</span>
+          <div>
+            <button id="reload-settings" type="button" class="text-button">
+              重新读取</button
+            ><button
+              id="save-settings"
+              type="button"
+              class="primary-button"
+              disabled
+            >
+              保存修改
+            </button>
+          </div>
+        </footer>
+      </section>
+    </main>
+    <dialog id="settings-confirm" aria-labelledby="confirm-title">
+      <h2 id="confirm-title">保留未保存的修改？</h2>
+      <p id="confirm-description">离开后，尚未保存的设置会丢失。</p>
+      <div><button id="cancel-confirm" type="button" class="secondary-button">继续编辑</button><button id="accept-confirm" type="button" class="primary-button">放弃修改</button></div>
+    </dialog>
+  </body>
+</html>

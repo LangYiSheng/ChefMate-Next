@@ -1,0 +1,123 @@
+"""设置验收使用隔离目录，不访问真实密钥或模型。"""
+import asyncio
+from dataclasses import replace
+
+import pytest
+from fastapi.testclient import TestClient
+
+from chefmate_playground import PlaygroundConfig, create_app
+from chefmate_playground.settings import load_overrides, public_settings, resolve_model
+from test_app import Agent, Service
+
+
+def config(tmp_path):
+    return PlaygroundConfig(sessions_database=tmp_path / "sessions.db", api_key="old-private-key",
+                            model="old-model", base_url="https://old.example/v1")
+
+
+def test_secrets_are_never_returned_and_new_host_cannot_reuse_old_key(tmp_path):
+    initial = config(tmp_path)
+    assert "old-private-key" not in str(public_settings(initial))
+    with pytest.raises(ValueError):
+        resolve_model(initial, {"model": "new", "base_url": "https://new.example/v1"})
+    assert resolve_model(initial, {"model": "new", "base_url": initial.base_url}).api_key == initial.api_key
+    with pytest.raises(ValueError):
+        resolve_model(initial, {"model": "new", "base_url": "https://user:password@new.example/v1"})
+
+
+def test_persisted_model_applies_atomically_survives_reload_and_rejects_stale_tab(tmp_path):
+    initial = config(tmp_path)
+    app = create_app(initial, service=Service(), agent=Agent())
+    with TestClient(app) as client:
+        before = client.get("/api/settings").json()
+        body = {"revision": before["revision"], "section": "model",
+                "values": {"model": "new-model", "base_url": "https://new.example/v1", "api_key": "new-private-key"}}
+        saved = client.patch("/api/settings", json=body)
+        assert saved.status_code == 200
+        assert "private-key" not in saved.text
+        assert client.get("/api/status").json()["model"] == "new-model"
+        assert app.state.manager.agent.config.model == "new-model"
+        assert client.patch("/api/settings", json=body).status_code == 409
+        reloaded = load_overrides(initial)
+        assert reloaded.model == "new-model"
+        assert reloaded.api_key == "new-private-key"
+        assert reloaded.base_url == "https://new.example/v1"
+
+
+def test_active_run_blocks_settings_without_interrupting_it(tmp_path):
+    app = create_app(config(tmp_path), service=Service(), agent=Agent())
+    with TestClient(app) as client:
+        before = client.get("/api/settings").json()
+        app.state.manager.active["busy"] = object()
+        try:
+            response = client.patch("/api/settings", json={"revision": before["revision"], "section": "model",
+                "values": {"model": "changed", "base_url": "https://old.example/v1"}})
+            assert response.status_code == 409
+            assert app.state.config.model == "old-model"
+            assert "busy" in app.state.manager.active
+        finally:
+            app.state.manager.active.clear()
+        assert not (tmp_path / "settings.json").exists()
+
+
+def test_invalid_skill_and_runtime_reject_before_writing(tmp_path):
+    app = create_app(config(tmp_path), service=Service(), agent=Agent())
+    with TestClient(app) as client:
+        before = client.get("/api/settings").json()
+        for section, values in [("skills", {"enabled_skills": ["../outside"]}),
+                                ("runtime", {**before["runtime"], "max_tool_calls": 1000})]:
+            assert client.patch("/api/settings", json={"revision": before["revision"], "section": section,
+                                                       "values": values}).status_code == 422
+        assert client.get("/settings").status_code == 200
+        assert not (tmp_path / "settings.json").exists()
+
+
+def test_invalid_settings_request_never_echoes_submitted_secret(tmp_path):
+    with TestClient(create_app(config(tmp_path), service=Service(), agent=Agent())) as client:
+        response = client.patch("/api/settings", json={"section": "model", "values": {"api_key": "submitted-private-key"}})
+        assert response.status_code == 422
+        assert "submitted-private-key" not in response.text
+
+
+def test_native_probe_rejects_text_tool_markup_and_keeps_errors_redacted(monkeypatch, tmp_path):
+    from chefmate_playground.settings import probe_model
+    from langchain_core.messages import AIMessage
+    class FakeModel:
+        def __init__(self, **kwargs):
+            pass
+        def bind_tools(self, *args, **kwargs):
+            return self
+        async def ainvoke(self, messages):
+            return AIMessage(content='<tool_call>connection_echo chefmate</tool_call>')
+    monkeypatch.setattr("langchain_openai.ChatOpenAI", FakeModel)
+    assert asyncio.run(probe_model(replace(config(tmp_path), stream_tool_calls=False)))["ok"] is False
+
+
+@pytest.mark.parametrize("stream", [False, True])
+@pytest.mark.parametrize("protocol", ["chat_completions", "responses"])
+def test_probe_checks_native_roundtrip_for_the_selected_protocol(monkeypatch, tmp_path, stream, protocol):
+    from chefmate_playground.settings import probe_model
+    from langchain_core.messages import AIMessage, AIMessageChunk, ToolMessage
+    seen = {}
+    class FakeModel:
+        def __init__(self, **kwargs):
+            seen.update(kwargs)
+        def bind_tools(self, *args, **kwargs):
+            assert kwargs["tool_choice"] == "connection_echo"
+            return self
+        async def astream(self, messages):
+            yield AIMessageChunk(content="", tool_call_chunks=[{"name": "connection_echo",
+                "args": '{"value":"chefmate"}', "id": "probe-call", "index": 0}])
+        async def ainvoke(self, messages):
+            if len(messages) == 1:
+                return AIMessage(content="", tool_calls=[{"name": "connection_echo", "args": {"value": "chefmate"},
+                                                         "id": "probe-call"}])
+            assert isinstance(messages[-1], ToolMessage)
+            assert messages[-1].tool_call_id == "probe-call"
+            return AIMessage(content="OK")
+    monkeypatch.setattr("langchain_openai.ChatOpenAI", FakeModel)
+    result = asyncio.run(probe_model(replace(config(tmp_path), api_format=protocol, stream_tool_calls=stream)))
+    assert result["ok"] is True
+    assert seen["use_responses_api"] is (protocol == "responses")
+    assert seen["streaming"] is stream
+

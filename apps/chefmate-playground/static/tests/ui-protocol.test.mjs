@@ -179,7 +179,7 @@ test('later workflow presentations focus the task without rewriting history or r
   assert.equal(visible[1].id,'prep');
   assert.equal(visible.some(view=>view.kind==='recipe_choices'),false);
   assert.equal(original.length,4);
-  assert.equal(messageViews({actions:[{component:choices}]}).length,1);
+  assert.equal(messageViews({actions:[{kind:'show_component',component:choices}]}).length,1);
   assert.deepEqual(legacyRecipeItems({recipes:[{recipe_id:'previous'}],actions:[{component:checklist}]}),[]);
   assert.equal(legacyRecipeItems({recipes:[{recipe_id:'current-query'}],tool_calls:[{name:'search_recipes',result:{status:'ok'}}]}).length,1);
 });
@@ -191,4 +191,23 @@ test('a workspace-only answer never presents inherited query cards without a fre
   assert.deepEqual(legacyRecipeItems({recipes:prior,tool_calls:[{name:'get_recipe',result:{status:'not_found'}}]}),[]);
   const detail={recipe_id:'fresh-detail'};
   assert.deepEqual(legacyRecipeItems({recipes:prior,selected_recipe:detail,tool_calls:[{name:'get_recipe',result:{status:'ok'}}]}),[detail]);
+});
+
+test('reading a workspace does not display every stored view; placements come from explicit actions',()=>{
+  const view=preference(3);
+  assert.deepEqual(messageViews({tool_calls:[{result:{views:[view],ui_snapshot:{components:[view]}}}]}),[]);
+  const result=messageViews({actions:[{kind:'show_component',placement:'workspace',component:view}]});
+  assert.equal(result[0].placement,'workspace');
+});
+
+test('inline callback remains bound to the original conversation after switching',async t=>{
+  const paths=[];
+  const item=controller(t,async(path)=>{paths.push(path);return response(1);});
+  item.receive('session',response(0));
+  const context=item.context(preference(0),'session');
+  item.activeId='other';
+  context.onDraft(preference(0),{ingredient_terms:['虾'],servings:4});
+  await context.savePreferences(preference(0),{ingredient_terms:['虾'],servings:4});
+  assert.deepEqual(paths,['/api/sessions/session/actions']);
+  assert.equal(item.snapshot('other'),undefined);
 });

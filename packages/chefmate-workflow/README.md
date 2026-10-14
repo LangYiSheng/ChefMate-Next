@@ -43,7 +43,7 @@ actions         本次需要展示的 UIAction，至多一个 show_component
 message         可选说明
 ```
 
-持久化的 `WorkspaceState` 包含冻结菜谱和执行状态，由应用保存；它不会作为重复原始数据返回到 HTTP/模型响应。完整 `views` 用于当前工作区，历史 `actions.component` 应作为只读展示，不能复用旧卡片修改当前任务。应用注册模型工具时可只返回 `status/message/actions/ui_snapshot`，避免将完整 `views` 再次放入模型上下文。
+持久化的 `WorkspaceState` 包含冻结菜谱和执行状态，由应用保存；它不会作为重复原始数据返回到 HTTP/模型响应。完整 `views` 用于当前工作区。聊天展示仅采用主动生成的 `actions`，工具参数 `display` 决定 inline/workspace/none，动作携带 `placement`。历史 `actions.component` 不能作为可写状态；交互必须按组件ID重新取得当前可信投影与版本，被替换的组件只保留入口。应用注册模型工具时可只返回 `status/message/actions/ui_snapshot`，避免将完整 `views` 再次放入模型上下文。
 
 ## 工具与界面
 

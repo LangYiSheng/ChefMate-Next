@@ -279,6 +279,7 @@ class WorkspaceState(StrictModel):
 class UIAction(StrictModel):
     kind: Literal["show_component"] = "show_component"
     component: ViewComponent
+    placement: Literal["inline", "workspace"] = "inline"
 
 
 class WorkflowToolResult(StrictModel):
@@ -292,6 +293,8 @@ class WorkflowToolResult(StrictModel):
 
 class ToolInput(StrictModel):
     base_revision: Annotated[int, Field(ge=0)] | None = None
+    display: Literal["inline", "workspace", "none"] = Field(
+        default="inline", description="仅展示这轮必要的核心内容。inline在聊天内交互，workspace仅在工作区展示，none仅更新状态。")
 
 
 class EmptyInput(ToolInput):

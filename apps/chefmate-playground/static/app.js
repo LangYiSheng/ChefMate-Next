@@ -11,7 +11,7 @@ const ui = Object.fromEntries([
   'detail-panel', 'query-tab', 'recipe-tab', 'query-content', 'recipe-content',
   'drawer-backdrop', 'toast', 'announcer', 'open-sidebar', 'toggle-details',
   'workspace-tab', 'workspace-content', 'workspace-context', 'skills-tab', 'skills-content',
-  'trace-mode', 'conversation-stage',
+  'conversation-stage',
 ].map((id) => [id, $(id)]));
 
 const state = {
@@ -19,9 +19,11 @@ const state = {
   runs: new Map(), selectionEpoch: 0, sessionsEpoch: 0, detailEpoch: 0,
   detailAbort: null, detailOpen: false, sidebarOpen: false, tab: 'query',
   selectedRecipe: null, remotePoll: null, renderFrame: null, creating: false, preparing: false, skills: [], skillsEpoch: 0,
-  traceMode: readTraceMode(),
+  traceMode: readTraceMode(), uiPreferences: readUIPreferences(),
 };
-function readTraceMode() { try { return localStorage.getItem('chefmate:trace-mode') === 'detailed' ? 'detailed' : 'compact'; } catch { return 'compact'; } }
+function readTraceMode() { try { const value=localStorage.getItem('chefmate:trace-mode');return ['detailed','hidden'].includes(value) ? value : 'compact'; } catch { return 'compact'; } }
+function readUIPreferences() { try { return JSON.parse(localStorage.getItem('chefmate:ui-settings') || '{}'); } catch { return {}; } }
+document.body.classList.toggle('compact-density',state.uiPreferences.density==='compact');
 function storedSession() { try { return localStorage.getItem('chefmate:active-session'); } catch { return null; } }
 const labels = {
   find_ingredients: '查找食材', search_recipes: '查询菜谱', get_recipe: '读取菜谱',
@@ -34,7 +36,11 @@ const labels = {
 const methods = { steam: '蒸', boil: '煮', stir_fry: '炒', deep_fry: '炸', pan_fry: '煎', bake: '烘焙', roast: '烤', stew: '炖', braise: '焖烧', cold_mix: '凉拌', other: '其他' };
 const tools = { stove: '炉灶', wok: '炒锅', pot: '锅', oven: '烤箱', air_fryer: '空气炸锅', microwave: '微波炉', rice_cooker: '电饭煲', steamer: '蒸锅', pressure_cooker: '高压锅' };
 const workspace = new WorkspaceController({
-  api, notify: toast, onChange: () => { updateComposer(); updateConversationState(); },
+  api, notify: toast, onChange: () => {
+    updateComposer(); updateConversationState();
+    const editing = ui.messages.contains(document.activeElement) && document.activeElement?.matches('input,textarea,select');
+    if (!editing || workspace.entries.get(state.currentId)?.saving) scheduleRender(state.currentId);
+  },
   openPanel: (tab) => { setDetails(true); setTab(tab); },
 });
 
@@ -462,13 +468,13 @@ function toolCallNode(call) {
 
 function executionTrace(message) {
   const rows = activityRows(message);
-  const trace = element('section', `execution-trace ${state.traceMode}`);
+  const trace = element(message.streaming || state.traceMode==='detailed' ? 'section' : 'details', `execution-trace ${state.traceMode}`);
   trace.setAttribute('aria-label','执行过程');
-  const summary = element('div','trace-summary');
+  const summary = element(trace.tagName==='DETAILS' ? 'summary' : 'div','trace-summary');
   summary.append(element('span',message.streaming ? 'trace-orbit active' : 'trace-orbit',message.streaming ? '◌' : message.error ? '!' : message.cancelled ? '◇' : '✓'),
-    element('span','trace-current',safeText(latestActivity(message))));
+    element('span','trace-current',safeText(message.streaming ? latestActivity(message) : '执行过程')));
   trace.append(summary);
-  if (state.traceMode === 'detailed') {
+  {
     const timeline = element('ol','trace-timeline');
     for (const row of rows) {
       const item = element('li',`trace-row ${row.state || 'note'}`);
@@ -546,7 +552,11 @@ function renderConversation(forceScroll = false) {
     const typedViews = messageViews(message);
     if (typedViews.length) {
       const components = element('div', 'message-components');
-      for (const view of typedViews.filter(view=>view.kind!=='task_progress')) {
+      const relevant = typedViews.filter(view=>view.kind!=='task_progress');
+      const inlineIds = new Set(relevant.filter(view=>view.placement==='inline').slice(-(Number(state.uiPreferences.inline_limit)===1?1:2)).map(view=>view.id));
+      for (const view of relevant) {
+        const live = inlineIds.has(view.id) && workspace.renderInline(view,state.currentId,()=>scheduleRender(state.currentId));
+        if (live) { live.classList.add('inline-component'); components.append(live); continue; }
         const receipt = element('button','view-receipt'); receipt.type='button';
         receipt.append(element('span','view-receipt-icon',({recipe_choices:'◫',preference_form:'☷',cooking_guide:'▶',timers:'◷'})[view.kind] || '◇'),
           element('span','view-receipt-copy',view.title || VIEW_LABELS[view.kind]),element('small','',viewSummary(view)),element('span','','↗'));
@@ -560,7 +570,7 @@ function renderConversation(forceScroll = false) {
       for (const recipe of recipeItems) recipes.append(recipeButton(recipe, message.snapshot));
       node.append(recipes);
     } else if (message.resultTotal === 0) node.append(element('div', 'empty-results', '没有找到同时满足这些条件的菜谱，可以继续调整条件。'));
-    if (message.tool_calls?.length || message.process?.length || message.streaming) {
+    if (state.traceMode!=='hidden' && (message.tool_calls?.length || message.process?.length || message.streaming)) {
       const log = executionTrace(message);
       log.dataset.logKey = `${state.currentId}:${index}`;
       for (const detail of log.querySelectorAll('details')) {
@@ -1037,12 +1047,6 @@ ui['composer-input'].addEventListener('keydown', (event) => {
   }
 });
 ui['new-chat'].addEventListener('click', newSession);
-ui['trace-mode'].value = state.traceMode;
-ui['trace-mode'].addEventListener('change', () => {
-  state.traceMode = ui['trace-mode'].value === 'detailed' ? 'detailed' : 'compact';
-  try { localStorage.setItem('chefmate:trace-mode',state.traceMode); } catch { /* Session preference still applies. */ }
-  renderConversation();
-});
 ui['stop-button'].addEventListener('click', cancelTurn);
 ui['open-sidebar'].addEventListener('click', () => setSidebar(true));
 $('close-sidebar').addEventListener('click', () => { setSidebar(false); ui['open-sidebar'].focus(); });

@@ -50,9 +50,12 @@ export function viewsFrom(value) {
   return candidates.filter(validView);
 }
 export function messageViews(message) {
-  const views = [...viewsFrom(message)];
-  for (const call of message.tool_calls || []) views.push(...viewsFrom(call.result));
-  for (const action of message.actions || []) views.push(...viewsFrom(action));
+  const actions = Array.isArray(message.actions) ? [...message.actions] : [];
+  for (const call of message.tool_calls || []) {
+    if (Array.isArray(call.result?.actions)) actions.push(...call.result.actions);
+  }
+  const views = actions.filter(action=>action.kind==='show_component' && validView(action.component))
+    .map(action=>({...action.component,placement:action.placement || 'inline'}));
   const unique = new Map();
   for (const view of views) unique.set(`${view.id}:${view.revision}`, view);
   return [...unique.values()];

@@ -440,3 +440,17 @@ def test_direct_prep_and_stage_return_preserve_existing_component_ids(kitchen):
     assert current["meal_plan"] == original["meal_plan"]
     assert current["task_progress"] == original["task_progress"]
     assert len(current) == len(result["views"])
+
+
+@pytest.mark.parametrize("display", ["inline", "workspace", "none"])
+def test_model_controls_presentation_without_dropping_task_state(kitchen, display):
+    result = tool(kitchen, "show_preference_form", {"display": display})
+    assert result["status"] == "ok"
+    assert len(result["views"]) == 1
+    if display == "none":
+        assert result["actions"] == []
+    else:
+        assert result["actions"][0]["placement"] == display
+    read = tool(kitchen, "get_cooking_workspace")
+    assert read["actions"] == []
+    assert len(read["views"]) == 1

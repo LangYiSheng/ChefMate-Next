@@ -25,6 +25,7 @@ class PlaygroundConfig:
     max_model_rounds: int = 10
     max_tool_calls: int = 20
     stream_tool_calls: bool = False
+    api_format: str = "chat_completions"
     port: int = 18765
     sessions_database: Path = APP_ROOT / ".runtime" / "sessions.db"
     enabled_skills: tuple[str, ...] = ("meal-planning", "pantry-preparation", "cooking-guide")
@@ -46,7 +47,7 @@ class PlaygroundConfig:
                             else "meal-planning,pantry-preparation,cooking-guide").split(",") if name.strip())
         if len(skill_names) > 16 or any(not re.fullmatch(r"[a-z][a-z0-9_-]{0,63}", name) for name in skill_names):
             raise ValueError("Enabled kitchen skill names are invalid")
-        return cls(
+        config = cls(
             database_url=values.get("CHEFMATE_DATABASE_URL", "") or "",
             database_schema=values.get("CHEFMATE_DATABASE_SCHEMA", "chefmate") or "chefmate",
             usda_database=database,
@@ -62,3 +63,5 @@ class PlaygroundConfig:
             port=int(values.get("CHEFMATE_PLAYGROUND_PORT", "18765")),
             enabled_skills=skill_names,
         )
+        from .settings import load_overrides
+        return load_overrides(config)

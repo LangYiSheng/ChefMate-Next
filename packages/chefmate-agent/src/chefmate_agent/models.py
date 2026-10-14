@@ -18,6 +18,7 @@ class AgentConfig(BaseModel):
         default=False,
         description="仅在实际验证供应商支持标准流式tool_calls后启用；默认使用完整工具响应。",
     )
+    use_responses_api: bool = False
     max_output_tokens: int = Field(default=4096, ge=128, le=16384)
     model_timeout_s: float = Field(default=120, gt=0, le=300)
     max_model_retries: int = Field(default=0, ge=0, le=2)
@@ -58,6 +59,7 @@ class AgentConfig(BaseModel):
             "model", "api_key", "openai_api_key", "base_url", "openai_api_base", "timeout", "max_retries",
             "streaming", "disable_streaming", "stream_usage", "tools", "tool_choice", "callbacks", "max_tokens",
             "max_completion_tokens",
+            "use_responses_api",
         }
         if reserved.intersection(value):
             raise ValueError("model_kwargs contains a reserved connection or execution option")
