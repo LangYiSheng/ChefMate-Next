@@ -1,0 +1,26 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "chefmate-workflow"
+version = "0.1.0"
+description = "Persistent kitchen workspace and closed UI projections for ChefMate"
+requires-python = ">=3.12"
+readme = "README.md"
+dependencies = ["chefmate-retrieval>=0.1,<0.2", "pydantic>=2.12,<3"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src", "../chefmate-retrieval/src", "../chefmate-storage/src", "../chefmate-contracts/src", "../chefmate-food-data/src"]
+addopts = "-q"
+
+[tool.ruff]
+line-length = 120
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F"]

@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <meta name="theme-color" content="#f8f8f6">
+  <title>ChefMate · 菜谱助手</title>
+  <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/static/styles.css">
+  <link rel="stylesheet" href="/static/workspace.css">
+  <script type="module" src="/static/app.js"></script>
+</head>
+<body>
+  <a class="skip-link" href="#composer-input">跳到输入框</a>
+  <div class="app" id="app">
+    <aside class="sidebar" id="sidebar" aria-label="会话导航">
+      <div class="brand-row">
+        <a class="brand" href="/" aria-label="ChefMate 首页">
+          <span class="brand-mark" aria-hidden="true">C<span></span></span>
+          <span>ChefMate</span>
+        </a>
+        <button class="icon-button mobile-only" id="close-sidebar" type="button" aria-label="收起会话导航">×</button>
+      </div>
+      <button class="new-chat" id="new-chat" type="button"><span aria-hidden="true">＋</span> 新会话</button>
+      <div class="sidebar-heading">最近会话</div>
+      <nav class="sessions" id="sessions" aria-label="最近会话"></nav>
+      <div class="sidebar-footer"><span class="small-dot" aria-hidden="true"></span> 本地厨房工作台</div>
+    </aside>
+
+    <main class="main">
+      <header class="topbar">
+        <div class="topbar-title">
+          <button class="icon-button mobile-only" id="open-sidebar" type="button" aria-label="展开会话导航" aria-controls="sidebar" aria-expanded="false">☰</button>
+          <span id="chat-title">菜谱助手</span>
+        </div>
+        <div class="topbar-actions">
+          <button class="status-pill" id="status-button" type="button" aria-label="查看连接状态"><span class="status-dot" id="status-dot" aria-hidden="true"></span><span id="status-label">连接中</span></button>
+          <button class="icon-button panel-toggle" id="toggle-details" type="button" aria-label="展开查询与菜谱详情" aria-controls="detail-panel" aria-expanded="false">
+            <svg width="19" height="19" viewBox="0 0 24 24" fill="none" aria-hidden="true"><rect x="3.5" y="4.5" width="17" height="15" rx="2.5" stroke="currentColor" stroke-width="1.5"/><path d="M15 5v14" stroke="currentColor" stroke-width="1.5"/></svg>
+          </button>
+        </div>
+      </header>
+
+      <div class="connection-banner" id="connection-banner" role="status" hidden></div>
+      <div class="conversation" id="conversation" tabindex="-1" aria-label="聊天记录">
+        <section class="welcome" id="welcome">
+          <div class="welcome-symbol" aria-hidden="true">✳</div>
+          <h1>今天想吃什么？</h1>
+          <p>说说食材、时间和人数，<br class="welcome-break">一起选菜、备菜，把这顿饭做好。</p>
+          <div class="suggestions">
+            <button type="button" data-prompt="我想吃虾，半小时以内，有哪些做法？"><span>我想吃虾</span><small>半小时以内，有哪些做法？</small><span class="suggestion-arrow" aria-hidden="true">↗</span></button>
+            <button type="button" data-prompt="我有炒锅和炉灶，推荐几道新手能做的菜。"><span>做一点简单的</span><small>用炒锅，新手也能做</small><span class="suggestion-arrow" aria-hidden="true">↗</span></button>
+            <button type="button" data-prompt="找几道高蛋白菜谱，说明每份蛋白质和数据是否估算。"><span>看看高蛋白选择</span><small>每份营养，附上数据依据</small><span class="suggestion-arrow" aria-hidden="true">↗</span></button>
+          </div>
+        </section>
+        <div class="messages" id="messages"></div>
+      </div>
+
+      <div class="composer-area">
+        <button type="button" class="workspace-context" id="workspace-context" hidden></button>
+        <div class="turn-status" id="turn-status" role="status" hidden></div>
+        <form class="composer" id="composer">
+          <label class="visually-hidden" for="composer-input">告诉 ChefMate 你想吃什么</label>
+          <textarea id="composer-input" rows="1" placeholder="告诉我想吃什么，也可以补充条件…" maxlength="8000" autocomplete="off"></textarea>
+          <div class="composer-bottom">
+            <span class="composer-hint">Enter 发送 · Shift + Enter 换行</span>
+            <button class="send-button" id="send-button" type="submit" aria-label="发送消息" disabled>
+              <svg width="19" height="19" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 19V5m0 0-6 6m6-6 6 6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            </button>
+            <button class="send-button stop-button" id="stop-button" type="button" aria-label="停止本次执行" hidden><span aria-hidden="true"></span></button>
+          </div>
+        </form>
+        <p class="composer-note" id="composer-note">依据当前菜谱库回答，营养估算会明确标注。</p>
+      </div>
+    </main>
+
+    <aside class="detail-panel" id="detail-panel" aria-label="厨房工作区" hidden>
+      <div class="panel-header">
+        <div class="panel-tabs" role="tablist" aria-label="详情内容">
+          <button type="button" class="panel-tab active" id="workspace-tab" role="tab" aria-selected="true" aria-controls="workspace-content">任务</button>
+          <button type="button" class="panel-tab" id="query-tab" role="tab" aria-selected="false" aria-controls="query-content">查询</button>
+          <button type="button" class="panel-tab" id="recipe-tab" role="tab" aria-selected="false" aria-controls="recipe-content">菜谱详情</button>
+          <button type="button" class="panel-tab" id="skills-tab" role="tab" aria-selected="false" aria-controls="skills-content">技能</button>
+        </div>
+        <button class="icon-button" id="close-details" type="button" aria-label="收起详情面板">×</button>
+      </div>
+      <div class="panel-content workspace-content" id="workspace-content" role="tabpanel" aria-labelledby="workspace-tab"></div>
+      <div class="panel-content" id="query-content" role="tabpanel" aria-labelledby="query-tab" hidden></div>
+      <div class="panel-content" id="recipe-content" role="tabpanel" aria-labelledby="recipe-tab" hidden></div>
+      <div class="panel-content" id="skills-content" role="tabpanel" aria-labelledby="skills-tab" hidden></div>
+    </aside>
+  </div>
+  <button class="drawer-backdrop" id="drawer-backdrop" type="button" aria-label="关闭侧栏" hidden></button>
+  <div class="toast" id="toast" role="status" hidden></div>
+  <div class="visually-hidden" id="announcer" role="status" aria-live="polite"></div>
+</body>
+</html>

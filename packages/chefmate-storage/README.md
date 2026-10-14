@@ -209,6 +209,28 @@ python packages/chefmate-storage/examples/query_and_score.py --ingredients egg t
 
 上述权重和估算折半都是人为选定的演示规则，营养信息覆盖分不表示健康程度或统计置信度。这个例子偏向快捷、简单、用料齐全的菜，尚未考虑厨具、菜品类型、食材可替代性和用户口味；调料清单也需要按实际库存调整。
 
+## 多操作只读会话与检索条件
+
+`RecipeStore.read_session()` 将元数据、食材目录、查询选项、分组筛选和详情读取绑定到同一只读快照。退出上下文后会话不可再使用。既有 `search()` / `get_recipe()` 接口仍可单独调用。
+
+读取语句默认设置 15 秒的 PostgreSQL `statement_timeout`，可在 `RecipeStore(..., read_statement_timeout_ms=15000)` 调整为 100–120000 毫秒。该限制只作用于读取事务，不截断整库导入；连接超时仍由 `connect_timeout` 管理。异步应用取消等待无法强制终止已运行的同步线程，数据库语句超时为后台读取提供有界收束。
+
+```python
+from chefmate_storage import IngredientGroup, IngredientSelector, RecipeFilter, RecipeSort
+
+with store.read_session() as session:
+    metadata = session.metadata()
+    result = session.search(RecipeFilter(
+        ingredient_groups=(IngredientGroup((IngredientSelector("shrimp"), IngredientSelector("peeled_shrimp"))),),
+        max_total_time_min=30,
+        available_tools=("stove", "wok", "pot"),
+    ), sort=RecipeSort("total_time_min", "asc"))
+```
+
+食材组内 OR、组间 AND，选择器可附加 `canonical_name` 精确限定同 ID 的不同形态。新增条件含时间下限、三种难度、口味任一/排除、烹饪方法任一、可用厨具子集和逐营养指标的估算政策。`available_tools=None` 不限制、空元组表示无厨具。营养未知值不补零。会话搜索在 SQL 内筛选、计数、排序和分页，并批量读取当前页的标签、营养、原文和 warnings。
+
+`lookup_ingredients()` 用名称、别名、英文 ID 或 FDC 营养参考查找 `(ingredient_id, canonical_name)` 候选，不从原文推断身份；FDC 关联不等于同义。`search_options()` 返回当前数据记录的代码及菜谱数。智能体参数、快照校验和候选解释见独立的 [`chefmate-retrieval`](../chefmate-retrieval/README.md) 包。
+
 ## 测试与构建
 
 安装开发依赖后，无数据库环境可运行文件校验测试；真实 PostgreSQL 集成测试需要单独设置 `CHEFMATE_TEST_DSN`，不会自动使用日常的 `CHEFMATE_DATABASE_URL`：

@@ -9,7 +9,7 @@ from psycopg import sql
 from psycopg.rows import dict_row
 
 from .importer import load_export
-from .queries import NUTRIENTS, RecipeFilter, where_clause
+from .queries import IngredientSelector, NUTRIENTS, RecipeFilter, RecipeSort, order_clause, where_clause
 
 SCHEMA_VERSION = 1
 TABLE_ORDER = (
@@ -30,7 +30,8 @@ def _estimated_fields(row: dict, prefix: str) -> list[str]:
 class RecipeStore:
     """Each method opens its own connection; no hidden service, pool, or deployment."""
 
-    def __init__(self, dsn: str, *, schema: str = "chefmate", connect_timeout: int = 5):
+    def __init__(self, dsn: str, *, schema: str = "chefmate", connect_timeout: int = 5,
+                 read_statement_timeout_ms: int = 15000):
         if not isinstance(dsn, str) or not dsn.strip():
             raise ValueError("A PostgreSQL DSN is required")
         if not isinstance(schema, str) or not re.fullmatch(r"[a-z][a-z0-9_]{0,62}", schema):
@@ -39,9 +40,12 @@ class RecipeStore:
             raise ValueError("Use a dedicated application schema")
         if type(connect_timeout) is not int or not 1 <= connect_timeout <= 120:
             raise ValueError("connect_timeout must be an integer from 1 to 120")
+        if type(read_statement_timeout_ms) is not int or not 100 <= read_statement_timeout_ms <= 120000:
+            raise ValueError("read_statement_timeout_ms must be an integer from 100 to 120000")
         self._dsn = dsn
         self.schema = schema
         self.connect_timeout = connect_timeout
+        self.read_statement_timeout_ms = read_statement_timeout_ms
 
     @contextmanager
     def _connection(self, *, read: bool = False):
@@ -51,6 +55,8 @@ class RecipeStore:
                 raise RuntimeError("chefmate-storage requires PostgreSQL 18 or newer")
             if read:
                 connection.execute("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY")
+                connection.execute("SELECT pg_catalog.set_config('statement_timeout', %s, true)",
+                                   (str(self.read_statement_timeout_ms),))
             connection.execute("SET LOCAL lock_timeout = '30s'")
             connection.execute(sql.SQL("SET LOCAL search_path TO {}, pg_catalog").format(sql.Identifier(self.schema)))
             lock = "pg_advisory_xact_lock_shared" if read else "pg_advisory_xact_lock"
@@ -145,54 +151,227 @@ class RecipeStore:
                                        [*params, limit, offset]).fetchall()
             return {"total": total, "items": items}
 
+    @contextmanager
+    def read_session(self):
+        """One coherent, read-only dataset for multiple queries. Session expires on exit."""
+        with self._connection(read=True) as connection:
+            self._require_migrated(connection)
+            session = RecipeReadSession(connection, self._metadata(connection))
+            try:
+                yield session
+            finally:
+                session._closed = True
+
+    def get_recipe(self, recipe_id: str) -> dict | None:
+        with self.read_session() as session:
+            return session.get_recipe(recipe_id)
+
+
+class RecipeReadSession:
+    """Read operations bound to one repeatable-read transaction; created by read_session."""
+
+    def __init__(self, connection, metadata):
+        self._connection = connection
+        self._metadata = metadata
+        self._closed = False
+
+    def _active(self):
+        if self._closed:
+            raise RuntimeError("Read session is closed")
+        return self._connection
+
+    def metadata(self) -> dict | None:
+        self._active()
+        return dict(self._metadata) if self._metadata else None
+
+    def selector_exists(self, ingredient_id: str, canonical_name: str | None = None) -> bool:
+        connection = self._active()
+        statement = "SELECT 1 FROM recipe_ingredients WHERE ingredient_id=%s"
+        args = [ingredient_id]
+        if canonical_name is not None:
+            statement += " AND canonical_name=%s"
+            args.append(canonical_name)
+        return connection.execute(statement + " LIMIT 1", args).fetchone() is not None
+
+    def missing_selectors(self, selectors: tuple[IngredientSelector, ...]) -> list[dict]:
+        """Validate a whole request in one bound query instead of one round trip per ID."""
+        connection = self._active()
+        if not isinstance(selectors, (tuple, list)) or any(not isinstance(value, IngredientSelector)
+                                                         for value in selectors):
+            raise ValueError("selectors must contain IngredientSelector values")
+        selectors = tuple(dict.fromkeys(selectors))
+        if not selectors:
+            return []
+        return connection.execute("""WITH requested AS (
+            SELECT * FROM unnest(%s::text[],%s::text[]) AS s(ingredient_id,canonical_name)
+        ) SELECT s.ingredient_id,s.canonical_name FROM requested s WHERE NOT EXISTS (
+            SELECT 1 FROM recipe_ingredients i WHERE i.ingredient_id=s.ingredient_id
+            AND (s.canonical_name IS NULL OR i.canonical_name=s.canonical_name))""",
+            ([value.ingredient_id for value in selectors], [value.canonical_name for value in selectors])).fetchall()
+
+    def search_options(self) -> dict:
+        connection = self._active()
+        labels = connection.execute("SELECT kind,value,count(DISTINCT recipe_id) AS recipe_count "
+                                    "FROM recipe_labels GROUP BY kind,value ORDER BY kind,value").fetchall()
+        result = {kind: [] for kind in ("taste", "cooking_method", "tool", "nutrition", "difficulty",
+                                        "category", "allergen")}
+        for row in labels:
+            result[row["kind"]].append({"code": row["value"], "recipe_count": row["recipe_count"]})
+        for kind, statement in (
+            ("difficulty", "SELECT difficulty AS code,count(*) AS recipe_count FROM recipes "
+                           "WHERE difficulty IS NOT NULL GROUP BY difficulty ORDER BY difficulty"),
+            ("category", "SELECT category AS code,count(DISTINCT recipe_id) AS recipe_count "
+                         "FROM recipe_ingredients GROUP BY category ORDER BY category"),
+            ("allergen", "SELECT allergen AS code,count(DISTINCT recipe_id) AS recipe_count "
+                         "FROM ingredient_allergens GROUP BY allergen ORDER BY allergen"),
+        ):
+            result[kind] = connection.execute(statement).fetchall()
+        return result
+
+    def lookup_ingredients(self, queries: tuple[str, ...] = (), fdc_ids: tuple[str, ...] = ()) -> list[dict]:
+        """Lookup the current catalogue; names/aliases are evidence, FDC is reference only."""
+        connection = self._active()
+        clauses, args = [], []
+        for query in queries:
+            pattern = "%" + query.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%"
+            clauses.append("(i.ingredient_id ILIKE %s ESCAPE '\\' OR i.canonical_name ILIKE %s ESCAPE '\\' "
+                           "OR EXISTS (SELECT 1 FROM ingredient_aliases a WHERE a.recipe_id=i.recipe_id "
+                           "AND a.ordinal=i.ordinal AND a.alias ILIKE %s ESCAPE '\\'))")
+            args.extend((pattern, pattern, pattern))
+        if fdc_ids:
+            clauses.append("EXISTS (SELECT 1 FROM recipe_ingredient_nutrition d WHERE d.recipe_id=i.recipe_id "
+                           "AND d.ordinal=i.ordinal AND d.fdc_id=ANY(%s))")
+            args.append(list(fdc_ids))
+        if not clauses:
+            return []
+        statement = """WITH selected AS (
+            SELECT DISTINCT i.ingredient_id,i.canonical_name FROM recipe_ingredients i WHERE """ + (
+                " OR ".join(clauses)) + """
+            ) SELECT i.ingredient_id,i.canonical_name,array_agg(DISTINCT i.category ORDER BY i.category) AS categories,
+                count(DISTINCT i.recipe_id) AS recipe_count,
+                count(DISTINCT i.recipe_id) FILTER (WHERE r.ready_for_recommendation) AS recommendable_recipe_count,
+                ARRAY(SELECT DISTINCT a.alias FROM ingredient_aliases a JOIN recipe_ingredients ai
+                      ON ai.recipe_id=a.recipe_id AND ai.ordinal=a.ordinal
+                      WHERE ai.ingredient_id=i.ingredient_id AND ai.canonical_name=i.canonical_name
+                      ORDER BY a.alias) AS aliases,
+                ARRAY(SELECT DISTINCT d.fdc_id FROM recipe_ingredient_nutrition d JOIN recipe_ingredients di
+                      ON di.recipe_id=d.recipe_id AND di.ordinal=d.ordinal
+                      WHERE di.ingredient_id=i.ingredient_id AND di.canonical_name=i.canonical_name
+                      AND d.fdc_id IS NOT NULL ORDER BY d.fdc_id) AS fdc_ids,
+                (SELECT json_agg(e) FROM (SELECT ei.recipe_id,er.name AS recipe_name,ei.raw_name,ei.raw_text,
+                        ei.grams,ei.estimated_grams,ed.fdc_id,ed.estimated AS nutrition_estimated
+                      FROM recipe_ingredients ei JOIN recipes er ON er.recipe_id=ei.recipe_id
+                      JOIN recipe_ingredient_nutrition ed ON ed.recipe_id=ei.recipe_id AND ed.ordinal=ei.ordinal
+                      WHERE ei.ingredient_id=i.ingredient_id AND ei.canonical_name=i.canonical_name
+                      ORDER BY ei.recipe_id,ei.ordinal LIMIT 3) e) AS examples
+            FROM selected s JOIN recipe_ingredients i USING (ingredient_id,canonical_name)
+            JOIN recipes r ON r.recipe_id=i.recipe_id
+            GROUP BY i.ingredient_id,i.canonical_name ORDER BY i.ingredient_id,i.canonical_name"""
+        return connection.execute(statement, args).fetchall()
+
+    def search(self, filters: RecipeFilter | None = None, *, limit: int = 20, offset: int = 0,
+               sort: RecipeSort | None = None) -> dict:
+        """Filter, count, order and paginate in SQL, then attach bounded page evidence."""
+        if type(limit) is not int or not 1 <= limit <= 200 or type(offset) is not int or offset < 0:
+            raise ValueError("limit must be 1..200 and offset a nonnegative integer")
+        if filters is not None and not isinstance(filters, RecipeFilter):
+            raise ValueError("filters must be RecipeFilter")
+        connection = self._active()
+        where, args = where_clause(filters or RecipeFilter())
+        order = order_clause(sort or RecipeSort())
+        source = " FROM recipes r JOIN recipe_nutrition n ON n.recipe_id=r.recipe_id "
+        total = connection.execute("SELECT count(*) AS count" + source + "WHERE " + where, args).fetchone()["count"]
+        rows = connection.execute("SELECT r.*,n.*" + source + f"WHERE {where} ORDER BY {order} LIMIT %s OFFSET %s",
+                                  [*args, limit, offset]).fetchall()
+        recipe_ids = [row["recipe_id"] for row in rows]
+        if not rows:
+            return {"total": total, "items": []}
+        labels = connection.execute("SELECT * FROM recipe_labels WHERE recipe_id=ANY(%s) ORDER BY kind,value",
+                                    (recipe_ids,)).fetchall()
+        notes = connection.execute("SELECT recipe_id,kind,description FROM recipe_notes WHERE recipe_id=ANY(%s) "
+                                   "ORDER BY kind,ordinal", (recipe_ids,)).fetchall()
+        ingredients = connection.execute("""SELECT i.*,d.fdc_id,d.estimated AS nutrition_estimated,
+            ARRAY(SELECT a.alias FROM ingredient_aliases a WHERE a.recipe_id=i.recipe_id AND a.ordinal=i.ordinal
+                  ORDER BY a.alias) AS aliases,
+            ARRAY(SELECT a.allergen FROM ingredient_allergens a WHERE a.recipe_id=i.recipe_id AND a.ordinal=i.ordinal
+                  ORDER BY a.allergen) AS allergens FROM recipe_ingredients i JOIN recipe_ingredient_nutrition d
+            ON d.recipe_id=i.recipe_id AND d.ordinal=i.ordinal WHERE i.recipe_id=ANY(%s)
+            ORDER BY i.recipe_id,i.ordinal""", (recipe_ids,)).fetchall()
+        recipe_columns = ("recipe_id", "name", "description", "servings", "original_servings", "prep_time_min",
+                          "cook_time_min", "total_time_min", "difficulty", "source", "ready_for_recommendation",
+                          "estimated_servings")
+        items = []
+        for row in rows:
+            recipe = {key: row[key] for key in recipe_columns}
+            related_labels = [label for label in labels if label["recipe_id"] == row["recipe_id"]]
+            recipe["nutrition"] = {
+                "status": row["status"], "estimated": row["estimated"],
+                "total": _values(row, "total_"), "per_serving": _values(row, "per_serving_"),
+                "estimated_total_fields": _estimated_fields(row, "estimated_total_"),
+                "estimated_per_serving_fields": _estimated_fields(row, "estimated_per_serving_"),
+                "estimated_servings": row["estimated_servings"],
+                "tags": [label["value"] for label in related_labels if label["kind"] == "nutrition"],
+                "tags_estimated": any(label["estimated"] for label in related_labels if label["kind"] == "nutrition"),
+            }
+            for kind, key in (("taste", "taste_tags"), ("cooking_method", "cooking_methods"), ("tool", "required_tools")):
+                recipe[key] = [label["value"] for label in related_labels if label["kind"] == kind]
+            for kind, key in (("warning", "warnings"), ("blocking_reason", "blocking_reasons")):
+                recipe[key] = [note["description"] for note in notes
+                               if note["recipe_id"] == row["recipe_id"] and note["kind"] == kind]
+            recipe["ingredients"] = [{key: value for key, value in ingredient.items() if key != "recipe_id"}
+                                     for ingredient in ingredients if ingredient["recipe_id"] == row["recipe_id"]]
+            recipe["allergens"] = sorted({allergen for ingredient in recipe["ingredients"]
+                                          for allergen in ingredient["allergens"]})
+            items.append(recipe)
+        return {"total": total, "items": items}
+
     def get_recipe(self, recipe_id: str) -> dict | None:
         if not isinstance(recipe_id, str) or not recipe_id.strip():
             raise ValueError("recipe_id must be nonempty text")
-        with self._connection(read=True) as connection:
-            self._require_migrated(connection)
-            recipe = connection.execute("SELECT * FROM recipes WHERE recipe_id=%s", (recipe_id,)).fetchone()
-            if recipe is None:
-                return None
-            args = (recipe_id,)
-            recipe["steps"] = [r["description"] for r in connection.execute(
-                "SELECT description FROM recipe_steps WHERE recipe_id=%s ORDER BY ordinal", args)]
-            labels = connection.execute("SELECT kind,value,estimated FROM recipe_labels WHERE recipe_id=%s "
-                                        "ORDER BY kind,value", args).fetchall()
-            for kind, key in (("taste", "taste_tags"), ("cooking_method", "cooking_methods"), ("tool", "required_tools")):
-                recipe[key] = [r["value"] for r in labels if r["kind"] == kind]
-            notes = connection.execute("SELECT kind,description FROM recipe_notes WHERE recipe_id=%s "
-                                       "ORDER BY kind,ordinal", args).fetchall()
-            for kind, key in (("warning", "warnings"), ("blocking_reason", "blocking_reasons")):
-                recipe[key] = [r["description"] for r in notes if r["kind"] == kind]
-            recipe["references"] = connection.execute("SELECT title,url FROM recipe_references WHERE recipe_id=%s "
-                                                       "ORDER BY ordinal", args).fetchall()
-            nutrition = connection.execute("SELECT * FROM recipe_nutrition WHERE recipe_id=%s", args).fetchone()
-            recipe["nutrition"] = {
-                "status": nutrition["status"], "estimated": nutrition["estimated"],
-                "total": _values(nutrition, "total_"), "per_serving": _values(nutrition, "per_serving_"),
-                "estimated_total_fields": _estimated_fields(nutrition, "estimated_total_"),
-                "estimated_per_serving_fields": _estimated_fields(nutrition, "estimated_per_serving_"),
-                "estimated_servings": recipe["estimated_servings"],
-                "tags": [r["value"] for r in labels if r["kind"] == "nutrition"],
-                "tags_estimated": any(r["estimated"] for r in labels if r["kind"] == "nutrition"),
-            }
-            recipe["ingredients"] = connection.execute(
-                "SELECT * FROM recipe_ingredients WHERE recipe_id=%s ORDER BY ordinal", args).fetchall()
-            aliases = connection.execute("SELECT ordinal,alias FROM ingredient_aliases WHERE recipe_id=%s "
-                                         "ORDER BY ordinal,alias", args).fetchall()
-            allergens = connection.execute("SELECT ordinal,allergen FROM ingredient_allergens WHERE recipe_id=%s "
-                                           "ORDER BY ordinal,allergen", args).fetchall()
-            details = {r["ordinal"]: r for r in connection.execute(
-                "SELECT * FROM recipe_ingredient_nutrition WHERE recipe_id=%s", args)}
-            for item in recipe["ingredients"]:
-                ordinal = item["ordinal"]
-                item.pop("recipe_id")
-                item["aliases"] = [r["alias"] for r in aliases if r["ordinal"] == ordinal]
-                item["allergens"] = [r["allergen"] for r in allergens if r["ordinal"] == ordinal]
-                detail = details[ordinal]
-                item["nutrition"] = {"contribution": _values(detail, "contribution_"),
-                                     "per_100g": _values(detail, "per_100g_"), "fdc_id": detail["fdc_id"],
-                                     "estimated": detail["estimated"],
-                                     "estimated_nutrients": _estimated_fields(detail, "estimated_")}
-            recipe["allergens"] = sorted({r["allergen"] for r in allergens})
-            return recipe
+        connection = self._active()
+        recipe = connection.execute("SELECT * FROM recipes WHERE recipe_id=%s", (recipe_id,)).fetchone()
+        if recipe is None:
+            return None
+        args = (recipe_id,)
+        recipe["steps"] = [r["description"] for r in connection.execute(
+            "SELECT description FROM recipe_steps WHERE recipe_id=%s ORDER BY ordinal", args)]
+        labels = connection.execute("SELECT kind,value,estimated FROM recipe_labels WHERE recipe_id=%s "
+                                    "ORDER BY kind,value", args).fetchall()
+        for kind, key in (("taste", "taste_tags"), ("cooking_method", "cooking_methods"), ("tool", "required_tools")):
+            recipe[key] = [r["value"] for r in labels if r["kind"] == kind]
+        notes = connection.execute("SELECT kind,description FROM recipe_notes WHERE recipe_id=%s "
+                                   "ORDER BY kind,ordinal", args).fetchall()
+        for kind, key in (("warning", "warnings"), ("blocking_reason", "blocking_reasons")):
+            recipe[key] = [r["description"] for r in notes if r["kind"] == kind]
+        recipe["references"] = connection.execute("SELECT title,url FROM recipe_references WHERE recipe_id=%s "
+                                                   "ORDER BY ordinal", args).fetchall()
+        nutrition = connection.execute("SELECT * FROM recipe_nutrition WHERE recipe_id=%s", args).fetchone()
+        recipe["nutrition"] = {
+            "status": nutrition["status"], "estimated": nutrition["estimated"],
+            "total": _values(nutrition, "total_"), "per_serving": _values(nutrition, "per_serving_"),
+            "estimated_total_fields": _estimated_fields(nutrition, "estimated_total_"),
+            "estimated_per_serving_fields": _estimated_fields(nutrition, "estimated_per_serving_"),
+            "estimated_servings": recipe["estimated_servings"],
+            "tags": [r["value"] for r in labels if r["kind"] == "nutrition"],
+            "tags_estimated": any(r["estimated"] for r in labels if r["kind"] == "nutrition"),
+        }
+        recipe["ingredients"] = connection.execute(
+            "SELECT * FROM recipe_ingredients WHERE recipe_id=%s ORDER BY ordinal", args).fetchall()
+        aliases = connection.execute("SELECT ordinal,alias FROM ingredient_aliases WHERE recipe_id=%s "
+                                     "ORDER BY ordinal,alias", args).fetchall()
+        allergens = connection.execute("SELECT ordinal,allergen FROM ingredient_allergens WHERE recipe_id=%s "
+                                       "ORDER BY ordinal,allergen", args).fetchall()
+        details = {r["ordinal"]: r for r in connection.execute(
+            "SELECT * FROM recipe_ingredient_nutrition WHERE recipe_id=%s", args)}
+        for item in recipe["ingredients"]:
+            ordinal = item["ordinal"]
+            item.pop("recipe_id")
+            item["aliases"] = [r["alias"] for r in aliases if r["ordinal"] == ordinal]
+            item["allergens"] = [r["allergen"] for r in allergens if r["ordinal"] == ordinal]
+            detail = details[ordinal]
+            item["nutrition"] = {"contribution": _values(detail, "contribution_"),
+                                 "per_100g": _values(detail, "per_100g_"), "fdc_id": detail["fdc_id"],
+                                 "estimated": detail["estimated"],
+                                 "estimated_nutrients": _estimated_fields(detail, "estimated_")}
+        recipe["allergens"] = sorted({r["allergen"] for r in allergens})
+        return recipe

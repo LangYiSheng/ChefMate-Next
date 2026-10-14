@@ -1,0 +1,40 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "chefmate-playground"
+version = "0.1.0"
+description = "Local workbench for ChefMate retrieval tools and the cooking agent"
+requires-python = ">=3.12"
+dependencies = [
+  "chefmate-agent", "chefmate-workflow", "chefmate-retrieval", "chefmate-storage", "chefmate-food-data", "chefmate-contracts",
+  "fastapi>=0.115,<1", "uvicorn>=0.30,<1", "python-dotenv>=1,<2",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8,<10", "httpx>=0.27,<1", "ruff>=0.12,<1"]
+
+[project.scripts]
+chefmate-playground = "chefmate_playground.__main__:main"
+
+[tool.uv.sources]
+chefmate-agent = {path = "../../packages/chefmate-agent", editable = true}
+chefmate-workflow = {path = "../../packages/chefmate-workflow", editable = true}
+chefmate-retrieval = {path = "../../packages/chefmate-retrieval", editable = true}
+chefmate-storage = {path = "../../packages/chefmate-storage", editable = true}
+chefmate-food-data = {path = "../../packages/chefmate-food-data", editable = true}
+chefmate-contracts = {path = "../../packages/chefmate-contracts", editable = true}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+
+[tool.ruff]
+line-length = 120
+target-version = "py312"
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F"]
