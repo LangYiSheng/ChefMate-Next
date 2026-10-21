@@ -126,6 +126,7 @@ class AgentTurnResult(BaseModel):
     snapshot: dict[str, Any] | None = None
     actions: list[dict[str, Any]] = Field(default_factory=list)
     usage: dict[str, Any] = Field(default_factory=dict)
+    context_usage: dict[str, Any] = Field(default_factory=dict)
     suggested_replies: list[ReplySuggestion] = Field(default_factory=list, max_length=3)
     awaiting_user: bool = False
     pending_question: dict[str, Any] | None = None

@@ -10,6 +10,7 @@ from pydantic import ValidationError
 from .failure_policy import FailurePolicy, safe_errors
 from .models import ToolCallRecord
 from .debug import request_trace
+from .telemetry import request_measurement
 
 
 @dataclass
@@ -33,6 +34,7 @@ class TurnRuntimeContext:
     failure_policy: FailurePolicy = field(default_factory=FailurePolicy)
     batch_rejections: dict[str, dict] = field(default_factory=dict)
     memory_context: dict = field(default_factory=dict)
+    context_usage: dict = field(default_factory=dict)
 
 
 class ChefMateMiddleware(AgentMiddleware):
@@ -95,6 +97,9 @@ class ChefMateMiddleware(AgentMiddleware):
                               stage=context.ui_context.get("stage", "idea"), skills=self.owner.skills.list_metadata(),
                               secrets=self.owner._debug_secrets())
         context.debug_trace.append(trace)
+        context.context_usage = request_measurement(context.model_rounds, prompt, final_request.messages,
+                                                    final_request.tools, model=self.owner.config.model)
+        await self.owner._emit(context.on_event, {"type": "context_usage", "context_usage": context.context_usage})
         await self.owner._emit(context.on_event, {"type": "debug_context", "context": trace})
         return await handler(final_request)
 
@@ -105,7 +110,7 @@ class ChefMateMiddleware(AgentMiddleware):
         if not isinstance(response, AIMessage):
             raise _AgentFailure("invalid_response", "模型返回了不支持的消息格式。", True)
         context = runtime.context
-        context.usage.append(self.owner._usage_record(response, context.model_rounds))
+        context.usage.append(self.owner._usage_record(response, context.model_rounds, model=self.owner.config.model))
         await self.owner._emit(context.on_event, {"type": "model_usage", "usage": self.owner._usage_summary(context)})
         integrity = response.response_metadata.get("tool_argument_integrity")
         if integrity is not None and context.debug_trace:

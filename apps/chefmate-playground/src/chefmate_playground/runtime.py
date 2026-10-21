@@ -11,6 +11,7 @@ from chefmate_agent.suggestions import REPLY_SUGGESTIONS_TOOL, finalize_reply_su
 
 from .sessions import SessionRepository, now
 from .debug import redact_debug
+from .usage import UsageRepository
 
 
 class TurnConflict(ValueError):
@@ -47,7 +48,7 @@ class ActiveTurn:
 
 class TurnManager:
     def __init__(self, repository: SessionRepository, agent, workspace_binding=None, images=None, *, reply_suggestions=True,
-                 debug_secrets=(), memory=None, memory_enabled=None):
+                 debug_secrets=(), memory=None, memory_enabled=None, usage=None):
         self.repository = repository
         self.agent = agent
         self.workspace_binding = workspace_binding
@@ -56,6 +57,8 @@ class TurnManager:
         self.debug_secrets = debug_secrets
         self.memory = memory
         self.memory_enabled = memory_enabled or (lambda: False)
+        self.usage = usage or UsageRepository(repository.path)
+        self.usage.backfill(repository)
         self.active: dict[str, ActiveTurn] = {}
         self._lock = asyncio.Lock()
 
@@ -139,7 +142,16 @@ class TurnManager:
                 "skill_events": source.get("skill_events") or turn.skill_events,
                 "tool_calls": source.get("tool_calls") or turn.progress.get("tool_calls", []),
                 "usage": source.get("usage") or turn.progress.get("usage", {}),
+                "context_usage": source.get("context_usage") or turn.progress.get("context_usage", {}),
             }, self.debug_secrets))
+        def record_usage(status="running", data=None):
+            source = data or {}
+            observed = copy.deepcopy(source.get("usage") or turn.progress.get("usage") or {})
+            measurement = source.get("context_usage") or turn.progress.get("context_usage") or {}
+            observed["attempted_calls"] = max(observed.get("attempted_calls", 0), measurement.get("round", 0))
+            model = getattr(getattr(self.agent, "config", None), "model", "")
+            self.usage.record(turn.session_id, turn.id, observed, model=model,
+                              created_at=turn.created_at, status=status)
         async def on_event(event):
             payload = copy.deepcopy(event)
             if payload.get("type") == "debug_context":
@@ -185,7 +197,11 @@ class TurnManager:
                 progress["actions"].append(payload["action"])
             elif kind == "model_usage":
                 progress["usage"] = payload["usage"]
-            if kind in {"tool_start", "tool_end", "model_usage"}:
+            elif kind == "context_usage":
+                progress["context_usage"] = payload["context_usage"]
+            if kind in {"model_usage", "context_usage"}:
+                record_usage()
+            if kind in {"tool_start", "tool_end", "model_usage", "context_usage"}:
                 save_debug()
             instant = time.monotonic()
             if kind != "assistant_delta" or instant - turn.last_persist >= 0.4:
@@ -224,7 +240,8 @@ class TurnManager:
             "tool_calls": [item for item in data.get("tool_calls", []) if item.get("name") != REPLY_SUGGESTIONS_TOOL],
             "snapshot": data.get("snapshot"),
             "actions": data.get("actions", []), "process": turn.progress.get("process", []),
-            "usage": data.get("usage", {}), "suggested_replies": [],
+            "usage": data.get("usage") or turn.progress.get("usage", {}),
+            "context_usage": data.get("context_usage") or turn.progress.get("context_usage", {}), "suggested_replies": [],
         }
         async with self._lock:
             def finish(state):
@@ -246,6 +263,7 @@ class TurnManager:
                         "recipes": visible["recipes"], "selected_recipe": visible["selected_recipe"],
                         "tool_calls": visible["tool_calls"], "snapshot": visible["snapshot"],
                         "usage": visible["usage"], "suggested_replies": visible["suggested_replies"],
+                        "context_usage": visible["context_usage"],
                     })
                 state.update(running=False, active_turn=None, updated_at=now(), last_status=status,
                              last_error=data.get("error"),
@@ -253,6 +271,7 @@ class TurnManager:
                                        "message": turn.message, "image_ids": image_ids_for_turn(history), "result": visible})
             self.repository.mutate(turn.session_id, finish)
             save_debug("waiting_for_user" if visible.get("awaiting_user") else status, data)
+            record_usage(status, {"usage": visible["usage"], "context_usage": visible["context_usage"]})
             self.active.pop(turn.session_id, None)
         if self.workspace_binding:
             self.workspace_binding.record_journal(turn.session_id)

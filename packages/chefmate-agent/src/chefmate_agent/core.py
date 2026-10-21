@@ -24,6 +24,7 @@ from .skills import SkillListRequest, SkillLoadRequest, SkillRegistry
 from .suggestions import REPLY_SUGGESTIONS_TOOL, finalize_reply_suggestions, make_reply_suggestions_tool
 from .debug import tool_catalog
 from .provider import IntegrityChatOpenAI, ProviderIntegrityError
+from .telemetry import usage_record, usage_summary
 
 EventCallback = Callable[[dict[str, Any]], Awaitable[None] | None]
 
@@ -411,7 +412,7 @@ class ChefMateAgent:
                        "需要ask_user等待回答时不生成推荐。不要在最终正文重复列出建议。")
         metadata = self.skills.list_metadata()
         if metadata:
-            prompt += "\n已启用Skills仅列元数据，需要细节时调用load_skill；关闭技能会同时禁用其所属工具：\n" + _dump(metadata)
+            prompt += "\n已启用的能力指引仅列元数据，需要细节时调用load_skill；关闭所属能力会同时禁用其工具：\n" + _dump(metadata)
         return prompt
 
     @classmethod
@@ -489,26 +490,12 @@ class ChefMateAgent:
         return result
 
     @staticmethod
-    def _usage_record(response, round_number):
-        metadata = response.usage_metadata or {}
-        def number(value):
-            return value if isinstance(value, int) and not isinstance(value, bool) and value >= 0 else None
-        inputs = metadata.get("input_token_details") or {}
-        cache_values = [number(value) for key, value in inputs.items() if key.endswith("cache_read")]
-        cache = sum(cache_values) if cache_values and all(value is not None for value in cache_values) else None
-        return {"round": round_number, "input_tokens": number(metadata.get("input_tokens")),
-                "output_tokens": number(metadata.get("output_tokens")), "cached_tokens": cache,
-                "reasoning_tokens": number((metadata.get("output_token_details") or {}).get("reasoning"))}
+    def _usage_record(response, round_number, *, model=""):
+        return usage_record(response, round_number, model=model)
 
     @staticmethod
     def _usage_summary(context):
-        def total(key):
-            values = [item[key] for item in context.usage]
-            return sum(values) if values and all(value is not None for value in values) else None
-        return {"model_calls": len(context.usage), "reported_calls": sum(
-                    item["input_tokens"] is not None for item in context.usage),
-                **{key: total(key) for key in ("input_tokens", "output_tokens", "cached_tokens", "reasoning_tokens")},
-                "calls": copy.deepcopy(context.usage)}
+        return usage_summary(copy.deepcopy(context.usage), attempted_calls=len(context.debug_trace))
 
     @staticmethod
     def _parse_tool_result(content) -> dict:
@@ -628,7 +615,7 @@ class ChefMateAgent:
                                         "message": "等待你的回答" if pending_question else "查询完成"})
             return AgentTurnResult(
                 status="completed", assistant_text=answer, messages=complete, tool_calls=context.records,
-                actions=context.actions, usage=self._usage_summary(context), **context.view_state,
+                actions=context.actions, usage=self._usage_summary(context), context_usage=context.context_usage, **context.view_state,
                 awaiting_user=bool(pending_question), pending_question=pending_question,
                 debug_trace=context.debug_trace, skill_events=context.skill_events,
                 suggested_replies=finalize_reply_suggestions(next((
@@ -639,7 +626,7 @@ class ChefMateAgent:
         except _UserCancelled:
             await self._emit(on_event, {"type": "status", "status": "cancelled", "message": "已停止本轮查询"})
             return AgentTurnResult(status="cancelled", messages=original, tool_calls=context.records,
-                                   actions=context.actions, usage=self._usage_summary(context),
+                                   actions=context.actions, usage=self._usage_summary(context), context_usage=context.context_usage,
                                    debug_trace=context.debug_trace, skill_events=context.skill_events)
         except TimeoutError:
             error = AgentError(code="turn_timeout", message="本轮请求超时，可以重试。", retryable=True)
@@ -658,7 +645,7 @@ class ChefMateAgent:
             error = AgentError(code="model_error", message="模型服务暂时无法完成请求，请检查配置后重试。", retryable=True)
         await self._emit(on_event, {"type": "status", "status": "error", "message": error.message, "code": error.code})
         return AgentTurnResult(status="error", messages=original, tool_calls=context.records,
-                               actions=context.actions, usage=self._usage_summary(context), error=error,
+                               actions=context.actions, usage=self._usage_summary(context), context_usage=context.context_usage, error=error,
                                debug_trace=context.debug_trace, skill_events=context.skill_events)
 
     @staticmethod
