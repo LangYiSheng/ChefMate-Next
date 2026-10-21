@@ -15,18 +15,17 @@ from .models import (
     TOOL_REQUEST_MODELS, ActionRecord, ApprovedRecipeRef, CompactComponentSnapshot,
     CookingData, CookingGuide, FrozenRecipe, IngredientView, MealPlan, PreferenceField, PreferenceForm,
     CookingAdaptation, PreferenceFormData, PreferenceValues, PrepChecklist, PrepData, ProgressData, RecipeChoices,
-    RecipeDetail, RecipeDetailData, RecipeListData, RecipeView, ShoppingData, ShoppingItem, ShoppingList,
+    PendingQuestion, QuestionAnswer, RecipeDetail, RecipeDetailData, RecipeListData, RecipeView,
     SourceInfo, StepView, TaskProgress, TimerState, Timers, TimersData, UIAction, UISnapshot,
     UserActionRequest, WorkspaceState,
 )
 
 TOOL_DESCRIPTIONS = {
-    "show_preference_form": "展示闭合的用户偏好表单；由用户填写，不能生成任意表单或偷偷保存偏好。",
+    "show_preference_form": "展示当前真实偏好表单，包含已保存值，便于用户填写或核对模型刚执行的修改。",
     "show_recipe_choices": "展示真实搜索结果的菜谱候选。recipe_ids 和 data_snapshot 必须来自检索工具。",
     "show_recipe_details": "展示真实菜谱详情；已选任务使用冻结原件，新菜谱必须提供检索来源快照。",
     "set_meal_plan": "把用户已选的真实菜谱冻结为本次餐单，最多4道；不修改源菜谱、不凭空生成菜谱。",
     "show_meal_plan": "展示当前餐单和目标份量，保留来源、未知值和估算标记。",
-    "show_shopping_list": "从当前餐单投影缺料清单；只合并相同食材身份、名称和单位且可可靠计算的数量。",
     "show_prep_checklist": "展示当前真实备料状态和原文依据，不猜测哪个是主料或可选食材。",
     "show_cooking_guide": "展示已选任务的烹饪步骤与实际进度，浏览步骤不等于完成步骤。",
     "set_cooking_timer": "设置持久化计时器；秒数必须由用户指定或原菜谱明确给出，不猜测时长。",
@@ -34,6 +33,10 @@ TOOL_DESCRIPTIONS = {
     "get_cooking_workspace": "读取餐单、阶段、用户已确认操作和界面短快照。",
     "advance_cooking_stage": "显式推进或回退厨房阶段；备料未确认或步骤未完成时拒绝越级。",
     "update_cooking_guidance": "按用户条件为当前任务追加备菜或步骤建议，保留冻结原步骤及真实进度。",
+    "update_preferences": "按用户明确要求修改提供的偏好字段；expected_revision须来自最新工作区，不覆盖未提供字段，展示保存值供核对。",
+    "select_recipes": "按用户明确要求选择当前真实候选或已选餐单ID；expected_revision来自最新快照，不重置执行中的任务。",
+    "update_prep_items": "按用户明确授权批量标记指定食材的准备状态；item_id须来自本餐清单，不能凭名称猜ID或猜小料分类。expected_revision必须匹配，全部通过才更新。",
+    "ask_user": "在有实质歧义时询问用户；展示最多6个真实选项并允许自填。该工具必须单独调用，随后等待用户回答，不替用户选答案。",
 }
 PREP_NOTE = "源菜谱没有可靠的必选/可选字段；这里逐项展示原文，跳过需由用户明确确认，不代表已证明可省略。"
 FIELD_META = {
@@ -44,8 +47,7 @@ FIELD_META = {
     "allow_estimated": ("允许营养估算值", "checkbox"),
 }
 STAGE_TRANSITIONS = {
-    "idea": {"planning"}, "planning": {"idea", "shopping", "prep"},
-    "shopping": {"planning", "prep"}, "prep": {"planning", "shopping", "cooking"},
+    "idea": {"planning"}, "planning": {"idea", "prep"}, "prep": {"planning", "cooking"},
     "cooking": {"prep", "completed"}, "completed": {"idea", "planning"},
 }
 
@@ -231,35 +233,6 @@ class WorkflowService:
         return [ingredient for recipe in state.meal_plan if recipe_ids is None or recipe.recipe_id in recipe_ids
                 for ingredient in self._recipe_view(recipe, state).ingredients]
 
-    def _shopping(self, state, recipe_ids=None):
-        merged = {}
-        legacy_ids = {}
-        for item in self._prep_items(state, recipe_ids):
-            if item.status in {"ready", "skipped"}:
-                continue
-            # Unknown quantities do not merge: doing so would hide a missing amount from another dish.
-            key = (item.ingredient_id, item.canonical_name, item.unit, item.id if item.amount_value is None else "")
-            if key not in merged:
-                identity = "shopping:" + hashlib.sha256(_dump(key).encode()).hexdigest()[:20]
-                merged[key] = ShoppingItem(id=identity, ingredient_id=item.ingredient_id,
-                    canonical_name=item.canonical_name, unit=item.unit, amount_value=item.amount_value,
-                    amount_text=item.amount_text, estimated=item.estimated, checked=identity in state.shopping_checked,
-                    source_recipe_ids=[item.recipe_id], source_item_ids=[item.id])
-                legacy_ids[key] = identity
-            else:
-                target = merged[key]
-                target.amount_value += item.amount_value
-                target.amount_text = _amount(target.amount_value, target.unit)
-                target.estimated = target.estimated or item.estimated
-                target.source_recipe_ids = list(dict.fromkeys([*target.source_recipe_ids, item.recipe_id]))
-                target.source_item_ids.append(item.id)
-        for key, target in merged.items():
-            # A purchase confirmation applies to actual dish contributions, not every dish sharing its name.
-            target.id = "shopping:" + hashlib.sha256(_dump([key, sorted(target.source_item_ids)]).encode()).hexdigest()[:20]
-            target.checked = legacy_ids[key] in state.shopping_checked or all(
-                identity in state.shopping_checked for identity in target.source_item_ids)
-        return list(merged.values())
-
     def _component_data(self, component, state):
         kind = component.kind
         if kind == "preference_form":
@@ -281,9 +254,6 @@ class WorkflowService:
                     recipe.recipe_id == identity and recipe.data_snapshot == expected for recipe in state.meal_plan):
                 raise DomainConflict("stale_view", "未选中的旧详情不属于当前执行任务。")
             return RecipeDetailData(recipe=self._recipe_view(source, state))
-        if kind == "shopping_list":
-            return ShoppingData(items=self._shopping(state, component.data.recipe_ids),
-                                recipe_ids=component.data.recipe_ids, notes=[PREP_NOTE])
         if kind == "prep_checklist":
             return PrepData(items=self._prep_items(state, component.data.recipe_ids),
                             recipe_ids=component.data.recipe_ids, notes=[PREP_NOTE],
@@ -337,9 +307,6 @@ class WorkflowService:
             elif view.kind == "recipe_detail":
                 recipe = raw["recipe"]
                 data = {"recipe_id": recipe["recipe_id"], "name": recipe["name"], "source": recipe["source"]}
-            elif view.kind == "shopping_list":
-                data = {"items": [{key: item[key] for key in ("id", "canonical_name", "checked", "amount_text")}
-                                  for item in raw["items"]], "recipe_ids": raw["recipe_ids"]}
             elif view.kind == "prep_checklist":
                 data = {"items": [{key: item[key] for key in ("id", "recipe_id", "canonical_name", "status",
                                   "amount_text", "amount_value", "unit", "scaled", "estimated")}
@@ -364,7 +331,7 @@ class WorkflowService:
         return UISnapshot(revision=state.revision, stage=state.stage, components=components,
                           preferences=state.preferences, selected_recipe_ids=[recipe.recipe_id for recipe in state.meal_plan],
                           active_recipe_id=state.active_recipe_id, active_step_id=state.active_step_id,
-                          recent_actions=recent)
+                          recent_actions=recent, pending_question=state.pending_question, last_answer=state.last_answer)
 
     def _response(self, state, status="ok", message=None, action_component=None):
         views = self._views(state)
@@ -375,7 +342,8 @@ class WorkflowService:
             if current:
                 actions = [UIAction(component=current).model_dump(mode="json")]
         result = {"status": status, "workspace": snapshot, "views": [view.model_dump(mode="json") for view in views],
-                  "ui_snapshot": snapshot, "actions": actions}
+                  "ui_snapshot": snapshot, "actions": actions,
+                  "pending_question": snapshot["pending_question"], "last_answer": snapshot["last_answer"]}
         if message is not None:
             result["message"] = message
         return result
@@ -467,7 +435,7 @@ class WorkflowService:
         return frozen
 
     def _plan(self, state, recipes, servings=None):
-        if state.stage not in {"idea", "planning", "shopping", "completed"}:
+        if state.stage not in {"idea", "planning", "completed"}:
             raise DomainConflict("stage_conflict", "请先回到选菜阶段，再更换餐单；不会重置正在烹饪的任务。")
         requested = servings or {}
         if set(requested) - {recipe.recipe_id for recipe in recipes}:
@@ -477,7 +445,6 @@ class WorkflowService:
         state.stage = "planning"
         state.prep_status = {}
         state.step_status = {}
-        state.shopping_checked = []
         state.timers = []
         state.adaptations = []
         state.active_recipe_id = state.meal_plan[0].recipe_id if state.meal_plan else None
@@ -492,7 +459,7 @@ class WorkflowService:
     def _set_stage(self, state, stage):
         if stage != state.stage and stage not in STAGE_TRANSITIONS[state.stage]:
             raise DomainConflict("stage_conflict", f"不能从 {state.stage} 直接进入 {stage}。")
-        if stage in {"shopping", "prep", "cooking", "completed"} and not state.meal_plan:
+        if stage in {"prep", "cooking", "completed"} and not state.meal_plan:
             raise DomainConflict("plan_required", "请先选择真实菜谱作为本次餐单。")
         if stage in {"prep", "cooking", "completed"}:
             if any(not recipe.recipe.get("ingredients") or not recipe.recipe.get("steps") for recipe in state.meal_plan):
@@ -508,7 +475,7 @@ class WorkflowService:
                     timer.status, timer.deadline_at = "cancelled", None
         state.stage = stage
         if stage == "idea":
-            state.meal_plan, state.prep_status, state.step_status, state.shopping_checked = [], {}, {}, []
+            state.meal_plan, state.prep_status, state.step_status = [], {}, {}
             state.active_recipe_id, state.active_step_id, state.timers = None, None, []
             state.adaptations = []
             state.components = [view for view in state.components if view.kind == "preference_form"]
@@ -523,9 +490,6 @@ class WorkflowService:
         if stage == "planning":
             return self._ensure_component(state, MealPlan, "这次的餐单", RecipeListData(
                 recipes=[self._recipe_view(recipe, state, summary=True) for recipe in state.meal_plan]))
-        if stage == "shopping":
-            return self._ensure_component(state, ShoppingList, "需要准备的食材",
-                                          ShoppingData(items=self._shopping(state), notes=[PREP_NOTE]))
         if stage == "prep":
             return self._ensure_component(state, PrepChecklist, "逐项确认备料",
                                           PrepData(items=self._prep_items(state), notes=[PREP_NOTE]))
@@ -591,6 +555,10 @@ class WorkflowService:
         initial = self._state(self._get_state())
         base_revision = args.pop("base_revision")
         base_revision = initial.revision if base_revision is None else base_revision
+        if "expected_revision" in args:
+            base_revision = args["expected_revision"]
+        if name == "update_preferences":
+            args["values"] = validated.values.model_dump(mode="json", exclude_unset=True)
         if operation_id:
             prior = next((record for record in initial.recent_actions if record.action_id == operation_id), None)
             fingerprint = hashlib.sha256(_dump({"type": name, "payload": args}).encode()).hexdigest()
@@ -623,6 +591,35 @@ class WorkflowService:
         except DomainConflict as error:
             return self._response(initial, error.status, str(error))
         def command(state):
+            if state.pending_question is not None:
+                raise DomainConflict("pending_question_exists", "请先回答当前问题，不会替换尚未回答的确认。")
+            if name == "ask_user":
+                state.pending_question = PendingQuestion(id=str(uuid4()), title=validated.title,
+                    question=validated.question, options=validated.options,
+                    allow_custom=validated.allow_custom, multiple=validated.multiple)
+                return None
+            if name == "update_preferences":
+                state.preferences = PreferenceValues.model_validate({**state.preferences.model_dump(), **args["values"]})
+                fields = [PreferenceField(name=field, label=FIELD_META[field][0], input_type=FIELD_META[field][1],
+                                          value=getattr(state.preferences, field)) for field in args["values"]]
+                return self._show(state, PreferenceForm, "核对已更新的用餐条件",
+                                  PreferenceFormData(fields=fields, values=state.preferences))
+            if name == "select_recipes":
+                recipes = []
+                for identity in dict.fromkeys(validated.recipe_ids):
+                    candidate = next((recipe for recipe in state.candidates if recipe.recipe_id == identity), None)
+                    recipes.append(candidate if candidate is not None else self._find_recipe(state, identity))
+                return self._plan(state, recipes)
+            if name == "update_prep_items":
+                if state.stage not in {"planning", "prep"}:
+                    raise DomainConflict("stage_conflict", "只有选菜和备菜阶段可以调整准备状态。")
+                valid = {item.id for item in self._prep_items(state)}
+                if any(item.item_id not in valid for item in validated.items):
+                    raise DomainConflict("invalid_reference", "部分食材不属于当前餐单，没有修改任何准备状态。")
+                for item in validated.items:
+                    state.prep_status[item.item_id] = item.status
+                return self._ensure_component(state, PrepChecklist, "逐项确认备料", PrepData(
+                    items=self._prep_items(state), notes=[PREP_NOTE]))
             if name == "show_preference_form":
                 fields = [PreferenceField(name=field, label=FIELD_META[field][0], input_type=FIELD_META[field][1],
                                           value=getattr(state.preferences, field)) for field in validated.fields]
@@ -643,9 +640,6 @@ class WorkflowService:
             if name == "show_meal_plan":
                 return self._show(state, MealPlan, "这次的餐单", RecipeListData(
                     recipes=[self._recipe_view(recipe, state, summary=True) for recipe in state.meal_plan]))
-            if name == "show_shopping_list":
-                return self._show(state, ShoppingList, "需要准备的食材", ShoppingData(
-                    items=self._shopping(state, validated.recipe_ids), recipe_ids=validated.recipe_ids, notes=[PREP_NOTE]))
             if name == "show_prep_checklist":
                 return self._show(state, PrepChecklist, "逐项确认备料", PrepData(
                     items=self._prep_items(state, validated.recipe_ids), recipe_ids=validated.recipe_ids, notes=[PREP_NOTE]))
@@ -664,7 +658,7 @@ class WorkflowService:
                 return self._show(state, CookingGuide, "烹饪步骤", CookingData(recipe_id=state.active_recipe_id,
                     recipe_name=None, steps=[], active_step_id=state.active_step_id))
             if name == "update_cooking_guidance":
-                if state.stage not in {"planning", "shopping", "prep", "cooking"}:
+                if state.stage not in {"planning", "prep", "cooking"}:
                     raise DomainConflict("stage_conflict", "请先确认本次餐单。")
                 recipe = self._find_recipe(state, validated.recipe_id)
                 if validated.step_id is not None and validated.step_id not in {step.id for step in self._recipe_view(recipe, state).steps}:
@@ -690,7 +684,10 @@ class WorkflowService:
             if name == "show_timers":
                 return self._show(state, Timers, "厨房计时", TimersData(timers=state.timers))
             return self._set_stage(state, validated.stage)
-        result = self._command(operation_id or str(uuid4()), name, args, base_revision, command)
+        try:
+            result = self._command(operation_id or str(uuid4()), name, args, base_revision, command)
+        except ValidationError:
+            return self._response(self._state(self._get_state()), "invalid_arguments", "修改后的字段值无效，没有保存。")
         if validated.display == "none":
             result["actions"] = []
         else:
@@ -707,6 +704,24 @@ class WorkflowService:
             if kind == "update_preferences":
                 updated = {**state.preferences.model_dump(), **payload["values"]}
                 state.preferences = PreferenceValues.model_validate(updated)
+            elif kind == "answer_question":
+                pending = state.pending_question
+                if pending is None:
+                    raise DomainConflict("question_already_answered", "这条问题已经回答，请继续当前对话。")
+                if payload["question_id"] != pending.id:
+                    raise DomainConflict("stale_question", "问题已经变化，请回答当前显示的问题。")
+                ids = payload.get("option_ids", [])
+                text = payload.get("text", "").strip()
+                available = {option.id: option.label for option in pending.options}
+                if len(ids) != len(set(ids)) or any(identity not in available for identity in ids):
+                    raise DomainConflict("invalid_answer", "答案包含无效或重复选项，没有保存。")
+                if len(ids) > 1 and not pending.multiple:
+                    raise DomainConflict("invalid_answer", "这条问题只需要选择一个选项。")
+                if text and not pending.allow_custom or not ids and not text:
+                    raise DomainConflict("invalid_answer", "请提供这条问题允许的答案。")
+                state.last_answer = QuestionAnswer(question_id=pending.id, question=pending.question,
+                    option_ids=ids, labels=[available[identity] for identity in ids], text=text)
+                state.pending_question = None
             elif kind == "select_recipes":
                 recipes = []
                 for identity in dict.fromkeys(payload["recipe_ids"]):
@@ -728,7 +743,7 @@ class WorkflowService:
                         allow_candidate=state.stage not in {"prep", "cooking", "completed"})
                 return self._show(state, RecipeDetail, "菜谱详情", RecipeDetailData(recipe=self._recipe_view(recipe, state)))
             elif kind == "change_servings":
-                if state.stage not in {"planning", "shopping", "prep"}:
+                if state.stage not in {"planning", "prep"}:
                     raise DomainConflict("stage_conflict", "请先回到备料或选菜阶段调整份量。")
                 recipe = self._find_recipe(state, payload["recipe_id"])
                 recipe.target_servings = payload["servings"]
@@ -743,37 +758,16 @@ class WorkflowService:
                 for timer in state.timers:
                     if timer.recipe_id == recipe.recipe_id and timer.status in {"running", "paused"}:
                         timer.status, timer.deadline_at = "cancelled", None
-                state.shopping_checked = []
             elif kind == "set_checklist_scope":
                 component = next((view for view in state.components if view.id == value.view_id
-                                  and view.kind in {"shopping_list", "prep_checklist"}), None)
+                                  and view.kind == "prep_checklist"), None)
                 if component is None:
                     raise DomainConflict("invalid_reference", "请在当前食材清单上选择菜品。")
                 self._prep_items(state, payload.get("recipe_ids"))
                 component.data.recipe_ids = payload.get("recipe_ids")
                 return component
-            elif kind == "check_shopping_item":
-                if state.stage not in {"planning", "shopping", "prep"}:
-                    raise DomainConflict("stage_conflict", "当前阶段不能修改购物勾选。")
-                origin = next((view for view in state.components if view.id == value.view_id
-                               and view.kind == "shopping_list"), None)
-                scope = origin.data.recipe_ids if origin else None
-                item = next((item for item in self._shopping(state, scope) if item.id == payload["item_id"]), None)
-                if item is None:
-                    raise DomainConflict("invalid_reference", "清单条目已变化，请复核当前清单。")
-                selected = set(state.shopping_checked)
-                # Expand old aggregate confirmations once, retaining existing purchase facts across scope changes.
-                for previous in self._shopping(state):
-                    if previous.checked:
-                        selected.update(previous.source_item_ids)
-                selected = {identity for identity in selected if not identity.startswith("shopping:")}
-                if payload["checked"]:
-                    selected.update(item.source_item_ids)
-                else:
-                    selected.difference_update(item.source_item_ids)
-                state.shopping_checked = sorted(selected)
             elif kind == "check_prep_item":
-                if state.stage not in {"shopping", "prep"}:
+                if state.stage not in {"planning", "prep"}:
                     raise DomainConflict("stage_conflict", "只有备料阶段可以确认准备状态。")
                 origin = next((view for view in state.components if view.id == value.view_id
                                and view.kind == "prep_checklist"), None)

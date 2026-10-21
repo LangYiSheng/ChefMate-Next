@@ -10,6 +10,7 @@ from uuid import uuid4
 from chefmate_agent.suggestions import REPLY_SUGGESTIONS_TOOL, finalize_reply_suggestions
 
 from .sessions import SessionRepository, now
+from .debug import redact_debug
 
 
 class TurnConflict(ValueError):
@@ -31,6 +32,9 @@ class ActiveTurn:
     ui_context: dict | None = None
     host_context: object | None = None
     sequence: int = 0
+    created_at: str = field(default_factory=now)
+    debug_trace: list = field(default_factory=list)
+    skill_events: list = field(default_factory=list)
 
     def emit(self, event: dict) -> None:
         # A browser can detach while generation continues. Never block the agent on an absent reader.
@@ -42,12 +46,14 @@ class ActiveTurn:
 
 
 class TurnManager:
-    def __init__(self, repository: SessionRepository, agent, workspace_binding=None, images=None, *, reply_suggestions=True):
+    def __init__(self, repository: SessionRepository, agent, workspace_binding=None, images=None, *, reply_suggestions=True,
+                 debug_secrets=()):
         self.repository = repository
         self.agent = agent
         self.workspace_binding = workspace_binding
         self.images = images
         self.reply_suggestions = reply_suggestions
+        self.debug_secrets = debug_secrets
         self.active: dict[str, ActiveTurn] = {}
         self._lock = asyncio.Lock()
 
@@ -72,11 +78,16 @@ class TurnManager:
                 if not self.reply_suggestions:
                     replay["suggested_replies"] = []
                 return None, replay
+            if request_id and any(item.get("request_id") == request_id for item in state.get("messages", [])
+                                  if item.get("role") == "user"):
+                raise TurnConflict("这条消息已经被接受，不能重复执行；请同步当前会话。")
             turn = ActiveTurn(str(uuid4()), session_id, request_id or str(uuid4()), message)
             def prepare(current):
                 references = self.images.references(current, image_ids) if self.images else []
                 # This snapshot is rebuilt from the authoritative aggregate, not client recipe/form JSON.
                 snapshot = self.workspace_binding.service(session_id).model_snapshot() if self.workspace_binding else None
+                if snapshot and snapshot.get("pending_question"):
+                    raise TurnConflict("请先回答当前问题，再继续对话；你的输入仍然保留。")
                 if ui_snapshot is not None and snapshot is not None and ui_snapshot["revision"] != snapshot["revision"]:
                     raise TurnConflict("界面已更新，请同步最新任务状态后再发送；你的文字没有丢失。")
                 tail = current["messages"][-1] if current["messages"] else None
@@ -86,7 +97,8 @@ class TurnManager:
                 if retry and not reuse:
                     raise TurnConflict("上一轮已改变，无法重试这条消息；请重新发送。")
                 if not reuse:
-                    user = {"id": str(uuid4()), "role": "user", "content": message, "created_at": now()}
+                    user = {"id": str(uuid4()), "role": "user", "content": message, "created_at": now(),
+                            "request_id": turn.request_id, "turn_id": turn.id}
                     if references:
                         user["images"] = references
                     if snapshot is not None:
@@ -116,8 +128,27 @@ class TurnManager:
 
     async def _run(self, turn: ActiveTurn, history: list[dict]) -> None:
         turn.started = True
+        def save_debug(status="running", data=None):
+            source = data or {}
+            self.repository.save_debug_run(turn.session_id, turn.id, redact_debug({
+                "turn_id": turn.id, "request_id": turn.request_id, "created_at": turn.created_at,
+                "message": turn.message, "status": status,
+                "debug_trace": source.get("debug_trace") or turn.debug_trace,
+                "skill_events": source.get("skill_events") or turn.skill_events,
+                "tool_calls": source.get("tool_calls") or turn.progress.get("tool_calls", []),
+                "usage": source.get("usage") or turn.progress.get("usage", {}),
+            }, self.debug_secrets))
         async def on_event(event):
             payload = copy.deepcopy(event)
+            if payload.get("type") == "debug_context":
+                turn.debug_trace.append(redact_debug(payload["context"], self.debug_secrets))
+                save_debug()
+                return
+            if payload.get("type") == "skill_event":
+                turn.skill_events.append(redact_debug(payload.get("skill", payload.get("event",
+                    {key: value for key, value in payload.items() if key != "type"})), self.debug_secrets))
+                save_debug()
+                return
             if payload.get("type") in {"tool_start", "tool_end"} and payload.get("name") == REPLY_SUGGESTIONS_TOOL:
                 # Draft suggestions belong to the finished answer, never to intermediate UI/log events.
                 return
@@ -143,6 +174,8 @@ class TurnManager:
                 progress["actions"].append(payload["action"])
             elif kind == "model_usage":
                 progress["usage"] = payload["usage"]
+            if kind in {"tool_start", "tool_end", "model_usage"}:
+                save_debug()
             instant = time.monotonic()
             if kind != "assistant_delta" or instant - turn.last_persist >= 0.4:
                 def persist(state):
@@ -184,8 +217,11 @@ class TurnManager:
                     return
                 if self.workspace_binding:
                     visible["workspace"] = self.workspace_binding.service(turn.session_id).model_snapshot()
+                question = (visible.get("workspace") or {}).get("pending_question")
+                visible["awaiting_user"] = status == "completed" and bool(question)
+                visible["pending_question"] = question if visible["awaiting_user"] else None
                 if status == "completed":
-                    if self.reply_suggestions:
+                    if self.reply_suggestions and not visible["awaiting_user"]:
                         visible["suggested_replies"] = finalize_reply_suggestions(
                             data.get("suggested_replies"), visible.get("workspace") or turn.ui_context)
                     state["history"] = data["messages"]
@@ -201,6 +237,7 @@ class TurnManager:
                              last_run={"id": turn.id, "request_id": turn.request_id, "status": status,
                                        "message": turn.message, "image_ids": image_ids_for_turn(history), "result": visible})
             self.repository.mutate(turn.session_id, finish)
+            save_debug("waiting_for_user" if visible.get("awaiting_user") else status, data)
             self.active.pop(turn.session_id, None)
         if status == "error":
             turn.emit({"type": "error", **(data.get("error") or {

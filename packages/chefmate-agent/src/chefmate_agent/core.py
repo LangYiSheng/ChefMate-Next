@@ -22,6 +22,7 @@ from .extensions import InjectedToolSpec, ToolExecutionContext
 from .runner import ChefMateMiddleware, TurnRuntimeContext
 from .skills import SkillListRequest, SkillLoadRequest, SkillRegistry
 from .suggestions import REPLY_SUGGESTIONS_TOOL, finalize_reply_suggestions, make_reply_suggestions_tool
+from .debug import tool_catalog
 
 EventCallback = Callable[[dict[str, Any]], Awaitable[None] | None]
 
@@ -183,6 +184,13 @@ class ChefMateAgent:
             middleware=[ChefMateMiddleware(self)], context_schema=TurnRuntimeContext,
         )
 
+    def tool_catalog(self, ui_context=None, *, tools=None) -> list[dict[str, Any]]:
+        """The actual bound schemas, with execution-stage availability made explicit."""
+        return tool_catalog(self.tools if tools is None else tools, self._extra_tools, ui_context)
+
+    def _debug_secrets(self):
+        return (self.config.api_key.get_secret_value(),) if self.config.api_key else ()
+
     def _create_model(self) -> ChatOpenAI:
         if self.config.api_key is None or not self.config.api_key.get_secret_value().strip():
             raise ValueError("A real provider API key is required; production has no mock fallback")
@@ -204,7 +212,7 @@ class ChefMateAgent:
             options["temperature"] = self.config.temperature
         return ChatOpenAI(**options)
 
-    def _make_tool(self, name: str, context=None, messages=None, call_id: str = "") -> StructuredTool:
+    def _make_tool(self, name: str, context=None, messages=None, call_id: str = "", tool_arguments=None) -> StructuredTool:
         async def execute(**kwargs):
             if context is None:
                 raise _AgentFailure("tool_context_required", "工具执行缺少本轮上下文。")
@@ -241,7 +249,11 @@ class ChefMateAgent:
                 ui_context=copy.deepcopy(context.ui_context), host_context=context.host_context,
                 messages=history, call_id=call_id,
             )
-            request = spec.args_schema.model_validate(kwargs).model_dump(mode="json")
+            # StructuredTool materializes defaults in coroutine kwargs. Revalidate the
+            # original model JSON so omitted nested patch fields stay omitted across
+            # the application boundary, including explicit null versus absent values.
+            supplied = tool_arguments if tool_arguments is not None else kwargs
+            request = spec.args_schema.model_validate(supplied).model_dump(mode="json", exclude_unset=True)
             try:
                 result = await spec.handler(request, execution) if inspect.iscoroutinefunction(spec.handler) else (
                     await asyncio.to_thread(spec.handler, request, execution)
@@ -263,6 +275,12 @@ class ChefMateAgent:
                     for action in validated:
                         context.actions.append(action)
                         await self._emit(context.on_event, {"type": "ui_action", "action": action})
+                    if name == "ask_user" and isinstance(plain.get("pending_question"), dict):
+                        # The question is already committed by the host. Its terminal receipt must
+                        # not be replaced by output_too_large merely because the workspace is large.
+                        context.pending_question = copy.deepcopy(plain["pending_question"])
+                        return {"status": "ok", "question_id": context.pending_question.get("id"),
+                                "revision": context.ui_context.get("revision")}
                 # Full typed actions go to the UI separately. The model needs the compact state/receipts only.
                 projection = {key: value for key, value in plain.items() if key not in {"workspace", "views", "actions"}}
                 if projection.get("ui_snapshot"):
@@ -278,6 +296,7 @@ class ChefMateAgent:
 
         return StructuredTool.from_function(
             name=name, description=self._descriptions[name], args_schema=self._requests[name], coroutine=execute,
+            return_direct=name == "ask_user",
         )
 
     def _validate_ui_context(self, value) -> dict:
@@ -300,7 +319,8 @@ class ChefMateAgent:
         if self.config.reply_suggestions:
             prompt += ("\n本轮提供后续回复建议：完成必要查询后，调用suggest_replies保存3个不同方向的简短提问草稿，"
                        "再给出完整最终回答。建议贴合本轮实际结果，采用用户口吻，不能编造事实或替用户确认操作；"
-                       "无需为建议额外查询，适合时可与本轮其他工具放在同一批。不要在最终正文重复列出建议。")
+                       "无需为建议额外查询，适合时可与本轮其他工具放在同一批。需要ask_user等待回答时不生成推荐，"
+                       "也不与提问工具同批。不要在最终正文重复列出建议。")
         metadata = self.skills.list_metadata()
         if metadata:
             prompt += "\n已启用Skills仅列元数据，需要细节时调用load_skill；Skill不授予额外工具权限：\n" + _dump(metadata)
@@ -487,27 +507,40 @@ class ChefMateAgent:
             await self._emit(on_event, {"type": "status", "status": "thinking", "message": "正在理解需求"})
             async with asyncio.timeout(self.config.turn_timeout_s):
                 final_messages = await self._wait_checked(self._stream_runner(working, context), cancel_event)
-            if not final_messages or not isinstance(final_messages[-1], AIMessage):
+            pending_question = None
+            if final_messages and isinstance(final_messages[-1], ToolMessage) and final_messages[-1].name == "ask_user":
+                question_result = self._parse_tool_result(final_messages[-1].content)
+                pending_question = context.pending_question
+                if (question_result.get("status") != "ok" or not isinstance(pending_question, dict)
+                        or not isinstance(pending_question.get("question"), str) or not pending_question.get("id")):
+                    raise _AgentFailure("question_not_saved", "这个问题未能保存，请同步当前状态后重新提问。", True)
+                answer = pending_question["question"]
+            elif not final_messages or not isinstance(final_messages[-1], AIMessage):
                 raise _AgentFailure("invalid_response", "智能体未返回完整回答。", True)
-            answer = _text_content(final_messages[-1]).strip()
-            if not answer or final_messages[-1].tool_calls:
-                raise _AgentFailure("empty_response", "模型没有返回完整可用回答。", True)
+            else:
+                answer = _text_content(final_messages[-1]).strip()
+                if not answer or final_messages[-1].tool_calls:
+                    raise _AgentFailure("empty_response", "模型没有返回完整可用回答。", True)
             complete = self._serialize_messages(final_messages)
             # Revalidate the complete tool batch/history before exposing it for persistence.
             self._prepare_history([*complete, {"role": "user", "content": "history-validation"}])
-            await self._emit(on_event, {"type": "status", "status": "completed", "message": "查询完成"})
+            await self._emit(on_event, {"type": "status", "status": "completed",
+                                        "message": "等待你的回答" if pending_question else "查询完成"})
             return AgentTurnResult(
                 status="completed", assistant_text=answer, messages=complete, tool_calls=context.records,
                 actions=context.actions, usage=self._usage_summary(context), **context.view_state,
+                awaiting_user=bool(pending_question), pending_question=pending_question,
+                debug_trace=context.debug_trace, skill_events=context.skill_events,
                 suggested_replies=finalize_reply_suggestions(next((
                     record.result.get("suggested_replies") for record in reversed(context.records)
                     if record.name == REPLY_SUGGESTIONS_TOOL and record.result.get("status") == "ok"
-                ), None), context.ui_context) if self.config.reply_suggestions else [],
+                ), None), context.ui_context) if self.config.reply_suggestions and not pending_question else [],
             )
         except _UserCancelled:
             await self._emit(on_event, {"type": "status", "status": "cancelled", "message": "已停止本轮查询"})
             return AgentTurnResult(status="cancelled", messages=original, tool_calls=context.records,
-                                   actions=context.actions, usage=self._usage_summary(context))
+                                   actions=context.actions, usage=self._usage_summary(context),
+                                   debug_trace=context.debug_trace, skill_events=context.skill_events)
         except TimeoutError:
             error = AgentError(code="turn_timeout", message="本轮请求超时，可以重试。", retryable=True)
         except _AgentFailure as exc:
@@ -519,7 +552,8 @@ class ChefMateAgent:
             error = AgentError(code="model_error", message="模型服务暂时无法完成请求，请检查配置后重试。", retryable=True)
         await self._emit(on_event, {"type": "status", "status": "error", "message": error.message, "code": error.code})
         return AgentTurnResult(status="error", messages=original, tool_calls=context.records,
-                               actions=context.actions, usage=self._usage_summary(context), error=error)
+                               actions=context.actions, usage=self._usage_summary(context), error=error,
+                               debug_trace=context.debug_trace, skill_events=context.skill_events)
 
     @staticmethod
     async def _emit(callback: EventCallback | None, event: dict[str, Any]) -> None:
@@ -613,6 +647,8 @@ class ChefMateAgent:
         if response.invalid_tool_calls:
             raise _AgentFailure("invalid_tool_batch", "模型工具参数无效，本批调用未执行。", True)
         calls = response.tool_calls
+        if len(calls) > 1 and any(call.get("name") == "ask_user" for call in calls):
+            raise _AgentFailure("invalid_tool_batch", "提问工具必须单独调用；本批没有执行任何操作。", True)
         if response.response_metadata.get("finish_reason") == "tool_calls" and not calls:
             raise _AgentFailure("incomplete_tool_batch", "模型声明了工具调用但没有完整调用，本轮未执行。", True)
         ids: set[str] = set()
@@ -786,7 +822,7 @@ class ChefMateAgent:
                         parsed = json.loads(arguments)
                     except (KeyError, TypeError, ValueError):
                         raise _AgentFailure("invalid_history", "历史工具参数无效。") from None
-                    if (name not in self._requests and name != REPLY_SUGGESTIONS_TOOL
+                    if (name not in self._requests and name not in {REPLY_SUGGESTIONS_TOOL, "show_shopping_list"}
                             or not isinstance(call_id, str) or not call_id
                             or call_id in pending or not isinstance(parsed, dict)):
                         raise _AgentFailure("invalid_history", "历史工具名称或标识无效。")

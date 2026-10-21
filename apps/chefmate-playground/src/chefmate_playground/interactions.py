@@ -24,7 +24,6 @@ TOOL_DESCRIPTIONS = {
     "show_recipe_details": "展示真实菜谱或当前任务冻结的菜谱详情，包含食材用量、步骤、估算与原文。",
     "set_meal_plan": "将用户已选择或明确要求安排的真实菜谱建立为任务计划；最多4道，保留菜谱来源快照。",
     "show_meal_plan": "展示当前任务菜单和目标人数；用户可直接调整人数。",
-    "show_shopping_list": "展示可勾选的缺料/购物清单；recipe_ids选某道菜，null整餐合并；只合并兼容食材，未知量仍未知。",
     "show_prep_checklist": "展示可勾选的备菜清单；recipe_ids选某道菜，null整餐；用户确认后才标为准备好。",
     "show_cooking_guide": "展示当前任务菜谱的原始步骤和已完成进度；浏览步骤不等于确认完成。",
     "set_cooking_timer": "按用户指定秒数或菜谱原文的明确时长创建持久化计时；不猜测时间，不自动标步骤完成。",
@@ -32,16 +31,21 @@ TOOL_DESCRIPTIONS = {
     "get_cooking_workspace": "读取用户最新表单、选菜、备菜勾选、步骤和计时状态；版本冲突后先读取，不覆盖用户修改。",
     "advance_cooking_stage": "按照真实任务状态推进或回退做饭阶段；备菜/完成条件由业务服务强制校验。",
     "update_cooking_guidance": "根据用户明确补充的条件调整当前任务的备菜/步骤指导。recipe_id/step_id来自已选餐单。instruction为建议做法、reason为调整原因；保留原步骤、真实用量和勾选/完成状态，不修改源菜谱，不编造未知量。",
+    "update_preferences": "按用户明确表达填写或修改用餐条件，传最新expected_revision；保留未修改字段，可展示已填表单请用户核对。",
+    "select_recipes": "按用户明确表达选择真实候选菜品，传recipe_ids与最新expected_revision；展示保存后的选择供核对，不编造菜谱ID。",
+    "update_prep_items": "按用户明确说明已有/缺少/跳过的食材更新备菜状态；使用最新清单item_id与expected_revision，可一次修改多项并展示结果。不能自行猜测食材是否已有。",
+    "ask_user": "在存在实质歧义或需要用户选择时提出一个问题，可提供少量选项或允许自由填写。本次必须单独调用，随后暂停等待答案；不能替用户回答，不用于无必要的额外确认。",
 }
 
 TOOL_STAGES = {
-    "set_meal_plan": ("idea", "planning", "shopping", "completed"),
-    "show_meal_plan": ("planning", "shopping", "prep", "cooking", "completed"),
-    "show_shopping_list": ("planning", "shopping", "prep", "cooking"),
-    "show_prep_checklist": ("planning", "shopping", "prep", "cooking"),
-    "show_cooking_guide": ("planning", "shopping", "prep", "cooking", "completed"),
+    "set_meal_plan": ("idea", "planning", "completed"),
+    "show_meal_plan": ("planning", "prep", "cooking", "completed"),
+    "show_prep_checklist": ("planning", "prep", "cooking"),
+    "show_cooking_guide": ("planning", "prep", "cooking", "completed"),
     "set_cooking_timer": ("cooking",),
-    "update_cooking_guidance": ("planning", "shopping", "prep", "cooking"),
+    "update_cooking_guidance": ("planning", "prep", "cooking"),
+    "select_recipes": ("idea", "planning", "completed"),
+    "update_prep_items": ("planning", "prep"),
 }
 
 
@@ -147,7 +151,7 @@ class ScopedWorkspace:
             return {"status": "turn_closed", "message": "本轮已停止，没有继续修改任务。"}
         # Full views belong to HTTP/UI. Model history receives only this tool's presentation and compact snapshot.
         return {key: copy.deepcopy(value) for key, value in result.items()
-                if key in {"status", "message", "actions", "ui_snapshot"}}
+                if key in {"status", "message", "actions", "ui_snapshot", "pending_question"}}
 
 
 def make_tool_specs():

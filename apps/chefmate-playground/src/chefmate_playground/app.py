@@ -16,6 +16,7 @@ from chefmate_workflow import UISnapshot, UserActionRequest
 from .config import APP_ROOT, PlaygroundConfig
 from .interactions import WorkspaceBinding
 from .images import ImageError, MAX_UPLOAD_BYTES, SessionImages
+from .debug import redact_debug
 from .runtime import TurnConflict, TurnManager, encode_event
 from .sessions import SessionRepository, public_session
 from .settings import (SKILLS, ContextSettings, InteractionSettings, RuntimeSettings, build_agent, persist_settings, probe_model,
@@ -75,7 +76,8 @@ def create_app(config: PlaygroundConfig | None = None, *, service=None, agent=No
     except (ValueError, OSError):
         setup_error = "模型或厨房技能配置无效，请打开设置检查。"
     images = SessionImages(settings.sessions_database.parent / "images", repo)
-    manager = TurnManager(repo, agent, workspace_binding, images, reply_suggestions=settings.reply_suggestions)
+    manager = TurnManager(repo, agent, workspace_binding, images, reply_suggestions=settings.reply_suggestions,
+                          debug_secrets=(settings.api_key, settings.database_url))
 
     @asynccontextmanager
     async def lifespan(_app):
@@ -166,6 +168,7 @@ def create_app(config: PlaygroundConfig | None = None, *, service=None, agent=No
             settings, agent, skill_registry = candidate, replacement, registry
             manager.agent = agent
             manager.reply_suggestions = settings.reply_suggestions
+            manager.debug_secrets = (settings.api_key, settings.database_url)
             app.state.config, app.state.skills = settings, skill_registry
             setup_error = None
             return public_settings(settings)
@@ -199,7 +202,7 @@ def create_app(config: PlaygroundConfig | None = None, *, service=None, agent=No
     @app.get("/api/sessions")
     async def sessions():
         return {"items": [{key: value for key, value in public_session(state).items()
-                           if key in {"id", "title", "updated_at", "running", "last_status", "conversation_state"}}
+                           if key in {"id", "title", "updated_at", "running", "last_status", "conversation_state", "awaiting_user", "pending_question"}}
                           for state in repo.list() if state.get("messages")]}
 
     @app.post("/api/sessions")
@@ -213,6 +216,39 @@ def create_app(config: PlaygroundConfig | None = None, *, service=None, agent=No
     @app.get("/api/skills")
     async def skills():
         return {"items": skill_registry.list_metadata() if skill_registry is not None else []}
+
+    def require_developer(request: Request):
+        # An explicit local opt-in, not an authentication boundary.
+        if request.headers.get("X-ChefMate-Developer") != "1":
+            raise HTTPException(404, "请先开启开发者模式。")
+
+    def catalog(snapshot=None):
+        tools = agent.tool_catalog(snapshot or {}) if agent is not None and hasattr(agent, "tool_catalog") else []
+        return redact_debug({"tools": tools, "skills": skill_registry.list_metadata() if skill_registry else [],
+                             "stage": (snapshot or {}).get("stage", "idea")}, (settings.api_key, settings.database_url))
+
+    @app.get("/api/debug/catalog")
+    async def developer_catalog(request: Request):
+        require_developer(request)
+        return catalog()
+
+    @app.get("/api/sessions/{session_id}/debug")
+    async def developer_session(session_id: str, request: Request, turn_id: str | None = None):
+        require_developer(request)
+        state = require_session(session_id)
+        snapshot = workspace_binding.service(session_id).model_snapshot() if workspace_binding else {}
+        runs = repo.debug_runs(session_id)
+        chosen = turn_id or (runs[0]["turn_id"] if runs else None)
+        capture = repo.debug_run(session_id, chosen) if chosen else None
+        if turn_id and capture is None:
+            raise HTTPException(404, "这轮没有留存的上下文记录。")
+        # Legacy turns can show their public execution log, but are never labeled exact captures.
+        logs = [{"id": message.get("turn_id", message.get("id")), "text": message.get("content", ""),
+                 "created_at": message.get("created_at"), "tool_calls": message.get("tool_calls", [])}
+                for message in state.get("messages", []) if message.get("role") == "assistant"]
+        return redact_debug({**catalog(snapshot), "runs": runs, "capture": capture, "logs": logs,
+                             "retained_turns": 20, "running": state.get("running", False)},
+                            (settings.api_key, settings.database_url))
 
     @app.get("/api/sessions/{session_id}/workspace")
     async def workspace(session_id: str):

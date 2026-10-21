@@ -159,12 +159,12 @@ export class CookingFocus {
   refresh() {
     if (!this.active) return;
     const active = this.active, entry = this.workspace.entry(active.sessionId);
-    if (entry.snapshot?.stage === 'cooking' && ['prep_checklist', 'shopping_list'].includes(active.kind)) active.kind = 'cooking_guide';
+    if (entry.snapshot?.stage === 'cooking' && active.kind==='prep_checklist') active.kind = 'cooking_guide';
     const view = entry.views.find(item => item.kind === active.kind) || (entry.loading || entry.presentationPending ? active.view : null);
     if (!view) { this.close(); return; }
     active.id = view.id; active.view = view; this.root.dataset.kind = view.kind;
     this.title.textContent = view.title || '厨房工作区'; this.subtitle.textContent = conversationLabel(snapshotStatus(entry.snapshot || {}));
-    const stage = ({ shopping_list:'采购清单', prep_checklist:'备菜清单', cooking_guide:'专心做菜', recipe_detail:'菜谱做法' })[view.kind]
+    const stage = ({ prep_checklist:'备菜清单', cooking_guide:'专心做菜', recipe_detail:'菜谱做法' })[view.kind]
       || STAGE_NAMES[entry.snapshot?.stage] || '厨房工作区';
     this.stage.textContent = stage; document.getElementById('focus-work-label').textContent = stage;
     const signature = JSON.stringify([view, entry.saving, entry.viewState[view.id], entry.drafts[view.id]]);

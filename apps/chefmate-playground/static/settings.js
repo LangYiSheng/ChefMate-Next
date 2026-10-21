@@ -21,8 +21,8 @@ const names = {
 const skillLabels = {
   "meal-planning": ["选菜与餐单", "按食材、时间和人数安排这一餐。"],
   "pantry-preparation": [
-    "采购与备菜",
-    "核对食材、整理缺料，逐项确认准备情况。",
+    "备菜与准备",
+    "核对已有和缺少的食材，逐项确认准备情况。",
   ],
   "cooking-guide": ["烹饪引导", "跟随原始步骤、确认完成情况和管理计时。"],
 };
@@ -203,7 +203,7 @@ function render() {
       hint:"点击只替换输入框里的文字，你可以修改后再发送。关闭后也会隐藏历史回复中的建议。"});
   } else if (current === "developer") {
     heading("调试信息");
-    field("保留已完成的执行记录", "enabled", { type: "checkbox", note: "默认关闭。只影响当前浏览器的展示。" });
+    field("开发者模式", "enabled", { type: "checkbox", note: "默认关闭。在右侧调试面板查看可用工具、调用记录、技能与实际上下文。" });
     field("记录展示方式", "trace_mode", {
       options: [
         ["compact", "收起记录 · 按需展开"],
@@ -211,7 +211,7 @@ function render() {
       ],
       note: "只展示公开操作与工具状态。",
     });
-    $("settings-form").append(node("p", "settings-note", "用量来自模型服务实际返回。缓存或 token 数据未返回时显示“未报告”，不推测命中率。正在执行时仍显示一行当前操作。"));
+    $("settings-form").append(node("p", "settings-note", "用量来自模型服务实际返回，未返回时显示“未报告”。上下文调试保留最近20轮的脱敏实际请求；图片只留元数据，不展示内部推理。这个开关控制当前浏览器中的展示。"));
   } else if (current === "display") {
     heading("ChefMate 图标");
     const candidates=node("div","brand-candidates");

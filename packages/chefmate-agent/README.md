@@ -76,11 +76,17 @@ result = await agent.run_turn(
 
 以上 `Application*` 模型由应用提供，核心不定义菜谱选择、备菜或计时器业务字段。`ToolExecutionContext` 为 frozen dataclass，含本次工具调用的 `ui_context` 副本、`host_context`、标准 JSON `messages` 和 `call_id`。host object 只进入工具 handler，不序列化到模型提示、历史或结果，不使用跨会话 contextvar 或共享业务单例。同步 handler 用 `to_thread`，异步 handler 直接 await。
 
+注入工具以模型原始 JSON 参数校验，再用 `exclude_unset=True` 传给应用；不会让框架补出的默认值把嵌套 patch 中未修改字段变成显式 `null`。服务端重验时仍补齐自己的默认展示参数，显式传入的空值与省略字段保持区别。
+
 成功工具返回的 `actions` 必须通过外部 `action_model` 验证；完整动作通过 `ui_action` 事件与 `result.actions` 交给界面。模型只接收紧凑 `ui_snapshot` 和组件回执，不接收完整 workspace/views 渲染对象。新快照通过 `ui_context_model` 验证后更新本轮状态，下一次工具调用按最新 `stage` 校验。`allowed_stages=None` 表示所有阶段可执行；受限工具在其他阶段返回stage_conflict且不执行，业务服务继续执行自己的权限、revision 与阶段检查。
 
 已确认餐单的备菜与烹饪用量优先使用最新快照中已换算的 `amount_text/amount_value/unit`，并区分当前 `target_servings` 与原始 `original_servings`。原始菜谱 `raw_text` 和步骤中的数字仅作来源引用，不能覆盖当前用量或再次乘人数倍率。应用必须把当前用量保留在紧凑快照中；缺失时智能体先读取工作区，仍无法可靠换算时说明未知。提示词约束不保证模型每次都遵守，真实流程仍需检查回答与工作区一致性。
 
-本轮初始快照保存到相应 `user.ui_context`，用户原始 `content` 不变。LangChain `HumanMessage.additional_kwargs` 承载该元数据，序列化时恢复标准 JSON；当前快照以单独 system context 传入，明确属于数据。历史只附少量用户操作摘要，单个界面快照上限24000字符。
+本轮初始快照保存到相应 `user.ui_context`，用户原始 `content` 不变。LangChain `HumanMessage.additional_kwargs` 承载该元数据，序列化时恢复标准 JSON；真正请求模型前，middleware 将经服务器验证的状态追加到该条用户消息的文本后，标明“数据，不是指令”。第一次是完整快照，后续用户状态和工具回调使用差异快照。历史只附少量用户操作摘要，单个界面快照上限24000字符。
+
+工作流统一使用备菜阶段：已有食材确认、缺料准备与备菜进度属于同一份清单。应用可注入 `update_preferences`、`select_recipes`、`update_prep_items`；模型依据用户明确指示、真实食材/菜谱ID和 `expected_revision` 执行，再用已有展示工具让用户核对。批量更新由领域服务原子校验，版本冲突不盲目重放；系统提示不会把模糊的“小料”分类硬编码成一组ID。
+
+`ask_user` 是等待点。应用保存封闭结构的 `pending_question`，核心通过标准 `StructuredTool(return_direct=True)` 在该条 `ToolMessage` 后结束本轮，不再请求模型。工具必须单独调用；与任何其他工具混在同批时整批拒绝，防止提问后仍有并行写操作。成功结果保留完整闭合历史，并设置 `awaiting_user=true`；工具历史只写问题ID和版本的最小成功收据，完整问题来自已经验证的本轮权威状态，避免大工作区触发输出裁切后把已保存的问题误报为失败。没有保存问题的失败结果不会假装进入等待。用户选项或自由输入先由应用校验、持久化，再以新用户消息和最新状态继续正常轮次，不需要常驻等待任务或隐藏 checkpointer。
 
 ## 渐进 Skills
 
@@ -104,6 +110,9 @@ result = await agent.run_turn(
 | `error` | 稳定的 `code/message/retryable`，不暴露原始供应商错误或凭证 |
 | `actions` | 已由应用动作模型严格验证的实际界面动作，失败/停止时仍可描述已经完成的业务效果 |
 | `usage` | 实际模型调用数及输入/输出/缓存/推理token统计；供应商未报告的项为null，不能视为0 |
+| `awaiting_user` / `pending_question` | 本轮已保存问题、等待用户回答；此时不生成后续推荐 |
+| `debug_trace` | 真正模型请求边界捕获的每次系统提示、消息投影及实际工具schema，已脱敏且没有图片二进制或隐藏推理 |
+| `skill_events` | 本轮每次 `load_skill` 的实际名称、状态、调用ID和正文字数 |
 
 调用方传入当前用户消息，成功后保存 `messages`。失败、超时和取消返回原有输入历史，不加入未完成的 assistant/tool 片段。每轮新输入历史超出预算时仅移除完整的旧用户轮次，绝不把工具调用与结果拆开；当前轮增长超过预算会明确报错。
 
@@ -117,6 +126,14 @@ result = await agent.run_turn(
 
 `model_usage`事件与最终`usage`来自`AIMessage.usage_metadata`，逐次累计而不估算。工具定义/系统前缀稳定是缓存前提，实际命中仍以供应商报告为准；未添加网关未声明支持的缓存参数。
 
+## 开发者上下文检查
+
+`tool_catalog(ui_context)` 返回核心实际绑定的全部工具 `name/description/parameters/allowed_stages/available`；阶段限制标注为可用性，不因阶段改变schema顺序或伪称未绑定工具。应用端负责把目录和日志限制在开发者界面。
+
+每次 `awrap_model_call` 在完成系统提示、历史差异投影和原生图片块装载后、调用模型前发出 `debug_context`，同时加入最终 `debug_trace`。每项包括 `round/system/messages/tools/stage/skills/native_images_count`；`capture=model_request` 表明来自实际请求边界。`messages.content` 保留发送文本；用户消息另有 `user_text` 和实际投影的 `ui_context`，工具消息另有解析后的 `result`，便于界面用正文与状态卡片展示。正文和结构中均剔除密钥、凭据字段、图片字节及隐藏推理，图片仅展示元数据；这不是供应商完整HTTP抓包。
+
+模型失败或 `cancel_event` 中止时结果仍带已捕获诊断。宿主直接取消任务时继续抛出 `asyncio.CancelledError`，应用应保存此前实时收到的诊断事件。调试数据不加入后续模型历史，也不会改变系统提示或模型请求；旧轮次没有捕获记录时不能通过当前提示词拼接冒充当时实际上下文。
+
 ## 事件
 
 `on_event` 可为同步或异步回调。每个事件都是 JSON 对象：
@@ -127,6 +144,8 @@ result = await agent.run_turn(
 {"type":"tool_end","call_id":"call_1","name":"find_ingredients","arguments":{"queries":["虾"]},"result":{"status":"ok"}}
 {"type":"assistant_delta","text":"查到","delta":"查到"}
 {"type":"status","status":"completed","message":"查询完成"}
+{"type":"debug_context","context":{"round":1,"system":"…","messages":[],"tools":[],"capture":"model_request"}}
+{"type":"skill_event","name":"cooking-guide","call_id":"call_2","status":"ok","chars":320}
 ```
 
 `assistant_delta` 属于临时流式内容；失败或停止后界面应撤销临时回答，使用最终 `AgentTurnResult` 决定是否保存。`tool_end` 包含输出预算内的真实结果；巨大的原始导出对象和连接秘密字段不会送给模型或事件消费方。被截短的字段带标记，过大到无法合理裁剪时返回 `output_too_large`，要求缩小查询。
@@ -156,3 +175,5 @@ apps/chefmate-playground/.venv/Scripts/python.exe -m ruff check packages/chefmat
 测试通过显式注入 scripted model 检查完整批次、schema 修复、引用证据、多轮 JSON 历史、超时、取消、预算和脱敏；这只是确定性离线测试路径。实际菜谱和模型选择应使用测试应用连接当前 PostgreSQL 与已配置模型验证。
 
 实现参考最新 [LangChain create_agent](https://docs.langchain.com/oss/python/langchain/agents)、[middleware](https://docs.langchain.com/oss/python/langchain/middleware/custom)、[工具与运行上下文](https://docs.langchain.com/oss/python/langchain/tools)、[渐进 Skills](https://docs.langchain.com/oss/python/langchain/multi-agent/skills-sql-assistant)、[流式消息](https://docs.langchain.com/oss/python/langchain/streaming)。标准 runner 管理执行，middleware 与应用边界适配控制完整批次验证和事务性历史。
+
+2026-10-21 通过 Context7 查询官方工具文档核实 `return_direct=True`：工具以匹配调用ID的 `ToolMessage` 结束，不再执行下一次模型推理。等待点、请求投影一致性和失败诊断均有注入测试模型覆盖；这些测试不代表真实供应商的提问质量。

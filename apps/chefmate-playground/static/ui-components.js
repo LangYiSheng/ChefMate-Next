@@ -67,13 +67,13 @@ export function renderView(view, context) {
   const heading = node('div', 'ui-component-heading');
   const title = node('h3', '', view.title || '任务内容');
   const glyph = ({ preference_form: 'list-checks', recipe_choices: 'utensils', recipe_detail: 'book-open',
-    meal_plan: 'chef-hat', shopping_list: 'shopping-bag', prep_checklist: 'list-checks',
+    meal_plan: 'chef-hat', prep_checklist: 'list-checks',
     cooking_guide: 'chef-hat', timers: 'timer', task_progress: 'circle-check' })[view.kind];
   if (glyph) title.prepend(icon(glyph));
   heading.append(title);
   if (context.historical) heading.append(badge('历史记录', 'muted'));
   card.append(heading);
-  if (!context.historical && !context.focused && (['prep_checklist','cooking_guide','shopping_list'].includes(view.kind)
+  if (!context.historical && !context.focused && (['prep_checklist','cooking_guide'].includes(view.kind)
       || view.kind==='recipe_detail' && context.viewState?.detailSection==='steps')) {
     const focus = button('全屏查看',()=>context.openFocus?.(view,focus),false,'focus-button');
     heading.append(focus);
@@ -234,8 +234,8 @@ function recipeDetail(view, ctx) {
 
 function mealPlan(view, ctx) {
   const root = node('div'); const recipes = view.data.recipes || [];
-  const servingsLocked = ctx.locked || !['planning', 'shopping', 'prep'].includes(ctx.stage);
-  const removalLocked = ctx.locked || !['idea', 'planning', 'shopping', 'completed'].includes(ctx.stage);
+  const servingsLocked = ctx.locked || !['planning', 'prep'].includes(ctx.stage);
+  const removalLocked = ctx.locked || !['idea', 'planning', 'completed'].includes(ctx.stage);
   if (!recipes.length) { root.append(hint('先从菜谱候选中确认想做的菜。')); return root; }
   root.append(pagedList(recipes,ctx,'mealPage',(recipe)=>{
     const card = node('div', 'ui-plan-recipe');
@@ -256,7 +256,7 @@ function mealPlan(view, ctx) {
       button('移除', () => ctx.action('select_recipes', { recipe_ids: recipes.filter((item) => item.recipe_id !== recipe.recipe_id).map((item) => item.recipe_id) }), removalLocked || recipes.length <= 1, 'ui-text-button'));
     card.append(actions); return card;
   },2));
-  if(!ctx.historical && ['planning','shopping'].includes(ctx.stage)) root.append(hint('接下来想备菜或采购？告诉助手，它会按你的需求安排下一步。'));
+  if(!ctx.historical && ctx.stage==='planning') root.append(hint('选好后告诉助手，它会继续帮你准备食材。'));
   return root;
 }
 
@@ -267,34 +267,18 @@ function checklistScope(view, ctx) {
     const active = ids === null ? selected == null : selected?.length === 1 && selected[0] === ids[0];
     const control = button(label, async () => {
       await ctx.action('set_checklist_scope',{recipe_ids:ids});
-      ctx.viewState.shoppingPage=0;ctx.viewState.prepPage=0;ctx.onViewState();
+      ctx.viewState.prepPage=0;ctx.onViewState();
     },ctx.locked || active,'ui-text-button');
     control.setAttribute('aria-pressed',String(active));navigation.append(control);
   }
   return navigation;
 }
 
-function shoppingList(view, ctx) {
-  const root = node('div');
-  root.append(checklistScope(view,ctx));
-  const locked = ctx.locked || !['planning', 'shopping', 'prep'].includes(ctx.stage);
-  root.append(pagedList(view.data.items || [],ctx,'shoppingPage',(item)=>{
-    const label = node('label', `ui-check-row${item.checked ? ' checked' : ''}`); const input = node('input'); input.type = 'checkbox'; input.checked = Boolean(item.checked); input.disabled = locked;
-    input.dataset.controlKey = `shopping:${item.id}`;
-    input.addEventListener('change', () => ctx.action('check_shopping_item', { item_id: item.id, checked: input.checked }).catch(() => { input.checked = Boolean(item.checked); }));
-    const copy = node('span'); copy.append(node('strong', '', item.canonical_name), node('small', '', amount(item)));
-    if (item.estimated) copy.append(badge('估算')); label.append(input, copy); return label;
-  },ctx.focused?8:4));
-  if (!view.data.items?.length) root.append(hint('当前没有待准备项。'));
-  if(view.data.notes?.length) root.append(disclosure('用量与数据说明',view.data.notes));
-  return root;
-}
-
 function prepChecklist(view, ctx) {
   const root = node('div');
   root.append(checklistScope(view,ctx));
   for(const text of view.data.guidance || []) root.append(node('div','ui-adaptation',text));
-  const locked = ctx.locked || !['shopping', 'prep'].includes(ctx.stage);
+  const locked = ctx.locked || ctx.stage!=='prep';
   const prepared=(view.data.items || []).filter(item=>['ready','skipped'].includes(item.status)).length;
   root.append(hint(`已确认 ${prepared} / ${view.data.items?.length || 0} 项`));
   root.append(pagedList(view.data.items || [],ctx,'prepPage',(item)=>{
@@ -308,7 +292,7 @@ function prepChecklist(view, ctx) {
     if (item.status === 'skipped') row.append(badge('已跳过', 'muted')); return row;
   },ctx.focused?8:4));
   if(view.data.notes?.length) root.append(disclosure('备菜与原文说明',[...view.data.notes,...(view.data.items || []).map(item=>`${item.canonical_name}：${item.raw_text || '未记录原文'}`)]));
-  if (!ctx.historical && view.data.items?.length && !['shopping', 'prep'].includes(ctx.stage)) root.append(hint('切到采购或备菜阶段后，可以逐项确认。'));
+  if (!ctx.historical && view.data.items?.length && ctx.stage!=='prep') root.append(hint('进入备菜阶段后，可以逐项确认。'));
   if (!view.data.items?.length) root.append(hint('选定菜谱后可以开始逐项备菜。'));
   return root;
 }
@@ -378,5 +362,5 @@ function taskProgress(view, ctx) {
 }
 
 for (const [kind, renderer] of Object.entries({ preference_form: preferenceForm, recipe_choices: recipeChoices,
-  recipe_detail: recipeDetail, meal_plan: mealPlan, shopping_list: shoppingList, prep_checklist: prepChecklist,
+  recipe_detail: recipeDetail, meal_plan: mealPlan, prep_checklist: prepChecklist,
   cooking_guide: cookingGuide, timers, task_progress: taskProgress })) registerRenderer(kind, renderer);

@@ -126,4 +126,8 @@ class AgentTurnResult(BaseModel):
     actions: list[dict[str, Any]] = Field(default_factory=list)
     usage: dict[str, Any] = Field(default_factory=dict)
     suggested_replies: list[ReplySuggestion] = Field(default_factory=list, max_length=3)
+    awaiting_user: bool = False
+    pending_question: dict[str, Any] | None = None
+    debug_trace: list[dict[str, Any]] = Field(default_factory=list)
+    skill_events: list[dict[str, Any]] = Field(default_factory=list)
     error: AgentError | None = None

@@ -1,8 +1,11 @@
 """App-local conversation persistence, independent of the read-only recipe store."""
 
+from __future__ import annotations
+
 import json
 import sqlite3
 import threading
+import zlib
 from collections.abc import Callable
 from datetime import datetime, timezone
 from pathlib import Path
@@ -26,9 +29,19 @@ class SessionRepository:
                 "CREATE TABLE IF NOT EXISTS sessions "
                 "(id TEXT PRIMARY KEY, updated_at TEXT NOT NULL, state TEXT NOT NULL)"
             )
+            connection.execute(
+                "CREATE TABLE IF NOT EXISTS session_debug "
+                "(session_id TEXT NOT NULL, turn_id TEXT NOT NULL, created_at TEXT NOT NULL, "
+                "summary TEXT NOT NULL, body BLOB NOT NULL, PRIMARY KEY(session_id,turn_id))"
+            )
         # A process restart cannot preserve a pending provider call.
         for session in self.list():
             if session.get("running"):
+                turn_id = (session.get("active_turn") or {}).get("id")
+                capture = self.debug_run(session["id"], turn_id) if turn_id else None
+                if capture:
+                    capture["status"] = "interrupted"
+                    self.save_debug_run(session["id"], turn_id, capture)
                 session.update(running=False, active_turn=None, last_status="interrupted",
                                last_error={"code": "interrupted", "message": "服务重启，上一轮已中断。", "retryable": True})
                 self.save(session)
@@ -86,15 +99,52 @@ class SessionRepository:
             connection.execute("BEGIN IMMEDIATE")
             row = connection.execute("SELECT state FROM sessions WHERE id=?", (session_id,)).fetchone()
             connection.execute("DELETE FROM sessions WHERE id=?", (session_id,))
+            connection.execute("DELETE FROM session_debug WHERE session_id=?", (session_id,))
             return json.loads(row[0]) if row else None
+
+    def save_debug_run(self, session_id: str, turn_id: str, payload: dict) -> None:
+        """Keep exact, already-redacted request captures outside ordinary chat/history JSON."""
+        body = zlib.compress(json.dumps(payload, ensure_ascii=False, allow_nan=False).encode("utf-8"))
+        summary = {key: payload.get(key) for key in ("turn_id", "request_id", "message", "status", "created_at")}
+        summary["model_calls"] = len(payload.get("debug_trace", []))
+        with self._lock, self._connect() as connection:
+            if not connection.execute("SELECT 1 FROM sessions WHERE id=?", (session_id,)).fetchone():
+                return
+            connection.execute(
+                "INSERT INTO session_debug(session_id,turn_id,created_at,summary,body) VALUES(?,?,?,?,?) "
+                "ON CONFLICT(session_id,turn_id) DO UPDATE SET summary=excluded.summary,body=excluded.body",
+                (session_id, turn_id, payload["created_at"], json.dumps(summary, ensure_ascii=False), body),
+            )
+            connection.execute(
+                "DELETE FROM session_debug WHERE session_id=? AND turn_id NOT IN "
+                "(SELECT turn_id FROM session_debug WHERE session_id=? ORDER BY created_at DESC LIMIT 20)",
+                (session_id, session_id),
+            )
+
+    def debug_runs(self, session_id: str) -> list[dict]:
+        with self._lock, self._connect() as connection:
+            return [json.loads(row[0]) for row in connection.execute(
+                "SELECT summary FROM session_debug WHERE session_id=? ORDER BY created_at DESC", (session_id,)
+            )]
+
+    def debug_run(self, session_id: str, turn_id: str) -> dict | None:
+        with self._lock, self._connect() as connection:
+            row = connection.execute("SELECT body FROM session_debug WHERE session_id=? AND turn_id=?",
+                                     (session_id, turn_id)).fetchone()
+            return json.loads(zlib.decompress(row[0])) if row else None
 
 
 def public_session(state: dict, *, reply_suggestions: bool = True) -> dict:
     workspace = state.get("workspace") or {}
+    if workspace:
+        from chefmate_workflow import WorkspaceState
+        workspace = WorkspaceState.model_validate(workspace).model_dump(mode="json")
     recipes = workspace.get("meal_plan", [])
     active = next((recipe for recipe in recipes if recipe.get("recipe_id") == workspace.get("active_recipe_id")),
                   recipes[0] if recipes else {})
+    question = workspace.get("pending_question") if not state.get("running") else None
     result = {**{key: value for key, value in state.items() if key not in {"history", "workspace", "image_uploads"}},
+            "awaiting_user": bool(question), "pending_question": question,
             "conversation_state": {"stage": workspace.get("stage", "idea"), "recipe_count": len(recipes),
                 "recipe_names": [recipe.get("recipe", {}).get("name", "菜品") for recipe in recipes],
                 "active_recipe_name": active.get("recipe", {}).get("name"),

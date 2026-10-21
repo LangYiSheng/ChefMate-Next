@@ -32,5 +32,5 @@ test('activity uses public process text and does not invent or extract hidden re
   assert.deepEqual(rows.map(r=>r.text),['我会按已填写条件查找。']);
   assert.equal(latestActivity({streaming:true,content:'这里是正在流式输出的完整回答。'}),'正在回复…');
   assert.deepEqual(activityRows({streaming:true,content:'回答正文不复制为加载提示。'}),[]);
-  assert.equal(latestActivity({streaming:true,tool_calls:[{name:'show_shopping_list',running:false}]}),'整理采购清单');
+  assert.equal(latestActivity({streaming:true,tool_calls:[{name:'show_shopping_list',running:false}]}),'整理备菜清单');
 });

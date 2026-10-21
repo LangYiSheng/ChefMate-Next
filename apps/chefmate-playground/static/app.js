@@ -11,6 +11,9 @@ import {initShell} from './shell.js';
 import {activityLabel} from './activity.js';
 import {renderStarters} from './welcome.js';
 import {moveDrafts,releaseImages,imageMetadata,suggestedReplies,matchesDraft,recoverLocalImages} from './conversation-state.js';
+import {QuestionState,answerRequestId,matchesAnswer} from './question-state.js';
+import {QuestionComposer} from './question.js';
+import {DeveloperPanel} from './developer-panel.js';
 applyBranding();
 
 const $ = (id) => document.getElementById(id);
@@ -22,7 +25,7 @@ const ui = Object.fromEntries([
   'drawer-backdrop', 'toast', 'announcer', 'open-sidebar', 'toggle-details',
   'workspace-tab', 'workspace-content', 'workspace-context', 'skills-tab', 'skills-content',
   'conversation-stage',
-  'attach-image','image-input','image-drafts','image-status','composer-choices','reply-suggestions','welcome-templates','shuffle-templates','resume-draft',
+  'attach-image','image-input','image-drafts','image-status','composer-choices','reply-suggestions','welcome-templates','shuffle-templates','resume-draft','question-composer',
 ].map((id) => [id, $(id)]));
 
 const state = {
@@ -34,6 +37,11 @@ const state = {
   imageDrafts:new Map(),imageUploads:new Map(),confirmationQueue:new ConfirmationQueue(),
   blankId:`draft:${crypto.randomUUID()}`,starterCapability:null,failedDrafts:new Map(),
 };
+const questions=new QuestionState({
+  read:id=>JSON.parse(localStorage.getItem(`chefmate:question:${id}`) || 'null'),
+  write:(id,value)=>value ? localStorage.setItem(`chefmate:question:${id}`,JSON.stringify(value)) : localStorage.removeItem(`chefmate:question:${id}`),
+});
+const answering=new Set(),continuingAnswers=new Set();
 function readDeveloper() { try { return JSON.parse(localStorage.getItem('chefmate:developer-settings') || '{}').enabled === true; } catch { return false; } }
 function readTraceMode() { try { return JSON.parse(localStorage.getItem('chefmate:developer-settings') || '{}').trace_mode === 'detailed' ? 'detailed' : 'compact'; } catch { return 'compact'; } }
 function readUIPreferences() { try { return JSON.parse(localStorage.getItem('chefmate:ui-settings') || '{}'); } catch { return {}; } }
@@ -55,7 +63,7 @@ const labels = {
   find_ingredients: '查找食材', search_recipes: '查询菜谱', get_recipe: '读取菜谱',
   get_search_options: '读取查询选项', beginner: '新手', normal: '普通', advanced: '进阶',
   update_preferences: '更新偏好', present_preferences: '整理偏好', show_recipe_choices: '展示菜谱选择',
-  build_meal_plan: '安排菜单', build_shopping_list: '整理购物清单', prepare_ingredients: '准备食材',
+  build_meal_plan: '安排菜单', build_shopping_list: '整理备菜清单', prepare_ingredients: '准备食材',
   get_cooking_guide: '整理烹饪步骤', start_timer: '开始计时', load_skill: '读取厨房技能', list_skills: '查看厨房技能',
   complete: '完整', estimated: '含估算', incomplete: '不完整', unknown: '未知',
 };
@@ -73,6 +81,9 @@ const workspace = new WorkspaceController({
 const cookingFocus=new CookingFocus(workspace,{session:currentSession,onChange:updateComposer,
   activity:id=>({running:busy(id),status:state.runs.get(id)?.status,cancelling:state.runs.get(id)?.cancelling}),
   renderMessage:markdown,retry:message=>sendMessage(message.retryMessage,!message.retryAsNew,message)});
+const developerPanel=new DeveloperPanel({api,sessionId:()=>state.currentId,session:currentSession,enabled:()=>state.developer});
+const questionComposer=new QuestionComposer(ui['question-composer'],{state:questions,onAnswer:submitAnswer,
+  onRetry:id=>{const entry=questions.get(id);if(entry)questions.set(id,{...entry,stage:'saved',error:''});updateComposer();}});
 workspace.onFocus=(view,id,trigger)=>{
   const source=cookingFocus.captureSource(view,trigger);
   setSidebar(false);setDetails(false);cookingFocus.open(view,id,source);
@@ -139,6 +150,51 @@ async function api(path, options = {}) {
 }
 
 function currentSession() { return state.cache.get(state.currentId); }
+function pendingQuestion(id=state.currentId) {
+  const snapshot=workspace.snapshot(id);
+  return snapshot ? snapshot.pending_question || null : state.cache.get(id)?.pending_question || null;
+}
+function savedAnswer(id=state.currentId) {
+  const pending=questions.get(id),snapshot=workspace.snapshot(id);
+  if(pending?.stage==='uncertain' && !snapshot?.pending_question && matchesAnswer(snapshot?.last_answer,pending.payload))questions.saved(id);
+  questions.recovered(id,state.cache.get(id));
+  const entry=questions.get(id);
+  return entry && ['saved','sending','continue_failed'].includes(entry.stage) ? entry : null;
+}
+async function submitAnswer(id,question) {
+  if(answering.has(id) || busy(id) || !state.status?.ready)return;
+  const snapshot=workspace.snapshot(id);
+  if(snapshot?.pending_question?.id!==question.id){toast('问题已更新，请先查看最新内容。');return;}
+  let entry;
+  try{entry=questions.prepare(id,question,snapshot.revision);}catch(error){questions.fail(id,error.message);updateComposer();return;}
+  answering.add(id);updateComposer();
+  try {
+    await workspace.dispatch('answer_question',entry.payload,null,{sessionId:id,request:entry.request});
+    questions.saved(id);
+    const cached=state.cache.get(id);if(cached){cached.pending_question=null;cached.awaiting_user=false;}
+    const summary=state.sessions.find(session=>session.id===id);if(summary)summary.awaiting_user=false;
+    renderSessions();
+  } catch(error) {
+    questions.fail(id,error.message || '答案没有保存，请重试。',{uncertain:!error.knownRejected && (!error.status || error.status>=500)});
+  } finally {answering.delete(id);updateComposer();}
+}
+async function continueAnswers() {
+  if(state.initializing || state.creating || state.preparing || !state.status?.ready)return;
+  const ids=new Set([...state.sessions.map(session=>session.id),...state.cache.keys()]);
+  for(const id of ids) {
+    const entry=savedAnswer(id);
+    if(!entry || entry.stage==='continue_failed' || busy(id) || continuingAnswers.has(id) || pendingQuestion(id))continue;
+    continuingAnswers.add(id);questions.set(id,{...entry,stage:'sending',error:''});
+    try {
+      await sendMessage(entry.message,false,null,{sessionId:id,fromComposer:false,questionContinuation:true,
+        requestId:answerRequestId(entry.questionId),onAccepted:()=>questions.accepted(id)});
+      questions.failedContinuation(id,entry.questionId,'答案已保存，下一轮尚未开始。');
+    } catch(error) {
+      questions.failedContinuation(id,entry.questionId,error.message || '答案已保存，下一轮尚未开始。');
+    } finally {continuingAnswers.delete(id);updateComposer();}
+    break;
+  }
+}
 function draftKey(id=state.currentId) {return id ?? state.blankId;}
 function fillComposer(text,selection=null) {
   if(state.creating || state.preparing)return;
@@ -157,7 +213,7 @@ function renderWelcomeTemplates(force=false) {
 }
 function renderReplySuggestions() {
   const replies=suggestedReplies(currentSession()?.messages,state.status?.reply_suggestions!==false);
-  const host=ui['reply-suggestions'];host.hidden=!replies.length || busy() || Boolean(state.confirmationQueue.get(state.currentId));
+  const host=ui['reply-suggestions'];host.hidden=!replies.length || busy() || Boolean(pendingQuestion() || savedAnswer() || state.confirmationQueue.get(state.currentId));
   host.replaceChildren();
   for(const reply of replies) {
     const button=element('button','reply-suggestion',reply.title);button.type='button';button.title=reply.text;
@@ -236,9 +292,9 @@ function updateConversationState() {
   ui['conversation-stage'].title=conversationLabel(status);
   if (snapshot) {
     const item = state.sessions.find(item => item.id === state.currentId);
-    if (item) item.conversation_state = status;
+    if (item) {item.conversation_state = status;item.awaiting_user=Boolean(snapshot.pending_question) && !busy();}
     const badge = ui.sessions.querySelector(`[data-session-id="${CSS.escape(state.currentId)}"] .session-stage`);
-    if (badge) {badge.textContent = conversationLabel(status);badge.title=badge.textContent;}
+    if (badge) {badge.textContent = snapshot.pending_question && !busy() ? '等你回答' : conversationLabel(status);badge.title=badge.textContent;}
   }
 }
 function busy(id = state.currentId) { return state.runs.has(id) || Boolean(state.cache.get(id)?.running); }
@@ -268,12 +324,17 @@ function updateComposer() {
   ui['stop-button'].hidden = !running;
   ui['stop-button'].disabled = Boolean(localRun?.cancelling);
   const imageDraft=state.imageDrafts.get(draftKey()) || [],uploading=state.imageUploads.get(draftKey());
-  ui['send-button'].disabled = state.initializing || !ready || state.creating || state.preparing || uploading || Boolean(state.confirmationQueue.get(state.currentId)) ||
+  const question=pendingQuestion(),continuation=savedAnswer(),waiting=Boolean(question && !running);
+  ui['send-button'].disabled = state.initializing || !ready || waiting || continuation || state.creating || state.preparing || uploading || Boolean(state.confirmationQueue.get(state.currentId)) ||
     (!ui['composer-input'].value.trim() && !imageDraft.length) || (imageDraft.length && !state.status?.supports_images) || imageDraft.length>maxImages() || !workspace.canSubmit(state.currentId);
   ui['attach-image'].hidden=!state.status?.supports_images;
   ui['attach-image'].disabled=state.initializing || !ready || running || state.creating || state.preparing || uploading || imageDraft.length>=maxImages();
+  document.getElementById('kitchen-focus').classList.toggle('awaiting-answer',waiting);
   renderImageDrafts();renderComposerActions();renderReplySuggestions();cookingFocus.refresh();
-  ui['resume-draft'].hidden=!recoverableDraft();ui['resume-draft'].disabled=state.creating || state.preparing;
+  questionComposer.render(state.currentId,question,{busy:running,ready:ready && !state.preparing,continuation:!running && !question ? continuation : null});
+  ui.composer.hidden=waiting || Boolean(!running && continuation);
+  if(waiting){ui['image-drafts'].hidden=true;ui['composer-choices'].hidden=true;ui['resume-draft'].hidden=true;}
+  ui['resume-draft'].hidden=waiting || Boolean(continuation) || !recoverableDraft();ui['resume-draft'].disabled=state.creating || state.preparing;
   ui['composer-input'].disabled = state.creating || state.preparing;
   ui['turn-status'].hidden = !running;
   const activity=localRun?.cancelling ? '正在停止，请稍等…'
@@ -285,6 +346,7 @@ function updateComposer() {
   ui['workspace-context'].textContent = taskLabel;
   ui['workspace-context'].classList.toggle('unsaved', workspace.unsaved(state.currentId));
   queueMicrotask(continueConfirmations);
+  queueMicrotask(continueAnswers);
 }
 
 function renderStatus() {
@@ -317,18 +379,20 @@ function renderSessions() {
   ui.sessions.replaceChildren();
   if (!state.sessions.length) ui.sessions.append(element('div', 'session-empty', '从一个新会话开始吧。'));
   for (const session of state.sessions) {
-    const row = element('div', `session-row${session.id === state.currentId ? ' active' : ''}`);
+    const waiting=Boolean(!session.running && !state.runs.has(session.id) && (session.awaiting_user || (session.id===state.currentId && pendingQuestion())));
+    const row = element('div', `session-row${session.id === state.currentId ? ' active' : ''}${waiting?' awaiting':''}`);
     row.dataset.sessionId = session.id;
     const title = session.id === state.currentId ? currentSession()?.title || session.title : session.title;
     const link = element('button', 'session-link', title || '新会话');
     link.type = 'button';
     link.setAttribute('aria-label', title || '新会话');
-    const stageLabel=conversationLabel(session.conversation_state || {});
+    const stageLabel=waiting ? '等你回答' : conversationLabel(session.conversation_state || {});
     const badge=element('small','session-stage',stageLabel);badge.title=stageLabel;link.append(badge);
     link.title = title || '新会话';
     link.setAttribute('aria-current', session.id === state.currentId ? 'page' : 'false');
     link.addEventListener('click', () => openSession(session.id));
     row.append(link);
+    if(waiting){const marker=element('span','session-awaiting');marker.setAttribute('role','img');marker.setAttribute('aria-label','有问题等你回答');row.append(marker);}
     if (session.running || state.runs.has(session.id)) row.append(element('span', 'session-running'));
     const remove = element('button', 'session-delete');remove.append(icon('trash-2'));
     remove.type = 'button';
@@ -355,6 +419,7 @@ function renderSessions() {
         state.failedDrafts.delete(session.id);
         releaseImages(state.imageDrafts.get(session.id));state.imageDrafts.delete(session.id);state.imageUploads.delete(session.id);
         state.confirmationQueue.delete(session.id);
+        questions.accepted(session.id);
         workspace.remove(session.id);
         if (state.currentId === session.id) selectBlank();
         await loadSessions();
@@ -896,6 +961,8 @@ function applyEvent(run, event) {
 async function sendMessage(text, retry = false, replacedMessage = null, options = {}) {
   const input = text.trim();
   const targetId=options.sessionId ?? state.currentId,fromComposer=options.fromComposer !== false;
+  if(pendingQuestion(targetId)){toast('先回答助手的问题，确认后就会接着处理。');return {error:'需要先回答当前问题。'};}
+  if(fromComposer && savedAnswer(targetId)){toast('答案已经保存，请先重试继续。');return {error:'答案等待继续处理。'};}
   if(fromComposer && state.confirmationQueue.get(targetId)) {toast('确认已保存，请先重试继续，或选择“暂不继续”后再发送。');return;}
   const sourceKey=draftKey(targetId),selectionEpoch=state.selectionEpoch;
   let draftImages=replacedMessage?.retryImages || (fromComposer ? state.imageDrafts.get(sourceKey) : []) || [];
@@ -977,6 +1044,7 @@ async function sendMessage(text, retry = false, replacedMessage = null, options 
   const controller = new AbortController();
   const run = { sessionId: id, controller, message: assistant, input, requestId: crypto.randomUUID(),
     status: '正在理解需求…', done: false, resultReceived: false, httpRejected: false };
+  if(options.requestId)run.requestId=options.requestId;
   state.runs.set(id, run);
   if (id === state.currentId) {
     resizeInput();
@@ -994,6 +1062,7 @@ async function sendMessage(text, retry = false, replacedMessage = null, options 
       const payload = await response.json().catch(() => null);
       throw new Error(safeText(typeof payload?.detail === 'string' ? payload.detail : payload?.message || `请求失败（${response.status}）。`));
     }
+    options.onAccepted?.();
     const retainedImages=state.imageDrafts.get(id) || [];
     if(fromComposer && (!replacedMessage || matchesDraft(state.drafts.get(id),retainedImages,input,draftImages))) {
       if((state.drafts.get(id) || '').trim()===input)state.drafts.delete(id);
@@ -1093,6 +1162,7 @@ function setTab(tab, focus = false) {
   }
   if (focus) ui[`${tab}-tab`].focus();
   if (tab === 'skills') renderSkillsPanel();
+  if (tab === 'query') renderQueryPanel();
 }
 
 function panelSection(title) {
@@ -1102,6 +1172,7 @@ function panelSection(title) {
 }
 
 function renderQueryPanel() {
+  if(state.developer){developerPanel.render();return;}
   const opened = new Set([...ui['query-content'].querySelectorAll('details[open][data-call-index]')].map((node) => node.dataset.callIndex));
   ui['query-content'].replaceChildren();
   const status = state.status;

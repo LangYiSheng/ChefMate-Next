@@ -217,15 +217,15 @@ def test_portions_respect_non_scalable_ingredients_and_metric_contributions(kitc
     assert len(json.dumps(snapshot, ensure_ascii=False)) < 24000
 
 
-def test_shopping_merges_only_compatible_identity_shape_unit(kitchen):
+def test_preparation_retains_dish_identity_shape_and_amounts(kitchen):
     choose(kitchen, ids=["r1", "r2", "r3"])
-    result = tool(kitchen, "show_shopping_list")
+    result = tool(kitchen, "show_prep_checklist")
     items = result["actions"][0]["component"]["data"]["items"]
     shrimp = [item for item in items if item["ingredient_id"] == "shrimp"]
-    assert len(shrimp) == 2
-    peeled = next(item for item in shrimp if item["canonical_name"] == "虾仁")
-    assert peeled["amount_value"] == 200
-    assert set(peeled["source_recipe_ids"]) == {"r1", "r2"}
+    assert len(shrimp) == 3
+    peeled = [item for item in shrimp if item["canonical_name"] == "虾仁"]
+    assert all(item["amount_value"] == 100 for item in peeled)
+    assert {item["recipe_id"] for item in peeled} == {"r1", "r2"}
 
 
 def test_unknown_quantities_remain_unknown_and_separate(kitchen):
@@ -233,31 +233,31 @@ def test_unknown_quantities_remain_unknown_and_separate(kitchen):
     retrieval.recipes["r1"] = recipe(unknown=True)
     retrieval.recipes["r2"] = recipe("r2", unknown=True)
     choose(kitchen, ids=["r1", "r2"], servings={"r1": 4})
-    result = tool(kitchen, "show_shopping_list")
+    result = tool(kitchen, "show_prep_checklist")
     shrimp = [item for item in result["actions"][0]["component"]["data"]["items"] if item["ingredient_id"] == "shrimp"]
     assert len(shrimp) == 2
     assert all(item["amount_value"] is None for item in shrimp)
     assert all(item["estimated"] for item in shrimp)
 
 
-def test_single_dish_checklist_scope_preserves_other_dish_purchase_facts(kitchen):
+def test_single_dish_preparation_preserves_other_dish_confirmations(kitchen):
     choose(kitchen, ids=["r1", "r2"], servings={"r1": 4})
-    result = tool(kitchen, "show_shopping_list", {"recipe_ids": ["r1"]})
+    result = tool(kitchen, "show_prep_checklist", {"recipe_ids": ["r1"]})
     view = result["actions"][0]["component"]
     shrimp = next(item for item in view["data"]["items"] if item["ingredient_id"] == "shrimp")
     assert shrimp["amount_value"] == 200
-    assert shrimp["source_recipe_ids"] == ["r1"]
-    assert action(kitchen, "check_shopping_item", {"item_id": shrimp["id"], "checked": True}, view_id=view["id"])["status"] == "ok"
+    assert shrimp["recipe_id"] == "r1"
+    assert action(kitchen, "check_prep_item", {"item_id": shrimp["id"], "status": "ready"}, view_id=view["id"])["status"] == "ok"
     result = action(kitchen, "set_checklist_scope", {"recipe_ids": None}, view_id=view["id"])
-    aggregate = next(item for item in result["actions"][0]["component"]["data"]["items"] if item["ingredient_id"] == "shrimp")
-    assert aggregate["amount_value"] == 300 and aggregate["checked"] is False
-    assert action(kitchen, "check_shopping_item", {"item_id": aggregate["id"], "checked": True}, view_id=view["id"])["status"] == "ok"
+    all_items = result["actions"][0]["component"]["data"]["items"]
+    assert next(item for item in all_items if item["id"] == "r1:ingredient:0")["status"] == "ready"
+    assert next(item for item in all_items if item["id"] == "r2:ingredient:0")["status"] == "pending"
     result = action(kitchen, "set_checklist_scope", {"recipe_ids": ["r2"]}, view_id=view["id"])
     single = next(item for item in result["actions"][0]["component"]["data"]["items"] if item["ingredient_id"] == "shrimp")
-    assert single["amount_value"] == 100 and single["checked"] is True
-    assert action(kitchen, "check_shopping_item", {"item_id": single["id"], "checked": False}, view_id=view["id"])["status"] == "ok"
+    assert single["amount_value"] == 100 and single["status"] == "pending"
+    assert action(kitchen, "check_prep_item", {"item_id": single["id"], "status": "ready"}, view_id=view["id"])["status"] == "ok"
     restored = action(kitchen, "set_checklist_scope", {"recipe_ids": ["r1"]}, view_id=view["id"])
-    assert next(item for item in restored["actions"][0]["component"]["data"]["items"] if item["ingredient_id"] == "shrimp")["checked"] is True
+    assert next(item for item in restored["actions"][0]["component"]["data"]["items"] if item["ingredient_id"] == "shrimp")["status"] == "ready"
 
 
 def test_adapted_guidance_keeps_source_quantities_and_confirmed_progress(kitchen):
@@ -281,7 +281,7 @@ def test_adapted_guidance_keeps_source_quantities_and_confirmed_progress(kitchen
 
 def test_scoped_checklists_reject_unselected_recipes_and_foreign_rows(kitchen):
     choose(kitchen, ids=["r1", "r2"])
-    assert tool(kitchen, "show_shopping_list", {"recipe_ids": ["r3"]})["status"] == "invalid_reference"
+    assert tool(kitchen, "show_prep_checklist", {"recipe_ids": ["r3"]})["status"] == "invalid_reference"
     result = tool(kitchen, "show_prep_checklist", {"recipe_ids": ["r1"]})
     view = result["actions"][0]["component"]
     assert all(item["recipe_id"] == "r1" for item in view["data"]["items"])
@@ -351,7 +351,7 @@ def test_model_snapshot_compact_and_action_history_bounded(kitchen):
     choose(kitchen, ids=["r1", "r2", "r3"])
     for name in ("show_recipe_choices",):
         tool(kitchen, name, {"recipe_ids": ["r1", "r2", "r3"], "data_snapshot": SNAPSHOT})
-    for name in ("show_meal_plan", "show_shopping_list", "show_prep_checklist", "show_cooking_guide", "show_timers"):
+    for name in ("show_meal_plan", "show_prep_checklist", "show_cooking_guide", "show_timers"):
         tool(kitchen, name)
     for _ in range(25):
         action(kitchen, "update_preferences", {"values": {"ingredient_terms": ["虾"]}})
@@ -437,14 +437,14 @@ def test_unselected_preview_disappears_when_entering_execution(kitchen):
     assert all(view["kind"] != "recipe_detail" for view in result["views"])
 
 
-def test_user_buttons_select_shop_prepare_and_cook_without_extra_model_tools(kitchen):
+def test_user_buttons_select_prepare_and_cook_without_extra_model_tools(kitchen):
     choices = tool(kitchen, "show_recipe_choices", {"recipe_ids": ["r1"], "data_snapshot": SNAPSHOT})
     result = action(kitchen, "select_recipes", {"recipe_ids": ["r1"]},
                     view_id=choices["actions"][0]["component"]["id"])
     assert result["actions"][0]["component"]["kind"] == "meal_plan"
     progress = next(view for view in result["views"] if view["kind"] == "task_progress")
     assert progress["data"]["stage"] == "planning"
-    for stage, kind in (("shopping", "shopping_list"), ("prep", "prep_checklist")):
+    for stage, kind in (("prep", "prep_checklist"),):
         result = action(kitchen, "change_stage", {"stage": stage}, view_id=progress["id"])
         assert result["status"] == "ok"
         assert result["actions"][0]["component"]["kind"] == kind
@@ -506,3 +506,125 @@ def test_model_controls_presentation_without_dropping_task_state(kitchen, displa
     read = tool(kitchen, "get_cooking_workspace")
     assert read["actions"] == []
     assert len(read["views"]) == 1
+
+
+def test_model_preference_patch_shows_saved_values_and_rejects_stale_revision(kitchen):
+    _, host, _, _ = kitchen
+    action(kitchen, "update_preferences", {"values": {"servings": 2, "taste_tags": ["light"]}})
+    result = tool(kitchen, "update_preferences", {"expected_revision": 1, "values": {"ingredient_terms": ["虾"]}})
+    assert result["status"] == "ok"
+    form = result["actions"][0]["component"]
+    assert form["kind"] == "preference_form"
+    assert form["data"]["values"]["servings"] == 2 and form["data"]["values"]["taste_tags"] == ["light"]
+    assert form["data"]["fields"][0]["value"] == ["虾"]
+    before = copy.deepcopy(host.state)
+    assert tool(kitchen, "update_preferences", {"expected_revision": 1, "values": {"servings": 8}})["status"] == "revision_conflict"
+    assert host.state == before
+
+
+def test_model_selection_uses_current_real_candidates_and_keeps_execution_guard(kitchen):
+    _, host, _, _ = kitchen
+    tool(kitchen, "show_recipe_choices", {"recipe_ids": ["r1", "r2"], "data_snapshot": SNAPSHOT})
+    result = tool(kitchen, "select_recipes", {"recipe_ids": ["r2"], "expected_revision": 1})
+    assert result["status"] == "ok" and result["ui_snapshot"]["selected_recipe_ids"] == ["r2"]
+    before = copy.deepcopy(host.state)
+    assert tool(kitchen, "select_recipes", {"recipe_ids": ["invented"], "expected_revision": 2})["status"] == "invalid_reference"
+    assert host.state == before
+    action(kitchen, "change_stage", {"stage": "prep"})
+    assert tool(kitchen, "select_recipes", {"recipe_ids": ["r1"], "expected_revision": 3})["status"] == "stage_conflict"
+    assert host.state["meal_plan"][0]["recipe_id"] == "r2"
+
+
+def test_model_bulk_preparation_changes_only_explicit_real_ids_atomically(kitchen):
+    _, host, _, _ = kitchen
+    choose(kitchen, ids=["r1", "r2"])
+    result = tool(kitchen, "update_prep_items", {"expected_revision": 1,
+        "items": [{"item_id": "r1:ingredient:1", "status": "ready"}, {"item_id": "r2:ingredient:1", "status": "ready"}]})
+    assert result["status"] == "ok"
+    assert host.state["prep_status"] == {"r1:ingredient:1": "ready", "r2:ingredient:1": "ready"}
+    assert result["actions"][0]["component"]["kind"] == "prep_checklist"
+    before = copy.deepcopy(host.state)
+    invalid = {"expected_revision": 2, "items": [{"item_id": "r1:ingredient:0", "status": "ready"},
+                                                {"item_id": "foreign", "status": "ready"}]}
+    assert tool(kitchen, "update_prep_items", invalid)["status"] == "invalid_reference"
+    assert host.state == before
+    invalid["expected_revision"] = 1
+    assert tool(kitchen, "update_prep_items", invalid)["status"] == "revision_conflict"
+    assert host.state == before
+
+
+def test_question_waits_persists_answer_and_idempotent_submission(kitchen):
+    service, host, _, _ = kitchen
+    request = {"question": "今晚想吃什么口味？", "options": [{"id": "light", "label": "清淡"}, {"id": "spicy", "label": "微辣"}]}
+    result = tool(kitchen, "ask_user", request, operation_id="question-1")
+    question = result["pending_question"]
+    assert question == service.model_snapshot()["pending_question"]
+    assert result["actions"] == [] and question["allow_custom"] is True
+    again = tool(kitchen, "ask_user", request, operation_id="question-1")
+    assert again["pending_question"]["id"] == question["id"] and host.state["revision"] == 1
+    assert tool(kitchen, "ask_user", {"question": "替换问题"})["status"] == "pending_question_exists"
+    invalid = action(kitchen, "answer_question", {"question_id": question["id"], "option_ids": ["unknown"]})
+    assert invalid["status"] == "invalid_answer" and host.state["pending_question"]["id"] == question["id"]
+    payload = {"question_id": question["id"], "option_ids": ["light"], "text": "尽量少盐"}
+    answer = action(kitchen, "answer_question", payload, action_id="answer-1")
+    assert answer["status"] == "ok" and answer["pending_question"] is None
+    assert answer["last_answer"]["labels"] == ["清淡"] and answer["last_answer"]["text"] == "尽量少盐"
+    assert action(kitchen, "answer_question", payload, action_id="answer-1")["status"] == "ok"
+    assert host.state["revision"] == 2
+    assert action(kitchen, "answer_question", payload, action_id="answer-2")["status"] == "question_already_answered"
+
+
+def test_question_answer_checks_current_revision_and_question_rules(kitchen):
+    _, host, _, _ = kitchen
+    result = tool(kitchen, "ask_user", {"question": "选一种厨具", "allow_custom": False,
+                                       "options": [{"id": "pan", "label": "平底锅"}, {"id": "pot", "label": "汤锅"}]})
+    question_id = result["pending_question"]["id"]
+    for payload in ({"question_id": question_id, "text": "自填被禁用"},
+                    {"question_id": question_id, "option_ids": ["pan", "pot"]},
+                    {"question_id": question_id}, {"question_id": "old", "option_ids": ["pan"]}):
+        before = copy.deepcopy(host.state)
+        assert action(kitchen, "answer_question", payload)["status"] in {"invalid_answer", "stale_question"}
+        assert host.state == before
+    action(kitchen, "update_preferences", {"values": {"servings": 3}})
+    assert action(kitchen, "answer_question", {"question_id": question_id, "option_ids": ["pan"]},
+                  base_revision=1)["status"] == "revision_conflict"
+    assert host.state["pending_question"] is not None
+
+
+@pytest.mark.parametrize("name,tool_request", [
+    ("ask_user", {"question": "<img src=x>"}),
+    ("ask_user", {"question": "无法回答", "allow_custom": False}),
+    ("ask_user", {"question": "重复", "options": [{"id": "a", "label": "A"}, {"id": "a", "label": "B"}]}),
+    ("ask_user", {"question": "过长", "options": [{"id": "a", "label": "a" * 81}]}),
+    ("update_preferences", {"values": {"servings": 2}}),
+    ("update_prep_items", {"expected_revision": 0, "items": [{"item_id": "x", "status": "ready"}, {"item_id": "x", "status": "pending"}]}),
+])
+def test_harness_tools_reject_unbounded_questions_and_implicit_mutations(kitchen, name, tool_request):
+    _, host, _, _ = kitchen
+    with pytest.raises(ValidationError):
+        tool(kitchen, name, tool_request)
+    assert host.state == {}
+
+
+def test_legacy_purchases_migrate_to_single_preparation_without_guessing_other_dishes(kitchen):
+    from chefmate_workflow import UISnapshot
+    service, host, _, _ = kitchen
+    choose(kitchen, ids=["r1", "r2"])
+    host.state.update(schema_version=1, stage="shopping", shopping_checked=["r1:ingredient:0", "legacy-salt"])
+    host.state["components"].append({"id": "old-shopping", "kind": "shopping_list", "title": "采购", "revision": 1,
+        "data": {"recipe_ids": None, "items": [{"id": "legacy-salt", "source_item_ids": ["r1:ingredient:1"],
+                  "ingredient_id": "salt", "canonical_name": "盐", "unit": "g", "amount_value": 1, "checked": False}]}})
+    before = copy.deepcopy(host.state)
+    loaded = WorkspaceState.model_validate(host.state)
+    assert loaded.schema_version == 2 and loaded.stage == "prep"
+    assert loaded.prep_status == {"r1:ingredient:0": "ready", "r1:ingredient:1": "ready"}
+    assert host.state == before
+    snapshot = service.model_snapshot()
+    assert snapshot["stage"] == "prep" and all(view["kind"] != "shopping_list" for view in snapshot["components"])
+    prep = next(view for view in snapshot["components"] if view["kind"] == "prep_checklist")
+    assert next(item for item in prep["data"]["items"] if item["id"] == "r2:ingredient:0")["status"] == "pending"
+    historical = UISnapshot.model_validate({"revision": 1, "stage": "shopping", "components": [
+        {"id": "old", "kind": "shopping_list", "title": "采购", "revision": 1, "editable": True, "data": {}}]})
+    assert historical.stage == "prep" and historical.components == []
+    action(kitchen, "check_prep_item", {"item_id": "r2:ingredient:0", "status": "ready"})
+    assert host.state["schema_version"] == 2 and "shopping_checked" not in host.state

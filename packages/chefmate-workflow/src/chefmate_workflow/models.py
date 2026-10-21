@@ -8,7 +8,7 @@ from chefmate_retrieval import DatasetSnapshot
 
 Text = Annotated[str, Field(min_length=1, max_length=200)]
 Positive = Annotated[float, Field(gt=0, le=1000, allow_inf_nan=False)]
-Stage = Literal["idea", "planning", "shopping", "prep", "cooking", "completed"]
+Stage = Literal["idea", "planning", "prep", "cooking", "completed"]
 PrepStatus = Literal["pending", "ready", "skipped"]
 StepStatus = Literal["pending", "current", "done"]
 PreferenceName = Literal["servings", "max_total_time_min", "taste_tags", "available_tools",
@@ -134,31 +134,37 @@ class PreferenceFormData(StrictModel):
     values: PreferenceValues
 
 
+QuestionText = Annotated[str, Field(min_length=1, max_length=500, pattern=r"^[^<>\x00-\x08\x0b\x0c\x0e-\x1f\x7f]+$")]
+
+
+class QuestionOption(StrictModel):
+    id: Annotated[str, Field(min_length=1, max_length=50, pattern=r"^[a-zA-Z0-9_-]+$")]
+    label: Annotated[QuestionText, Field(max_length=80)]
+
+
+class PendingQuestion(StrictModel):
+    id: Text
+    title: Annotated[QuestionText, Field(max_length=80)] = "想再确认一下"
+    question: QuestionText
+    options: Annotated[list[QuestionOption], Field(max_length=6)] = Field(default_factory=list)
+    allow_custom: bool = True
+    multiple: bool = False
+
+
+class QuestionAnswer(StrictModel):
+    question_id: Text
+    question: QuestionText
+    option_ids: list[str] = Field(default_factory=list)
+    labels: list[str] = Field(default_factory=list)
+    text: Annotated[str, Field(max_length=2000)] = ""
+
+
 class RecipeListData(StrictModel):
     recipes: list[RecipeView]
 
 
 class RecipeDetailData(StrictModel):
     recipe: RecipeView
-
-
-class ShoppingItem(StrictModel):
-    id: Text
-    ingredient_id: Text
-    canonical_name: Text
-    unit: str | None
-    amount_value: float | None
-    amount_text: str
-    estimated: bool
-    checked: bool
-    source_recipe_ids: list[str]
-    source_item_ids: list[str] = Field(default_factory=list)
-
-
-class ShoppingData(StrictModel):
-    items: list[ShoppingItem]
-    recipe_ids: list[str] | None = None
-    notes: list[str] = Field(default_factory=list)
 
 
 class PrepData(StrictModel):
@@ -216,11 +222,6 @@ class MealPlan(ComponentBase):
     data: RecipeListData
 
 
-class ShoppingList(ComponentBase):
-    kind: Literal["shopping_list"] = "shopping_list"
-    data: ShoppingData
-
-
 class PrepChecklist(ComponentBase):
     kind: Literal["prep_checklist"] = "prep_checklist"
     data: PrepData
@@ -241,13 +242,13 @@ class TaskProgress(ComponentBase):
     data: ProgressData
 
 
-ViewComponent = Annotated[PreferenceForm | RecipeChoices | RecipeDetail | MealPlan | ShoppingList | PrepChecklist
+ViewComponent = Annotated[PreferenceForm | RecipeChoices | RecipeDetail | MealPlan | PrepChecklist
                           | CookingGuide | Timers | TaskProgress, Field(discriminator="kind")]
 
 
 class CompactComponentSnapshot(StrictModel):
     id: Text
-    kind: Literal["preference_form", "recipe_choices", "recipe_detail", "meal_plan", "shopping_list",
+    kind: Literal["preference_form", "recipe_choices", "recipe_detail", "meal_plan",
                   "prep_checklist", "cooking_guide", "timers", "task_progress"]
     title: Text
     revision: Annotated[int, Field(ge=0)]
@@ -264,6 +265,14 @@ class UISnapshot(StrictModel):
     active_step_id: str | None = None
     components: list[CompactComponentSnapshot] = Field(default_factory=list)
     recent_actions: list[ActionRecord] = Field(default_factory=list)
+    pending_question: PendingQuestion | None = None
+    last_answer: QuestionAnswer | None = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def migrate_purchasing_snapshot(cls, value):
+        from .migration import migrate_snapshot
+        return migrate_snapshot(value)
 
 
 class CookingAdaptation(StrictModel):
@@ -274,7 +283,7 @@ class CookingAdaptation(StrictModel):
 
 
 class WorkspaceState(StrictModel):
-    schema_version: Literal[1] = 1
+    schema_version: Literal[2] = 2
     revision: Annotated[int, Field(ge=0)] = 0
     stage: Stage = "idea"
     preferences: PreferenceValues = Field(default_factory=PreferenceValues)
@@ -282,13 +291,20 @@ class WorkspaceState(StrictModel):
     meal_plan: list[FrozenRecipe] = Field(default_factory=list)
     prep_status: dict[str, PrepStatus] = Field(default_factory=dict)
     step_status: dict[str, StepStatus] = Field(default_factory=dict)
-    shopping_checked: list[str] = Field(default_factory=list)
     active_recipe_id: str | None = None
     active_step_id: str | None = None
     timers: list[TimerState] = Field(default_factory=list)
     components: list[ViewComponent] = Field(default_factory=list)
     recent_actions: list[ActionRecord] = Field(default_factory=list)
     adaptations: list[CookingAdaptation] = Field(default_factory=list)
+    pending_question: PendingQuestion | None = None
+    last_answer: QuestionAnswer | None = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def migrate_purchasing_workspace(cls, value):
+        from .migration import migrate_workspace
+        return migrate_workspace(value)
 
 
 class UIAction(StrictModel):
@@ -304,6 +320,8 @@ class WorkflowToolResult(StrictModel):
     ui_snapshot: UISnapshot
     actions: list[UIAction] = Field(default_factory=list)
     message: str | None = None
+    pending_question: PendingQuestion | None = None
+    last_answer: QuestionAnswer | None = None
 
 
 class ToolInput(StrictModel):
@@ -367,6 +385,61 @@ class AdaptCookingInput(ToolInput):
     reason: Annotated[str, Field(min_length=1, max_length=500)]
 
 
+class ExpectedRevisionInput(ToolInput):
+    expected_revision: Annotated[int, Field(ge=0)]
+
+    @model_validator(mode="after")
+    def matching_revisions(self):
+        if self.base_revision is not None and self.base_revision != self.expected_revision:
+            raise ValueError("Revision fields must match")
+        return self
+
+
+class UpdatePreferencesInput(ExpectedRevisionInput):
+    values: PreferencePatch
+
+    @model_validator(mode="after")
+    def supplied_values(self):
+        if not self.values.model_fields_set:
+            raise ValueError("Provide at least one preference")
+        return self
+
+
+class SelectRecipesInput(ExpectedRevisionInput):
+    recipe_ids: Annotated[list[Text], Field(min_length=1, max_length=4)]
+
+
+class PrepItemUpdate(StrictModel):
+    item_id: Text
+    status: PrepStatus
+
+
+class UpdatePrepItemsInput(ExpectedRevisionInput):
+    items: Annotated[list[PrepItemUpdate], Field(min_length=1, max_length=100)]
+
+    @model_validator(mode="after")
+    def distinct_items(self):
+        if len({item.item_id for item in self.items}) != len(self.items):
+            raise ValueError("Item IDs must be distinct")
+        return self
+
+
+class AskUserInput(ToolInput):
+    title: Annotated[QuestionText, Field(max_length=80)] = "想再确认一下"
+    question: QuestionText
+    options: Annotated[list[QuestionOption], Field(max_length=6)] = Field(default_factory=list)
+    allow_custom: bool = True
+    multiple: bool = False
+
+    @model_validator(mode="after")
+    def answerable(self):
+        if (not self.options and not self.allow_custom
+                or len({option.id for option in self.options}) != len(self.options)
+                or len({option.label for option in self.options}) != len(self.options)):
+            raise ValueError("Question must have distinct options or allow a custom answer")
+        return self
+
+
 class ActionBase(StrictModel):
     action_id: Text
     base_revision: Annotated[int, Field(ge=0)]
@@ -387,11 +460,6 @@ class RecipeIdPayload(StrictModel):
 
 class ServingsPayload(RecipeIdPayload):
     servings: Positive
-
-
-class ShoppingPayload(StrictModel):
-    item_id: Text
-    checked: bool
 
 
 class ChecklistScopePayload(StrictModel):
@@ -426,6 +494,12 @@ class StagePayload(StrictModel):
     stage: Stage
 
 
+class AnswerQuestionPayload(StrictModel):
+    question_id: Text
+    option_ids: Annotated[list[str], Field(max_length=6)] = Field(default_factory=list)
+    text: Annotated[str, Field(max_length=2000)] = ""
+
+
 def _action_model(name, payload_model):
     from pydantic import create_model
     return create_model(name + "Action", __base__=ActionBase, type=(Literal[name], name),
@@ -435,7 +509,7 @@ def _action_model(name, payload_model):
 ACTION_PAYLOAD_MODELS = {
     "update_preferences": PreferencePayload, "select_recipes": RecipeIdsPayload,
     "open_recipe_detail": RecipeIdPayload, "change_servings": ServingsPayload,
-    "check_shopping_item": ShoppingPayload, "check_prep_item": PrepPayload,
+    "check_prep_item": PrepPayload, "answer_question": AnswerQuestionPayload,
     "set_checklist_scope": ChecklistScopePayload,
     "set_active_recipe": RecipeIdPayload, "set_active_step": StepPayload,
     "complete_step": CompleteStepPayload, "change_stage": StagePayload,
@@ -457,8 +531,10 @@ class UserActionRequest(RootModel[Annotated[Union[_action_types], Field(discrimi
 TOOL_REQUEST_MODELS = {
     "show_preference_form": PreferenceFormInput, "show_recipe_choices": RecipeChoicesInput,
     "show_recipe_details": RecipeDetailInput, "set_meal_plan": MealPlanInput,
-    "show_meal_plan": EmptyInput, "show_shopping_list": ChecklistInput, "show_prep_checklist": ChecklistInput,
+    "show_meal_plan": EmptyInput, "show_prep_checklist": ChecklistInput,
     "show_cooking_guide": CookingGuideInput, "set_cooking_timer": TimerInput,
     "show_timers": EmptyInput, "get_cooking_workspace": EmptyInput, "advance_cooking_stage": StageInput,
     "update_cooking_guidance": AdaptCookingInput,
+    "update_preferences": UpdatePreferencesInput, "select_recipes": SelectRecipesInput,
+    "update_prep_items": UpdatePrepItemsInput, "ask_user": AskUserInput,
 }

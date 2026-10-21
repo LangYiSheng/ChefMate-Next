@@ -16,6 +16,7 @@
   <link rel="stylesheet" href="/static/focus.css">
   <link rel="stylesheet" href="/static/activity.css">
   <link rel="stylesheet" href="/static/conversation.css">
+  <link rel="stylesheet" href="/static/question.css">
   <script type="module" src="/static/app.js"></script>
 </head>
 <body class="app-page">
@@ -64,6 +65,7 @@
       </div>
 
       <div class="composer-area">
+        <section id="question-composer" class="question-composer" aria-label="回答助手的问题" hidden></section>
         <button id="resume-draft" class="resume-draft" type="button" hidden><span data-icon="undo-2" aria-hidden="true"></span>继续未发送的消息</button>
         <div id="composer-choices" class="composer-choices" aria-label="当前表单操作" hidden></div>
         <div id="reply-suggestions" class="reply-suggestions" aria-label="接下来可以聊" hidden></div>
@@ -90,7 +92,7 @@
       <div class="panel-header">
         <div class="panel-tabs" role="tablist" aria-label="详情内容">
           <button type="button" class="panel-tab active" id="workspace-tab" role="tab" aria-selected="true" aria-controls="workspace-content">工作区</button>
-          <button type="button" class="panel-tab" id="query-tab" role="tab" aria-selected="false" aria-controls="query-content">数据</button>
+          <button type="button" class="panel-tab" id="query-tab" role="tab" aria-selected="false" aria-controls="query-content">调试</button>
           <button type="button" class="panel-tab" id="recipe-tab" role="tab" aria-selected="false" aria-controls="recipe-content">菜谱详情</button>
           <button type="button" class="panel-tab" id="skills-tab" role="tab" aria-selected="false" aria-controls="skills-content">技能</button>
         </div>

@@ -1,30 +1,30 @@
 // 组件和操作是本地白名单；模型只能提供经服务端验证的领域数据。
 export const COMPONENT_KINDS = Object.freeze([
-  'preference_form', 'recipe_choices', 'recipe_detail', 'meal_plan', 'shopping_list',
+  'preference_form', 'recipe_choices', 'recipe_detail', 'meal_plan',
   'prep_checklist', 'cooking_guide', 'timers', 'task_progress',
 ]);
 export const ACTION_TYPES = Object.freeze([
   'update_preferences', 'select_recipes', 'open_recipe_detail', 'change_servings',
-  'check_shopping_item', 'check_prep_item', 'set_active_recipe', 'set_active_step',
+  'check_prep_item', 'set_active_recipe', 'set_active_step', 'answer_question',
   'set_checklist_scope',
   'complete_step', 'change_stage', 'start_timer', 'pause_timer', 'resume_timer', 'cancel_timer',
 ]);
-export const STAGES = Object.freeze({ idea: '想吃什么', planning: '选菜与份量', shopping: '采购', prep: '备菜', cooking: '开始烹饪', completed: '完成' });
-const TRANSITIONS = Object.freeze({ idea:['planning'], planning:['idea','shopping','prep'], shopping:['planning','prep'],
-  prep:['planning','shopping','cooking'], cooking:['prep','completed'], completed:['idea','planning'] });
+export const STAGES = Object.freeze({ idea: '想吃什么', planning: '选菜与份量', prep: '备菜', cooking: '开始烹饪', completed: '完成' });
+const TRANSITIONS = Object.freeze({ idea:['planning'], planning:['idea','prep'],
+  prep:['planning','cooking'], cooking:['prep','completed'], completed:['idea','planning'] });
 export const EXECUTION_STAGES = Object.freeze(['prep', 'cooking', 'completed']);
 
 export function canChangeStage(progress, target) {
   if (!(TRANSITIONS[progress.stage] || []).includes(target)) return false;
-  if (['shopping','prep','cooking','completed'].includes(target) && !(progress.recipe_count > 0)) return false;
+  if (['prep','cooking','completed'].includes(target) && !(progress.recipe_count > 0)) return false;
   if (target === 'cooking' && (!(progress.prep_total > 0) || !(progress.steps_total > 0) || !(progress.prep_ready >= progress.prep_total))) return false;
   if (target === 'completed' && (!(progress.steps_total > 0) || !(progress.steps_done >= progress.steps_total))) return false;
   return true;
 }
 export function visibleWorkspaceViews(views, stage) {
-  const order = stage === 'cooking' ? ['task_progress','cooking_guide','timers','meal_plan','prep_checklist','shopping_list','recipe_detail','preference_form']
-    : EXECUTION_STAGES.includes(stage) ? ['task_progress','prep_checklist','shopping_list','meal_plan','cooking_guide','timers','recipe_detail','preference_form']
-      : ['task_progress','preference_form','recipe_choices','meal_plan','shopping_list','prep_checklist','cooking_guide','timers','recipe_detail'];
+  const order = stage === 'cooking' ? ['task_progress','cooking_guide','timers','meal_plan','prep_checklist','recipe_detail','preference_form']
+    : EXECUTION_STAGES.includes(stage) ? ['task_progress','prep_checklist','meal_plan','cooking_guide','timers','recipe_detail','preference_form']
+      : ['task_progress','preference_form','recipe_choices','meal_plan','prep_checklist','cooking_guide','timers','recipe_detail'];
   const rank = (view) => order.includes(view.kind) ? order.indexOf(view.kind) : order.length;
   return views.filter((view) => !(EXECUTION_STAGES.includes(stage) && view.kind === 'recipe_choices')).sort((a,b) => rank(a)-rank(b));
 }
@@ -48,7 +48,12 @@ export function viewsFrom(value) {
     ...(Array.isArray(value.views) ? value.views : []), ...(Array.isArray(value.components) ? value.components : [])];
   if (value.presentation) candidates.push(...viewsFrom(value.presentation));
   for (const action of Array.isArray(value.actions) ? value.actions : []) candidates.push(...viewsFrom(action));
-  return candidates.filter(validView);
+  return candidates.filter(validView).map(normalizeLegacyView);
+}
+// Old chat records remain readable while the current task has one preparation list.
+export function normalizeLegacyView(view) {
+  if(view.kind!=='shopping_list')return view;
+  return {...view,kind:'prep_checklist',title:'备菜清单',data:{...view.data,items:(view.data.items || []).map(item=>({...item,status:item.checked?'ready':item.status || 'pending'}))}};
 }
 export function messageViews(message) {
   const actions = Array.isArray(message.actions) ? [...message.actions] : [];
@@ -56,7 +61,7 @@ export function messageViews(message) {
     if (Array.isArray(call.result?.actions)) actions.push(...call.result.actions);
   }
   const views = actions.filter(action=>action.kind==='show_component' && validView(action.component))
-    .map(action=>({...action.component,placement:action.placement || 'inline'}));
+    .map(action=>({...normalizeLegacyView(action.component),placement:action.placement || 'inline'}));
   const unique = new Map();
   for (const view of views) unique.set(`${view.id}:${view.revision}`, view);
   return [...unique.values()];

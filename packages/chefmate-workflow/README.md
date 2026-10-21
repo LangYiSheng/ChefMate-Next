@@ -41,9 +41,11 @@ ui_snapshot     同 workspace
 views           完整 ViewComponent 数组，供应用渲染
 actions         本次需要展示的 UIAction，至多一个 show_component
 message         可选说明
+pending_question 待回答问题，回答前保留；无待答时为null
+last_answer     最近一次已经验证并保存的答案
 ```
 
-持久化的 `WorkspaceState` 包含冻结菜谱和执行状态，由应用保存；它不会作为重复原始数据返回到 HTTP/模型响应。完整 `views` 用于当前工作区。聊天展示仅采用主动生成的 `actions`，工具参数 `display` 决定 inline/workspace/none，动作携带 `placement`。历史 `actions.component` 不能作为可写状态；交互必须按组件ID重新取得当前可信投影与版本，被替换的组件只保留入口。应用注册模型工具时可只返回 `status/message/actions/ui_snapshot`，避免将完整 `views` 再次放入模型上下文。
+持久化的 `WorkspaceState` 包含冻结菜谱和执行状态，由应用保存；它不会作为重复原始数据返回到 HTTP/模型响应。完整 `views` 用于当前工作区。聊天展示仅采用主动生成的 `actions`，工具参数 `display` 决定 inline/workspace/none，动作携带 `placement`。历史 `actions.component` 不能作为可写状态；交互必须按组件ID重新取得当前可信投影与版本，被替换的组件只保留入口。应用注册模型工具时可只返回 `status/message/actions/ui_snapshot/pending_question`，避免将完整 `views` 再次放入模型上下文。
 
 ## 工具与界面
 
@@ -54,13 +56,16 @@ message         可选说明
 | `show_recipe_details` | 已选任务 ID，或新候选 ID 与快照 | `recipe_detail` |
 | `set_meal_plan` | 至多4道、按 ID 的目标人数、快照 | `meal_plan` |
 | `show_meal_plan` | 无业务参数 | `meal_plan` |
-| `show_shopping_list` | `recipe_ids` 为当前餐单子集，null整餐 | `shopping_list` |
 | `show_prep_checklist` | `recipe_ids` 为当前餐单子集，null整餐 | `prep_checklist` |
 | `show_cooking_guide` | 可选已选菜谱 ID | `cooking_guide` |
 | `set_cooking_timer` | 秒数、标题、所属菜谱/步骤、来源 | `timers` |
 | `show_timers` | 无业务参数 | `timers` |
 | `get_cooking_workspace` | 无业务参数 | 短快照 |
 | `advance_cooking_stage` | 明确目标阶段 | `task_progress` |
+| `update_preferences` | 只提供变化字段的 `values`、必填 `expected_revision` | 显示保存后的偏好表单 |
+| `select_recipes` | 当前真实候选/已选 `recipe_ids`、必填 `expected_revision` | 保存后的餐单 |
+| `update_prep_items` | 真实 `item_id/status` 数组、必填 `expected_revision` | 保存后的统一备菜清单 |
+| `ask_user` | 问题、至多6个不同选项、是否多选/允许自填 | 持久化待答问题 |
 
 所有组件使用 `kind` 鉴别，结构为 `id/kind/title/revision/editable/data`；数据来自真实领域投影。模型不能提供 HTML、任意 schema、菜谱步骤或营养内容。偏好字段为 `ingredient_terms`、`exclude_ingredient_terms`、`servings`、`max_total_time_min`、`taste_tags`、`available_tools`、`dietary_notes`、`allow_estimated`。
 
@@ -80,23 +85,27 @@ message         可选说明
 }
 ```
 
-支持 `update_preferences`、`select_recipes`、`open_recipe_detail`、`change_servings`、`check_shopping_item`、`check_prep_item`、`set_active_recipe`、`set_active_step`、`complete_step`、`change_stage`、`start_timer`、`pause_timer`、`resume_timer`、`cancel_timer`。各动作有不同的严格 payload；未知字段、任意 ID、非法数字和类型被拒绝。
+支持 `update_preferences`、`select_recipes`、`open_recipe_detail`、`change_servings`、`check_prep_item`、`answer_question`、`set_active_recipe`、`set_active_step`、`complete_step`、`change_stage`、`start_timer`、`pause_timer`、`resume_timer`、`cancel_timer`。各动作有不同的严格 payload；未知字段、任意 ID、非法数字和类型被拒绝。
 
 偏好更新是 Partial，不会清掉未提交字段。直接传已验证的模型对象，或者使用 `model_dump(exclude_unset=True)`；不要把所有未提交默认值展开成显式 `null`。可空字段可以明确清空，列表字段使用 `[]` 清空。
 
 每个成功命令增加 `revision`，同一 `action_id` 与相同内容重放不再修改；同 ID 不同内容返回 `action_id_conflict`。`base_revision` 过期返回 `revision_conflict`，替换后的组件 ID 返回 `stale_view`。响应携带当前可信界面；调用方应让用户复核后重新提交，不能自动重试旧操作。幂等记录保留最近20条；超过该窗口的旧操作仍被旧修订号拒绝。
 
+模型写工具的 `expected_revision` 是必填字段，批量食材修改先校验全部ID再原子提交。工具按照真实ID执行用户指令，不根据名称自动划分“小料”，不绕过烹饪阶段门槛。`show_preference_form` 始终展示当前保存值；模型偏好patch只修改用户要求的字段，不回写未提供的默认值。
+
+`ask_user` 的结构为 `{title?,question,options:[{id,label}],allow_custom:true,multiple:false}`。问题最多500字，标题与选项各80字，至多6个不同选项；没有选项时必须允许自填。待答问题不会被新的提问工具悄悄替换，调用方应停止本轮推理并等用户输入。`answer_question` 使用 `{question_id,option_ids:[],text:""}`，同时携带普通动作的 `action_id/base_revision`；不符合当前问题、多选限制、自填限制或版本的答案不保存。成功后清除 `pending_question`，将题目、选项标签与自填文字存入 `last_answer`，再由应用启动下一轮。
+
 ## 业务边界
 
-- 阶段：`idea → planning → shopping → prep → cooking → completed`，支持明确回退；不能跳过选菜和备料校验。`shopping` 是缺料清单，`prep` 是逐项准备确认。
+- 阶段：`idea → planning → prep → cooking → completed`，支持明确回退；不能跳过选菜和备料校验。只保留统一备菜清单，不再维护独立采购阶段和购物勾选。
 - 每个会话一个当前厨房任务。选菜冻结完整真实原件，来源更新不会偷偷替换进行中的任务。原件只保留业务白名单，不保存 `raw_source_json`、凭据或导出整包。
 - 食材稳定 ID 为 `<recipe_id>:ingredient:<原ordinal>`；步骤 ID 为 `<recipe_id>:step:<原列表序号>`，从0开始。指令与顺序沿用源菜谱。
 - 源数据没有可靠的必选/可选字段，因此全部食材需要明确确认 `ready` 或用户主动 `skipped`；界面说明该资料边界，不声称已证明食材可省略。
 - 浏览当前步骤不会把步骤标成完成；必须 `complete_step`。所有已选菜谱的步骤都 done 才允许 completed。
 - 烹饪中不允许替换餐单、修改备料或份量。回退后改变人数会使该菜谱的准备和步骤重新待确认，并取消其关联计时。
 - 份量换算仅针对已知数字、可靠人数基准和 `scalable=true` 的项；不猜单位、不把“适量”转零、不倍增不可缩放调味料。营养按单项贡献重算，缺信息保持未知，人数估算继续传递标记。
-- 购物清单只合并同 ID、同标准形态、同单位且数值可可靠求和的条目；未知用量分别展示。购物勾选与备料确认分开。
-- `set_checklist_scope` 在当前清单视图上切换整餐/单菜，范围必须来自已选餐单；范围、目标人数和勾选随快照保存。购物条目记录 `source_item_ids`，按菜品食材贡献保存购买确认，整餐中同名食材只有全部贡献被勾选才算买齐。旧购物确认会保留并在下一次购物操作中转换。
+- `set_checklist_scope` 在统一备菜视图切换整餐/单菜，范围必须来自已选餐单；食材仍保留逐菜ID、目标人数和真实用量，不把另一道菜的同名食材推断为已经确认。
+- `WorkspaceState` 当前格式为 `schema_version=2`。读取v1时将旧shopping阶段和购物组件归一成prep，旧购买勾选按实际 `source_item_ids` 转为准备确认，保留已有ready/skipped；未知归属不猜测。读取不改修订号，下一次有效命令原子保存v2。旧用户消息中的购物快照也可读取，新模型不再得到购物工具。
 - 计时保存 UTC 截止时间；暂停保存剩余秒数，恢复生成新截止时间，读取时依据真实时间判断到期。UI 的直接输入属于用户指定；模型的 `basis=user` 需与可信用户文本明确时长一致，`basis=recipe_text` 需源步骤唯一明确时长，不猜范围或多阶段时间。无后台通知。
 
 旧版功能考察与本轮边界见 [迁移矩阵](docs/legacy-feature-matrix.md)。

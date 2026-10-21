@@ -158,7 +158,7 @@ export class WorkspaceController {
             return this.confirmAndContinue(id,()=>this.saveSelection(view,draft.selectedIds,id),message);
           }});
       } else if(draft.kind==='meal_plan') {
-        actions.push({label:'更新份量',context:'份量已修改',disabled:entry.saving || !['planning','shopping','prep'].includes(entry.snapshot?.stage),
+        actions.push({label:'更新份量',context:'份量已修改',disabled:entry.saving || !['planning','prep'].includes(entry.snapshot?.stage),
           run:async()=>{
             for(const form of document.querySelectorAll(`[data-view-id="${view.id}"] form`))if(!form.reportValidity())return;
             for(const [recipeId,servings] of Object.entries({...draft.servings})) {
@@ -404,7 +404,7 @@ export class WorkspaceController {
     if (focusKey && this.activeId) this.entry(this.activeId).focusKey = focusKey;
     this.container.replaceChildren();
     const id = this.activeId;
-    if (!id) { this.container.append(node('div', 'panel-empty', '从一个会话开始。选菜、购物、备菜、步骤和计时都会随当前任务保存。')); return; }
+    if (!id) { this.container.append(node('div', 'panel-empty', '从一个会话开始。选菜、备菜、步骤和计时都会随当前任务保存。')); return; }
     const entry = this.entry(id); const header = node('div', 'workspace-heading');
     header.append(node('span', 'workspace-stage', STAGE_NAMES[entry.snapshot?.stage] || '厨房任务'));
     const refresh = node('button', 'ui-text-button', entry.loading ? '读取中…' : '刷新'); refresh.type = 'button'; refresh.disabled = entry.loading || entry.saving;

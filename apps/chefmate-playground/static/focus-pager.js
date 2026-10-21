@@ -190,4 +190,5 @@ export class FocusPager {
     if (focused) [...this.page.querySelectorAll('[data-control-key]')].find(control => control.dataset.controlKey === focused)?.focus({ preventScroll: true });
   }
   clear() { this.enabled = false; if (this.frame) cancelAnimationFrame(this.frame); this.frame = null; this.units = []; this.pages = []; this.index = 0; this.page.replaceChildren(); this.measure.replaceChildren(); }
+  destroy() {this.clear();this.observer.disconnect();}
 }

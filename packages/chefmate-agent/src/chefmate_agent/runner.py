@@ -8,6 +8,7 @@ from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, Tool
 from pydantic import ValidationError
 
 from .models import ToolCallRecord
+from .debug import request_trace
 
 
 @dataclass
@@ -25,6 +26,9 @@ class TurnRuntimeContext:
     usage: list[dict] = field(default_factory=list)
     read_queries: dict[str, str] = field(default_factory=dict)
     image_contents: dict[str, str] = field(default_factory=dict)
+    debug_trace: list[dict] = field(default_factory=list)
+    skill_events: list[dict] = field(default_factory=list)
+    pending_question: dict | None = None
 
 
 class ChefMateMiddleware(AgentMiddleware):
@@ -61,7 +65,14 @@ class ChefMateMiddleware(AgentMiddleware):
                 messages[index] = message.model_copy(update={"content": message.content +
                     "\n用户此前上传过图片；当前模型未开启图片能力，不能声称直接看到了图片。"})
         prompt = self.owner._context_prompt(context, request.state["messages"])
-        return await handler(request.override(system_message=SystemMessage(content=prompt), messages=messages))
+        final_request = request.override(system_message=SystemMessage(content=prompt), messages=messages)
+        trace = request_trace(context.model_rounds, prompt, final_request.messages,
+                              self.owner.tool_catalog(context.ui_context, tools=final_request.tools),
+                              stage=context.ui_context.get("stage", "idea"), skills=self.owner.skills.list_metadata(),
+                              secrets=self.owner._debug_secrets())
+        context.debug_trace.append(trace)
+        await self.owner._emit(context.on_event, {"type": "debug_context", "context": trace})
+        return await handler(final_request)
 
     async def aafter_model(self, state, runtime):
         from .core import _AgentFailure
@@ -90,7 +101,7 @@ class ChefMateMiddleware(AgentMiddleware):
             # Validate the original JSON before ToolNode can turn schema failures into prose errors.
             self.owner._requests[call["name"]].model_validate(call["args"])
             # Bind this call's explicit runtime into the standard tool handler; no shared session context.
-            scoped_tool = self.owner._make_tool(call["name"], context, request.state["messages"], call["id"])
+            scoped_tool = self.owner._make_tool(call["name"], context, request.state["messages"], call["id"], call["args"])
             response = await handler(request.override(tool=scoped_tool))
         except ValidationError as error:
             result = {
@@ -106,6 +117,11 @@ class ChefMateMiddleware(AgentMiddleware):
         response = response.model_copy(update={"content": _dump(result)})
         record = ToolCallRecord(call_id=call["id"], name=call["name"], arguments=call["args"], result=result)
         context.records.append(record)
+        if call["name"] == "load_skill":
+            event = {"name": call["args"].get("name"), "call_id": call["id"],
+                     "status": result.get("status"), "chars": len(result.get("content", ""))}
+            context.skill_events.append(event)
+            await self.owner._emit(context.on_event, {"type": "skill_event", **event})
         self.owner._collect_result(call["name"], result, context.view_state)
         await self.owner._emit(context.on_event, {"type": "tool_end", **record.model_dump(mode="json")})
         return response
