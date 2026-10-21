@@ -2,6 +2,7 @@ import {node, timerForm} from './ui-components.js';
 import {icon} from './icons.js';
 import {timerPresentation} from './cooking-timer.js';
 import {pageWindow} from './presentation.js';
+import {TimerSound} from './timer-sound.js';
 
 export function visibleTimers(timers, acknowledged, now) {
   const chosen=new Map();
@@ -18,6 +19,7 @@ export function visibleTimers(timers, acknowledged, now) {
 
 export class TimerPopover {
   constructor(workspace) {
+    this.sound = new TimerSound();
     this.workspace=workspace;this.mode='list';this.page=0;this.sessionId=null;this.timers=[];
     this.triggers=[...document.querySelectorAll('[data-timer-trigger]')];
     this.panel=node('section','timer-popover');this.panel.id='kitchen-timer-popover';this.panel.hidden=true;
@@ -86,7 +88,9 @@ export class TimerPopover {
     if(restore && this.anchor?.isConnected && this.anchor.getClientRects().length)this.anchor.focus({preventScroll:true});
   }
   remind(timer,sessionId) {
-    if(sessionId!==this.sessionId || this.entry?.timerAcknowledged.has(timer.id))return;
+    if(this.workspace.entries.get(sessionId)?.timerAcknowledged.has(timer.id))return;
+    this.sound.play();
+    if(sessionId!==this.sessionId)return;
     // An automatic reminder is persistent, but never takes keyboard focus or
     // replaces a timer name the user is currently entering.
     if(this.panel.hidden)this.open(this.trigger(),{focus:false,timerId:timer.id});

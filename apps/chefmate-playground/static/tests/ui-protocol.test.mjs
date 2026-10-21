@@ -6,6 +6,12 @@ import { WorkspaceController, ConfirmationQueue, visibleMessageViews, recoverRun
 const preference = (revision, id = 'preferences') => ({ id, kind: 'preference_form', title: '偏好', revision, editable: true,
   data: { fields: [], values: { ingredient_terms: ['虾'], servings: 2 } } });
 const response = (revision, id) => ({ status: 'ok', workspace: { revision, stage: 'idea', components: [], recent_actions: [] }, views: [preference(revision, id)] });
+test('one reply shows the newest revision of each component only',()=>{
+  const newer=preference(5),older=preference(2);
+  const views=messageViews({actions:[{kind:'show_component',component:newer}],tool_calls:[{result:{actions:[{kind:'show_component',component:older},{kind:'show_component',component:newer}]}}]});
+  assert.equal(views.length,1);assert.equal(views[0].revision,5);
+  assert.equal(makeAction('complete_meal',{},5,undefined,'finish').type,'complete_meal');
+});
 function controller(t, api = async () => response(0)) {
   const item = new WorkspaceController({ api, notify() {}, onChange() {}, openPanel() {} });
   item.activeId = 'session';

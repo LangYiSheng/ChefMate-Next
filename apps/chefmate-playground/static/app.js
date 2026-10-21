@@ -15,6 +15,7 @@ import {QuestionState,answerRequestId,matchesAnswer} from './question-state.js';
 import {QuestionComposer} from './question.js';
 import {DeveloperPanel} from './developer-panel.js';
 import {TimerPopover} from './timer-popover.js';
+import {KitchenCenters} from './centers.js';
 applyBranding();
 
 const $ = (id) => document.getElementById(id);
@@ -295,10 +296,16 @@ async function uploadImages(files) {
 function updateConversationState() {
   const snapshot = workspace.snapshot(state.currentId);
   const stage = snapshot?.stage || currentSession()?.conversation_state?.stage;
-  ui['conversation-stage'].hidden = !stage || !state.currentId;
+  ui['conversation-stage'].hidden = !stage || !state.currentId || !['chat',undefined].includes(ui.app.dataset.page);
   const status=snapshot?snapshotStatus(snapshot):currentSession()?.conversation_state || {};
   ui['conversation-stage'].textContent = conversationLabel(status);
   ui['conversation-stage'].title=conversationLabel(status);
+  const kitchen=document.getElementById('current-kitchen');
+  const kind=stage==='prep'?'prep_checklist':['cooking','completed'].includes(stage)?'cooking_guide':null;
+  const taskView=workspace.entries.get(state.currentId)?.views.find(view=>view.kind===kind);
+  kitchen.hidden=!taskView || !['chat',undefined].includes(ui.app.dataset.page);
+  kitchen.textContent=stage==='prep'?'查看备菜':stage==='completed'?'查看本次做菜':'继续做菜';
+  kitchen.onclick=()=>{if(taskView)workspace.onFocus(taskView,state.currentId);};
   if (snapshot) {
     const item = state.sessions.find(item => item.id === state.currentId);
     if (item) {item.conversation_state = status;item.awaiting_user=Boolean(snapshot.pending_question) && !busy();}
@@ -758,7 +765,8 @@ function renderConversation(forceScroll = false) {
   const messages = session?.messages || [];
   const nearBottom = ui.conversation.scrollHeight - ui.conversation.scrollTop - ui.conversation.clientHeight < 100;
   const openedLogs = new Set([...ui.messages.querySelectorAll('details[open][data-log-key]')].map((node) => node.dataset.logKey));
-  ui['chat-title'].textContent = !blankTitle(session?.title) ? session.title : '菜谱助手';
+  ui['chat-title'].textContent = ({journal:'食光手记',recipes:'菜谱中心',settings:'设置'})[ui.app.dataset.page]
+    || (!blankTitle(session?.title) ? session.title : '个性化烹饪助手');
   ui.welcome.hidden = messages.length > 0;
   ui.messages.hidden = !messages.length;
   ui.messages.replaceChildren();
@@ -810,6 +818,10 @@ function renderConversation(forceScroll = false) {
       for (const recipe of recipeItems) recipes.append(recipeButton(recipe, message.snapshot));
       node.append(recipes);
     } else if (message.resultTotal === 0) node.append(element('div', 'empty-results', '没有找到同时满足这些条件的菜谱，可以继续调整条件。'));
+    if (!message.streaming && message.tool_calls?.some(call=>call.name==='create_recipe_draft' && call.result?.status==='ok')) {
+      const receipt=element('button','view-receipt','核对刚整理的菜谱草稿');receipt.type='button';
+      receipt.onclick=()=>{centers.source='drafts';shell.setPage('recipes');};node.append(receipt);
+    }
     if ((message.streaming || state.developer) && (message.tool_calls?.length || message.process?.length || message.streaming || message.usage?.model_calls)) {
       const log = executionTrace(message);
       log.dataset.logKey = `${state.currentId}:${index}`;
@@ -1394,11 +1406,32 @@ async function initialize() {
   if (results[1].status === 'rejected') toast('会话列表暂时无法读取，请刷新页面重试。');
   const initial = state.sessions.find(session=>session.id===storedSession()) || state.sessions[0];
   if (initial && epoch === state.selectionEpoch && !state.creating && !state.currentId) await openSession(initial.id);
+  try {
+    const timers=await api('/api/timer-sessions');
+    await Promise.allSettled(timers.items.filter(item=>item.id!==state.currentId).map(item=>workspace.load(item.id)));
+  } catch { /* The active conversation remains usable during a discovery outage. */ }
   state.initializing=false;
   updateComposer();
 }
-initShell({onSettingsClose:()=>{
+const shell=initShell({onSettingsClose:()=>{
   refreshDisplayPreferences();loadStatus();
   if(state.currentId)workspace.load(state.currentId).catch(()=>{});
 }});
+const centers=new KitchenCenters({api,onReturn:()=>shell.setPage('chat'),onChat:text=>{
+  shell.setPage('chat');return sendMessage(text,false,null,{fromComposer:false});
+}});
+window.addEventListener('chefmate:page-change',event=>{centers.show(event.detail.page);setDetails(false);renderConversation();});
+const finishingMeals=new Set();
+window.addEventListener('chefmate:finish-meal',async event=>{
+  const id=event.detail?.sessionId || state.currentId;
+  if(!id || busy(id) || finishingMeals.has(id))return;
+  finishingMeals.add(id);
+  try {
+    const result=await workspace.dispatch('complete_meal',{},null,{sessionId:id});
+    if(result?.status && result.status!=='ok')return;
+    state.confirmationQueue.enqueue(id,'这顿饭所有菜都做好啦，我已点击完成本次菜肴。');
+    await continueConfirmations();
+  } catch(error){toast(error.message || '还没有完成，请核对步骤后再试。');}
+  finally{finishingMeals.delete(id);}
+});
 initialize();

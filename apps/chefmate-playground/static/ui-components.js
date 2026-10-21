@@ -212,15 +212,15 @@ function recipeDetail(view, ctx) {
   if (!recipe) { root.append(hint('菜谱详情尚未读取。')); return root; }
   root.append(node('h4', 'ui-recipe-name', recipe.name), hint(recipeMeta(recipe)));
   if (recipe.description) root.append(disclosure('关于这道菜',[recipe.description]));
-  if (recipe.servings != null) root.append(hint(`${recipe.servings} 人份${recipe.estimated_servings ? '（人数估算）' : ''}`));
-  else if (recipe.target_servings != null) root.append(hint(`目标 ${recipe.target_servings} 人份 · 原人数未知，暂不能换算。`));
+  if (recipe.target_servings != null) root.append(hint(`这盘用量 ${recipe.target_servings} 配方等效份${recipe.original_servings == null ? ' · 原配方份数未知，食材保留原量' : recipe.estimated_servings ? '（原配方份数含估算）' : ''}`));
+  else if (recipe.servings != null) root.append(hint(`原配方 ${recipe.servings} 份${recipe.estimated_servings ? '（份数估算）' : ''}`));
   const tab=sectionTabs(root,ctx,'detailSection',[['ingredients','食材'],['steps','做法'],['nutrition','营养'],['notes','说明']]);
   if(tab==='ingredients') root.append(pagedList(recipe.ingredients || [],ctx,'ingredientsPage',(item)=>{
     const row = node('div', 'ui-ingredient'); row.append(node('span', '', item.canonical_name), node('span', '', amount(item)));
     if (item.estimated) row.append(badge('估算')); return row;
   },5));
   if(tab==='steps') root.append(pagedList(recipe.steps || [],ctx,'detailSteps',(step)=>node('p','ui-step-instruction',step.instruction || step.description || step),2));
-  if(tab==='nutrition') root.append(hint('每份营养 · 未知数值保持未知'),nutritionNode(recipe.nutrition));
+  if(tab==='nutrition') root.append(hint('每配方等效份营养 · 整餐每人摄入请在食光手记查看'),nutritionNode(recipe.nutrition));
   if(tab==='notes') {
     root.append(pagedList(recipe.warnings || [],ctx,'notesPage',warning=>hint(warning),2));
     for(const ref of recipe.references || []) {
@@ -238,18 +238,23 @@ function mealPlan(view, ctx) {
   const servingsLocked = ctx.locked || !['planning', 'prep'].includes(ctx.stage);
   const removalLocked = ctx.locked || !['idea', 'planning', 'completed'].includes(ctx.stage);
   if (!recipes.length) { root.append(hint('先从菜谱候选中确认想做的菜。')); return root; }
+  const summary = node('div','meal-summary');
+  summary.append(node('strong','',view.data.meal_diners == null ? `这餐安排 ${recipes.length} 道菜`
+    : `${view.data.meal_diners} 人共享 · ${recipes.length} 道菜`));
+  if (view.data.portion_note) summary.append(hint(view.data.portion_note));
+  root.append(summary);
   root.append(pagedList(recipes,ctx,'mealPage',(recipe)=>{
     const card = node('div', 'ui-plan-recipe');
     card.append(node('strong', '', recipe.name), hint(recipeMeta(recipe)));
     if(recipe.recipe_id===ctx.activeRecipeId) card.append(badge('当前菜品','muted'));
     const form = node('form', 'ui-serving-form');
-    const label = node('label', '', '份量'); const input = node('input', 'ui-input'); input.type = 'number'; input.min = '0.5'; input.step = '0.5'; input.max = '100'; input.value = ctx.draft?.servings?.[recipe.recipe_id] ?? recipe.target_servings ?? recipe.servings ?? ''; input.disabled = servingsLocked; input.required = true;
-    input.setAttribute('aria-label', `${recipe.name}的人份`); label.append(input, document.createTextNode(' 人份')); form.append(label);
+    const label = node('label', '', '这盘用量'); const input = node('input', 'ui-input'); input.type = 'number'; input.min = '0.1'; input.step = 'any'; input.max = '100'; input.value = ctx.draft?.servings?.[recipe.recipe_id] ?? recipe.target_servings ?? recipe.servings ?? ''; input.disabled = servingsLocked; input.required = true;
+    input.setAttribute('aria-label', `${recipe.name}的配方等效份量`); label.append(input, document.createTextNode(' 配方等效份')); form.append(label);
     input.dataset.controlKey = `servings:${recipe.recipe_id}`;
     input.addEventListener('input',()=>ctx.onServings?.(view,recipe.recipe_id,input.value===''?null:Number(input.value)));
     form.addEventListener('submit',event=>event.preventDefault());card.append(form);
-    if (recipe.estimated_servings) card.append(hint('原配方人数含估算，份量调整仍保留这一依据。'));
-    if (recipe.original_servings == null) card.append(hint(`原人数未知，暂不能换算${recipe.target_servings == null ? '。' : `；已记录目标 ${recipe.target_servings} 人份。`}`));
+    if (recipe.original_servings != null) card.append(hint(`原配方 ${recipe.original_servings} 份，食材按这盘用量换算${recipe.estimated_servings ? '；原配方份数含估算' : ''}。`));
+    else card.append(hint(`原配方份数未知，食材暂保留原量${recipe.target_servings == null ? '。' : `；已记录 ${recipe.target_servings} 配方等效份。`}`));
     const actions = node('div', 'ui-actions');
     actions.append(button('查看详情', () => ctx.action('open_recipe_detail', { recipe_id: recipe.recipe_id }), ctx.locked, 'ui-text-button'),
       button('查看做法', () => ctx.openRecipeSection(recipe.recipe_id,'steps'), ctx.locked, 'ui-text-button'),
@@ -279,7 +284,7 @@ function prepChecklist(view, ctx) {
   const root = node('div');
   root.append(checklistScope(view,ctx));
   for(const text of view.data.guidance || []) root.append(node('div','ui-adaptation',text));
-  const locked = ctx.locked || ctx.stage!=='prep';
+  const locked = ctx.locked || !['planning','prep'].includes(ctx.stage);
   const prepared=(view.data.items || []).filter(item=>['ready','skipped'].includes(item.status)).length;
   root.append(hint(`已确认 ${prepared} / ${view.data.items?.length || 0} 项`));
   root.append(pagedList(view.data.items || [],ctx,'prepPage',(item)=>{
@@ -293,7 +298,7 @@ function prepChecklist(view, ctx) {
     if (item.status === 'skipped') row.append(badge('已跳过', 'muted')); return row;
   },ctx.focused?8:4));
   if(view.data.notes?.length) root.append(disclosure('备菜与原文说明',[...view.data.notes,...(view.data.items || []).map(item=>`${item.canonical_name}：${item.raw_text || '未记录原文'}`)]));
-  if (!ctx.historical && view.data.items?.length && ctx.stage!=='prep') root.append(hint('进入备菜阶段后，可以逐项确认。'));
+  if (!ctx.historical && view.data.items?.length && !['planning','prep'].includes(ctx.stage)) root.append(hint('当前可查看备料记录。需要调整时，先让助手返回选菜或备菜阶段。'));
   if (!view.data.items?.length) root.append(hint('选定菜谱后可以开始逐项备菜。'));
   return root;
 }
@@ -352,6 +357,7 @@ function cookingGuide(view, ctx) {
   }
   const note=hint(ctx.stage==='cooking'?'做完后点“完成这一步”，计时结束不会代你确认步骤。':'当前可以浏览做法，进入烹饪后再确认步骤和计时。');
   note.classList.add('cooking-step-note');if(!ctx.focused)root.append(note);
+  const finish = completeMealControl(ctx); if (finish) root.append(finish);
   return root;
 }
 
@@ -435,11 +441,25 @@ export function timerForm(view, ctx) {
   return form;
 }
 
+function completeMealControl(ctx, progress) {
+  if (ctx.historical || ctx.focused || ctx.stage !== 'cooking') return null;
+  const completed = ctx.canCompleteMeal === true || progress?.steps_total > 0 && progress.steps_done >= progress.steps_total;
+  if (!completed) return null;
+  const complete = button('完成本次菜肴', () => {
+    window.dispatchEvent(new CustomEvent('chefmate:finish-meal', { detail: { sessionId: ctx.sessionId } }));
+  }, ctx.locked, 'ui-button cooking-primary complete-meal-button');
+  complete.prepend(icon('check-check'));
+  const root = node('div','meal-completion');
+  root.append(hint('所有菜都做好了。完成这次烹饪，留下一顿饭的记录吧。'),complete);
+  return root;
+}
+
 function taskProgress(view, ctx) {
   const root = node('div'); const data = view.data;
   root.append(badge(STAGES[data.stage] || '厨房会话'),hint(`${data.recipe_count ?? 0} 道菜 · 备菜 ${data.prep_ready ?? 0}/${data.prep_total ?? 0} · 步骤 ${data.steps_done ?? 0}/${data.steps_total ?? 0}`));
   if (!ctx.historical && data.stage === 'prep' && data.prep_ready < data.prep_total) root.append(hint('食材尚未全部确认，标记备齐或明确跳过后再开始烹饪。'));
   if (!ctx.historical && data.stage === 'cooking' && data.steps_done < data.steps_total) root.append(hint('完成全部步骤后，再将这次烹饪标为完成。'));
+  const finish = completeMealControl(ctx,data); if (finish) root.append(finish);
   return root;
 }
 

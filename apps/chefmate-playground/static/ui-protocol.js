@@ -7,7 +7,7 @@ export const ACTION_TYPES = Object.freeze([
   'update_preferences', 'select_recipes', 'open_recipe_detail', 'change_servings',
   'check_prep_item', 'set_active_recipe', 'set_active_step', 'answer_question',
   'set_checklist_scope',
-  'complete_step', 'change_stage', 'start_timer', 'pause_timer', 'resume_timer', 'cancel_timer',
+  'complete_step', 'complete_meal', 'change_stage', 'start_timer', 'pause_timer', 'resume_timer', 'cancel_timer',
 ]);
 export const STAGES = Object.freeze({ idea: '想吃什么', planning: '选菜与份量', prep: '备菜', cooking: '开始烹饪', completed: '完成' });
 const TRANSITIONS = Object.freeze({ idea:['planning'], planning:['idea','prep'],
@@ -63,7 +63,11 @@ export function messageViews(message) {
   const views = actions.filter(action=>action.kind==='show_component' && validView(action.component))
     .map(action=>({...normalizeLegacyView(action.component),placement:action.placement || 'inline'}));
   const unique = new Map();
-  for (const view of views) unique.set(`${view.id}:${view.revision}`, view);
+  for (const view of views) {
+    const previous=unique.get(view.id);
+    if(!previous || view.revision>previous.revision || view.revision===previous.revision
+      && (view.presentation_revision || 0)>=(previous.presentation_revision || 0)) unique.set(view.id,view);
+  }
   return [...unique.values()];
 }
 export function makeAction(type, payload, revision, viewId, actionId) {

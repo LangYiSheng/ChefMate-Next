@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {visibleTimers} from '../timer-popover.js';
+import {visibleTimers,TimerPopover} from '../timer-popover.js';
 
 test('header timer chooses an expired reminder, then active deadlines, then paused timers',()=>{
   const now=Date.parse('2026-10-21T10:00:00Z');
@@ -19,4 +19,14 @@ test('one step has one visible timer and acknowledging history cannot hide an ac
     {id:'later-history',status:'finished',recipe_id:'r',step_id:'s'},
     {id:'manual',status:'paused',remaining_seconds:20}];
   assert.deepEqual(visibleTimers(items,new Set(['live']),Date.now()).map(timer=>timer.id),['live','manual']);
+});
+
+test('a background timer plays its sound without opening or changing the current task popover',()=>{
+  let played=0;
+  const entry={timerAcknowledged:new Set()},panel={hidden:true};
+  const popover={workspace:{entries:new Map([['background',entry]])},sessionId:'current',panel,sound:{play(){played++;}}};
+  TimerPopover.prototype.remind.call(popover,{id:'due'},'background');
+  assert.equal(played,1);assert.equal(popover.sessionId,'current');assert.equal(panel.hidden,true);
+  entry.timerAcknowledged.add('due');
+  TimerPopover.prototype.remind.call(popover,{id:'due'},'background');assert.equal(played,1);
 });

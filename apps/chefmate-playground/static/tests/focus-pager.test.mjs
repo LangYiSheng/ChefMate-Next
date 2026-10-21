@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { splitToFit, pageForAnchor, swipeDirection } from '../focus-pager.js';
+import { splitToFit, pageForAnchor, swipeDirection, FocusPager } from '../focus-pager.js';
 
 test('long instructions preserve their full text across measured pages and prefer readable boundaries', () => {
   const text = '先把西红柿切块，留下一些汤汁。\n接着加入鸡蛋，轻轻推动。  保持中小火，避免粘锅。'.repeat(12);
@@ -31,4 +31,18 @@ test('only intentional horizontal touch gestures turn a card', () => {
   assert.equal(swipeDirection(start, { x:155, y:260, time:300 }), 0);
   assert.equal(swipeDirection(start, { x:130, y:122, time:300 }), 0);
   assert.equal(swipeDirection(start, { x:60, y:120, time:1500 }), 0);
+});
+
+test('new replies keep following after a resize, while deliberate history browsing stays in place',()=>{
+  const pager={pages:[[],[],[]],index:0,following:true,anchor:()=>null,schedule(){},show(){},onChange(){}};
+  // A formerly single last page became three pages after a phone resize.
+  FocusPager.prototype.setContent.call(pager,[{}],{follow:true});
+  assert.equal(pager.follow,true);
+  pager.index=2;
+  FocusPager.prototype.go.call(pager,-1);
+  FocusPager.prototype.setContent.call(pager,[{}],{follow:true});
+  assert.equal(pager.follow,false);
+  FocusPager.prototype.go.call(pager,1);
+  FocusPager.prototype.setContent.call(pager,[{}],{follow:true});
+  assert.equal(pager.follow,true);
 });

@@ -1,7 +1,10 @@
 import { node } from "./ui-components.js";
-import { BRAND_ICONS, iconPath, applyBranding } from "./branding.js";
+import { applyBranding } from "./branding.js";
+import { readAppearance, applyAppearance } from './appearance.js';
+import { TimerSound, readKitchenPreferences, saveKitchenPreferences } from './timer-sound.js';
 import { icon } from './icons.js';
 import {navigationIndex, navigationEdges, revealNavigationItem} from './settings-navigation.js';
+const reminderSound = new TimerSound();
 applyBranding();
 const embedded = window.parent !== window && new URLSearchParams(location.search).get('embedded') === '1';
 document.body.classList.toggle('settings-embedded', embedded);
@@ -14,6 +17,7 @@ const names = {
   display: ["界面显示", "把注意力留给菜谱和下一步。"],
   interaction: ["对话建议", "让下一步更好开口，也保留你自己的表达。"],
   cooking: ["烹饪与计时", "让计时和步骤切换更符合你的做饭习惯。"],
+  memory: ["长期记忆", "留下口味、忌口和做饭习惯，让每一次建议更懂你。"],
   developer: ["开发者", "按需查看公开执行记录、工具参数和模型实际用量。"],
   skills: ["厨房技能", "让助手按需使用你启用的厨房知识。"],
   runtime: ["执行设置", "设置一次任务的等待时间和操作上限。"],
@@ -27,6 +31,8 @@ const skillLabels = {
     "核对已有和缺少的食材，逐项确认准备情况。",
   ],
   "cooking-guide": ["烹饪引导", "跟随原始步骤、确认完成情况和管理计时。"],
+  'recipe-authoring': ['菜谱创作','把文字或截图整理成可复用的私房菜谱，确认后再保存。'],
+  'personal-memory': ['长期记忆','读取你的口味与忌口，整理长期习惯，并按需查找历史对话和做菜记录。'],
 };
 let current = "model",
   loaded = null,
@@ -36,6 +42,12 @@ let current = "model",
 const drafts = new Map(),
   draftRevisions = new Map(),
   dirty = new Set();
+let memoryHost = null;
+window.addEventListener('chefmate:memory-dirty', event => {
+  if (event.detail?.dirty === true) dirty.add('memory');
+  else if (event.detail?.dirty === false) dirty.delete('memory');
+  updateFooter();
+});
 const navigation = document.querySelector('.settings-nav');
 function updateNavigation(ensureCurrent=false) {
   const horizontal=window.matchMedia('(max-width:760px)').matches;
@@ -50,10 +62,10 @@ function updateNavigation(ensureCurrent=false) {
 }
 function readDisplay() {
   try {
-    const { inline_limit = 2, density = "comfortable", brand_icon = "pot-c" } = JSON.parse(localStorage.getItem("chefmate:ui-settings") || "{}");
-    return { inline_limit, density, brand_icon };
+    const { inline_limit = 2, density = "comfortable", theme = 'system' } = readAppearance();
+    return { inline_limit, density, theme };
   } catch {
-    return { inline_limit: 2, density: "comfortable", brand_icon: "pot-c" };
+    return { inline_limit: 2, density: "comfortable", theme: 'system' };
   }
 }
 function readDeveloper() {
@@ -85,8 +97,9 @@ function changed() {
   message("");
 }
 function updateFooter() {
-  const readOnly = current === "data";
+  const readOnly = ['data','memory'].includes(current);
   $("save-settings").hidden = readOnly;
+  $("reload-settings").hidden = current === 'memory';
   $("reload-settings").disabled = busy || testing;
   $("save-settings").disabled =
     !loaded || !dirty.has(current) || busy || testing;
@@ -218,6 +231,15 @@ function render() {
       hint:"点击只替换输入框里的文字，你可以修改后再发送。关闭后也会隐藏历史回复中的建议。"});
   } else if (current === "cooking") {
     heading("烹饪计时");
+    field('到时声音提醒', 'timer_sound', {type:'checkbox',
+      note:'默认开启。计时结束时播放三声轻提示。',
+      hint:'声音跟随设备音量；这个开关保存在当前浏览器。页面关闭后无法提醒。'});
+    const preview = node('button','secondary-button','试听提醒声'); preview.type = 'button';
+    preview.addEventListener('click', async () => {
+      const played = await reminderSound.play({preview:true});
+      message(played ? '已播放提醒声。' : '浏览器暂未允许播放声音，请检查页面声音权限或设备音量。', played);
+    });
+    $("settings-form").append(preview);
     field("同时进行的计时器", "timer_limit", {type:"number",options:[[1,"单计时器"],[3,"最多 3 个"]],
       note:"运行和暂停中的计时器计入上限。",
       hint:"达到上限时，先结束已有计时再开始新的计时。调低上限会保留当前计时。"});
@@ -236,16 +258,9 @@ function render() {
     });
     $("settings-form").append(node("p", "settings-note", "用量来自模型服务实际返回，未返回时显示“未报告”。上下文调试保留最近20轮的脱敏实际请求；图片只留元数据，不展示内部推理。这个开关控制当前浏览器中的展示。"));
   } else if (current === "display") {
-    heading("ChefMate 图标");
-    const candidates=node("div","brand-candidates");
-    for(const icon of BRAND_ICONS) {
-      const option=node("label","brand-candidate"),image=node("img"),radio=node("input");
-      image.src=iconPath(icon.id);image.alt=icon.name;radio.type="radio";radio.name="brand-icon";radio.value=icon.id;
-      radio.checked=drafts.get(current).brand_icon===icon.id;
-      radio.addEventListener("change",()=>{drafts.get("display").brand_icon=icon.id;changed();});
-      option.append(image,node("strong","",icon.name),node("small","",icon.note),radio);candidates.append(option);
-    }
-    $("settings-form").append(candidates);
+    heading('外观主题');
+    field('主题', 'theme', {options:[['system','跟随系统'],['light','浅色'],['dark','深色']],
+      note:'聊天、做菜和设置使用同一套外观。',hint:'跟随系统会随设备的深色模式自动切换。'});
     heading("核心内容");
     field("每次回复展开几项内容", "inline_limit", {
       options: [
@@ -269,15 +284,22 @@ function render() {
         "表单、选菜和清单可以在聊天中操作。补充资料放在工作区，已有内容随任务更新。",
       ),
     );
+  } else if (current === 'memory') {
+    const initialize = !memoryHost;
+    memoryHost ||= node('section','memory-settings'); memoryHost.id = 'memory-settings';
+    $("settings-form").append(memoryHost);
+    if (initialize) window.dispatchEvent(new CustomEvent('chefmate:memory-settings',{detail:{container:memoryHost}}));
   } else if (current === "skills") {
     heading("启用的技能");
-    for (const [name, [label, note]] of Object.entries(skillLabels))
+    for (const name of loaded.available_skills || []) {
+      const [label, note] = skillLabels[name] || [name, '启用对应技能指引与工具。'];
       field(label, name, { type: "checkbox", note });
+    }
     $("settings-form").append(
       node(
         "p",
         "settings-note",
-        "启用后，助手会按需读取技能指引。勾选技能不会直接执行厨房操作。",
+        "关闭技能后，助手也无法调用它绑定的工具。启用技能后，助手会按需读取指引。",
       ),
     );
   } else if (current === "context") {
@@ -378,7 +400,8 @@ async function load() {
                   ? { ...loaded.context }
                 : section === "interaction" ? {reply_suggestions:loaded.interaction?.reply_suggestions !== false}
                 : section === "cooking" ? {timer_limit:loaded.cooking?.timer_limit===1?1:3,
-                    clear_timer_on_step_change:loaded.cooking?.clear_timer_on_step_change===true}
+                    clear_timer_on_step_change:loaded.cooking?.clear_timer_on_step_change===true,
+                    ...readKitchenPreferences()}
                 : section === "developer" ? readDeveloper() : readDisplay(),
         );
       }
@@ -394,7 +417,8 @@ async function save() {
   if (busy || testing || !$("settings-form").reportValidity()) return;
   const section = current,
     values = { ...drafts.get(section) };
-  if(section==='cooking')values.timer_limit=Number(values.timer_limit);
+  const timerSound = values.timer_sound;
+  if(section==='cooking') { values.timer_limit=Number(values.timer_limit); delete values.timer_sound; }
   busy = true;
   updateFooter();
   message("");
@@ -404,7 +428,7 @@ async function save() {
     } else if (section === "display") {
       values.inline_limit = Number(values.inline_limit);
       localStorage.setItem("chefmate:ui-settings", JSON.stringify(values));
-      applyBranding(values.brand_icon);
+      applyBranding(); applyAppearance(values.theme);
     } else {
       const payload =
         section === "skills"
@@ -431,6 +455,7 @@ async function save() {
         const key = $("setting-api_key");
         if (key) key.value = "";
       }
+      if (section === 'cooking') saveKitchenPreferences({timer_sound:timerSound});
     }
     dirty.delete(section);
     notifyParent('chefmate:settings-saved');
@@ -534,7 +559,7 @@ $("reload-settings").addEventListener("click", () => {
 function requestClose() {
   const leave = () => embedded ? notifyParent('chefmate:close-settings') : location.assign('/');
   if (dirty.size) confirmInPage("返回对话会放弃尚未保存的设置。可以先保存，或者继续返回。", () => {
-    dirty.clear(); drafts.clear(); draftRevisions.clear(); loaded=null;
+    dirty.clear(); drafts.clear(); draftRevisions.clear(); loaded=null; memoryHost=null;
     render(); updateFooter(); leave(); load();
   });
   else leave();

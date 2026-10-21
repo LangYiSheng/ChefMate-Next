@@ -96,3 +96,34 @@
   .with-step-tools .focus-content{grid-column:1/-1;grid-row:1;height:100%}.with-step-tools .focus-tools{grid-column:1;grid-row:2}.with-step-tools .focus-pagination{grid-column:2;grid-row:2}
 }
 @media(prefers-reduced-motion:reduce){.focus-running #focus-talk-toggle:after{animation:none}.focus-scene-active #app .sidebar,.focus-scene-active #app .detail-panel{transition:none}}
+
+/* Cooking and conversation share one scene; a question never hides the step. */
+.focus-modes{gap:16px;align-items:center;min-height:40px}
+.focus-work-label{font-size:12px;color:var(--muted);flex:1}
+.focus-modes #focus-work-toggle{display:none}
+.focus-modes #focus-talk-toggle{border:0;border-radius:8px;padding:6px 9px;font-size:12px}
+.focus-modes #focus-talk-toggle .icon{display:block;width:15px;height:15px}
+.focus-modes #focus-talk-toggle[aria-expanded=true]{background:var(--color-accent-soft);color:var(--accent)}
+.focus-body>.focus-deck{max-width:960px}
+.talking .focus-body{display:grid;grid-template-columns:minmax(0,1.15fr) minmax(280px,.85fr);gap:0}
+.talking .focus-body>.focus-deck{width:100%;max-width:none;padding-left:28px;padding-right:28px}
+.talking .focus-assistant{border-left:1px solid var(--line);background:var(--color-surface);padding-top:22px}
+.talking .focus-assistant .focus-message-copy{font-size:15px;line-height:1.8}
+.talking .focus-assistant .focus-message.user .focus-message-copy{background:var(--color-canvas)}
+.finish-meal{display:flex;align-items:center;justify-content:center;gap:8px;width:100%;min-height:44px;margin-bottom:12px;font-size:14px}
+.finish-meal:disabled{opacity:.55;cursor:wait}
+@media(max-width:900px){
+  .talking .focus-body{grid-template-columns:minmax(0,1fr);grid-template-rows:minmax(160px,1.2fr) minmax(115px,.8fr)}
+  .talking .focus-body>.focus-deck{padding:15px 21px 9px;gap:9px}
+  .talking .focus-assistant{border-left:0;border-top:1px solid var(--line)}
+  .talking .focus-content .ui-step-instruction{font-size:19px;line-height:1.85}
+  .talking .focus-assistant .focus-message-copy{font-size:14px;line-height:1.8}
+  .talking .focus-pagination{min-height:30px}.talking .focus-page-button{min-height:30px;padding:5px 9px}
+  .finish-meal{min-height:40px;font-size:13px;margin-bottom:9px}
+}
+@media(max-height:550px) and (max-width:900px){
+  .talking .focus-body{grid-template-columns:minmax(0,1fr) minmax(200px,.8fr);grid-template-rows:minmax(0,1fr)}
+  .talking .focus-assistant{border-top:0;border-left:1px solid var(--line)}
+  .talking .focus-body>.focus-deck{padding:10px 15px 7px}
+  .talking .focus-content .ui-step-instruction{font-size:17px}
+}

@@ -59,7 +59,7 @@ function sliceElement(element, start, end) {
 export class FocusPager {
   constructor(viewport, controls, { label = '内容', onChange } = {}) {
     this.viewport = viewport; this.controls = controls; this.label = label; this.onChange = onChange;
-    this.units = []; this.pages = []; this.index = 0; this.enabled = false;
+    this.units = []; this.pages = []; this.index = 0; this.enabled = false; this.following = true;
     this.page = document.createElement('div'); this.page.className = 'focus-page';
     this.measure = document.createElement('div'); this.measure.className = 'focus-page focus-page-measure';
     this.measure.setAttribute('aria-hidden', 'true'); this.measure.inert = true;
@@ -100,11 +100,14 @@ export class FocusPager {
   }
   setEnabled(enabled) { this.enabled = enabled; if (enabled) this.schedule(); }
   anchor() { const part = this.pages[this.index]?.[0]; return part && { key: part.key, start: part.start }; }
-  setContent(units, { reset = false, follow = false } = {}) {
+  setContent(units, { reset = false, follow = false, followAnchor = null } = {}) {
     this.pendingAnchor = reset ? null : this.anchor();
-    this.follow = follow && (!this.pages.length || this.index === this.pages.length - 1);
+    // Resizing can split the current last page into several pages. Preserve the
+    // user's follow intent separately from that temporary page number.
+    this.follow = follow && (reset || this.following);
+    this.followAnchor = followAnchor;
     this.units = units.map((value, index) => ({ node: value.node || value, key: value.key || `block-${index}` }));
-    if (reset) this.index = 0;
+    if (reset) { this.index = 0; this.following = true; }
     this.schedule();
   }
   schedule() {
@@ -168,7 +171,8 @@ export class FocusPager {
     }
     if (page.length || !pages.length) pages.push(page);
     this.pages = pages;
-    this.index = this.follow ? pages.length - 1 : Math.min(pages.length - 1, pageForAnchor(pages, anchor));
+    this.index = this.follow ? this.followAnchor ? pageForAnchor(pages, this.followAnchor) : pages.length - 1
+      : Math.min(pages.length - 1, pageForAnchor(pages, anchor));
     this.follow = false; this.measure.replaceChildren(); this.show(0, focused);
   }
 
@@ -176,6 +180,7 @@ export class FocusPager {
     const next = Math.max(0, Math.min(this.pages.length - 1, this.index + delta));
     if (next === this.index) return;
     const direction = next > this.index ? 1 : -1; this.index = next; this.follow = false;
+    this.following = next === this.pages.length - 1;
     this.show(direction); this.pendingAnchor = this.anchor(); this.onChange?.(this.index);
   }
   show(direction = 0, focusKey = null) {
@@ -189,6 +194,6 @@ export class FocusPager {
     }
     if (focused) [...this.page.querySelectorAll('[data-control-key]')].find(control => control.dataset.controlKey === focused)?.focus({ preventScroll: true });
   }
-  clear() { this.enabled = false; if (this.frame) cancelAnimationFrame(this.frame); this.frame = null; this.units = []; this.pages = []; this.index = 0; this.page.replaceChildren(); this.measure.replaceChildren(); }
+  clear() { this.enabled = false; if (this.frame) cancelAnimationFrame(this.frame); this.frame = null; this.units = []; this.pages = []; this.index = 0; this.following = true; this.page.replaceChildren(); this.measure.replaceChildren(); }
   destroy() {this.clear();this.observer.disconnect();}
 }

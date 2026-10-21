@@ -23,7 +23,8 @@ const byClass=(root,name)=>descendants(root).find(element=>element.classList.con
 const input=(root,key)=>descendants(root).find(element=>element.dataset.controlKey===key);
 function context(t,extra={}){
   const previous=globalThis.document;
-  globalThis.document={createElement:tag=>new Element(tag),createElementNS:(_,tag)=>new Element(tag)};
+  globalThis.document={createElement:tag=>new Element(tag),createElementNS:(_,tag)=>new Element(tag),
+    createTextNode:text=>{const element=new Element('#text');element.textContent=text;return element;}};
   t.after(()=>{globalThis.document=previous;});
   return {historical:false,busy:false,stage:'cooking',viewState:{},action:async()=>{},...extra};
 }
@@ -66,4 +67,41 @@ test('cooking steps retain the whole instruction and open their timer without a 
   assert.equal(byClass(root,'timer-start-button'),undefined);
   const prep=renderView({...view,data:{...view.data,timers:[]}}, {...ctx,stage:'prep'});
   assert.equal(byClass(prep,'timer-start-button').disabled,true);
+});
+
+test('finishing one dish does not offer whole-meal completion until the trusted snapshot allows it',async t=>{
+  const ctx=context(t,{sessionId:'meal-session'});
+  const view={id:'cooking',kind:'cooking_guide',editable:true,revision:3,data:{recipe_id:'r1',recipe_name:'滑蛋',
+    active_step_id:'s1',steps:[{id:'s1',ordinal:0,status:'done',instruction:'出锅'}],timers:[]}};
+  assert.equal(byClass(renderView(view,ctx),'complete-meal-button'),undefined);
+  assert.ok(byClass(renderView(view,{...ctx,canCompleteMeal:true}),'complete-meal-button'));
+  assert.equal(byClass(renderView(view,{...ctx,canCompleteMeal:true,focused:true}),'complete-meal-button'),undefined);
+  assert.equal(byClass(renderView(view,{...ctx,canCompleteMeal:true,historical:true}),'complete-meal-button'),undefined);
+});
+
+test('meal plan distinguishes shared diners from each plate quantity, including fractional allocations',t=>{
+  const ctx=context(t,{stage:'planning'});
+  const view={id:'plan',kind:'meal_plan',editable:true,revision:3,data:{meal_diners:5,
+    portion_note:'5人共享4道菜，分别调整每盘用量。',recipes:[{recipe_id:'r1',name:'滑蛋',original_servings:2,
+      target_servings:2.25,total_time_min:10,difficulty:'normal'}]}};
+  const root=renderView(view,ctx);
+  assert.match(byClass(root,'meal-summary').textContent,/5 人共享/);
+  assert.match(root.textContent,/配方等效份/);
+  assert.doesNotMatch(root.textContent,/2.25 人份/);
+  const quantity=input(root,'servings:r1');
+  assert.equal(quantity.value,2.25);assert.equal(quantity.step,'any');
+  assert.equal(quantity.getAttribute('aria-label'),'滑蛋的配方等效份量');
+});
+
+test('a planning checklist accepts explicit user confirmations without requiring an extra model turn',async t=>{
+  const actions=[],ctx=context(t,{stage:'planning',action:async(type,payload)=>actions.push({type,payload})});
+  const view={id:'prep',kind:'prep_checklist',editable:true,revision:1,data:{items:[{
+    id:'tofu',recipe_id:'r1',ingredient_id:'tofu',canonical_name:'北豆腐',amount_text:'300 克',status:'pending'}]}};
+  const root=renderView(view,ctx),checkbox=descendants(root).find(element=>element.type==='checkbox');
+  assert.equal(checkbox.disabled,false);
+  checkbox.checked=true;await checkbox.emit('change');
+  assert.deepEqual(actions,[{type:'check_prep_item',payload:{item_id:'tofu',status:'ready'}}]);
+  assert.doesNotMatch(root.textContent,/进入备菜阶段后/);
+  const cooked=renderView(view,{...ctx,stage:'cooking'});
+  assert.equal(descendants(cooked).find(element=>element.type==='checkbox').disabled,true);
 });

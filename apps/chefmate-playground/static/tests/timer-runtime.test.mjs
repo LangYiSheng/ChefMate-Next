@@ -122,3 +122,23 @@ test('starting a timer during a model turn shows the confirmed timer without rev
   controller.setRunning('session',false);
   assert.equal(controller.entry('session').views.some(view=>view.id==='hidden'),true);
 });
+
+test('a loaded background conversation still reminds without rewriting the current kitchen view', t => {
+  const controller=setup(t,async()=>{}),reminders=[],notices=[],selectors=[];
+  const originalDocument=globalThis.document,originalCSS=globalThis.CSS;
+  globalThis.document={querySelectorAll:selector=>{selectors.push(selector);return [];}};
+  globalThis.CSS={escape:value=>value};
+  t.after(()=>{globalThis.document=originalDocument;globalThis.CSS=originalCSS;});
+  let now=0;
+  const current=controller.entry('session'),background=controller.entry('background');
+  const view=(id,deadline)=>({kind:'timers',data:{timers:[{id,label:id,status:'running',seconds:10,deadline_at:new Date(deadline).toISOString()}]}});
+  current.views=[view('current-timer',10000)];background.views=[view('background-timer',1000)];
+  current.timerNow=background.timerNow=()=>now;
+  controller.onTimerReminder=(timer,id)=>reminders.push({timer:timer.id,id});
+  controller.notify=message=>notices.push(message);
+  controller.tick();now=2000;controller.tick();controller.tick();
+  assert.deepEqual(reminders,[{timer:'background-timer',id:'background'}]);
+  assert.equal(notices.length,1);
+  assert.ok(selectors.every(selector=>!selector.includes('background-timer')));
+  assert.equal(controller.activeId,'session');
+});

@@ -12,6 +12,18 @@ export function initShell({ onSettingsClose = () => {} } = {}) {
   const link = document.querySelector('.settings-link');
   const mobile = matchMedia('(max-width:760px)');
   let collapsed = false, width = 248, lastFocus, pendingNavigation = null;
+  function setPage(page = 'chat') {
+    app.dataset.page = page;
+    const settingsOpen = page === 'settings';
+    host.hidden = !settingsOpen; app.classList.toggle('settings-open', settingsOpen);
+    if (settingsOpen) link.setAttribute('aria-current', 'page');
+    else link.removeAttribute('aria-current');
+    for (const button of sidebar.querySelectorAll('[data-primary-page]')) {
+      if (button.dataset.primaryPage === page) button.setAttribute('aria-current', 'page');
+      else button.removeAttribute('aria-current');
+    }
+    window.dispatchEvent(new CustomEvent('chefmate:page-change', { detail: { page } }));
+  }
   try {
     const saved = JSON.parse(localStorage.getItem('chefmate:shell') || '{}');
     collapsed = saved.collapsed === true;
@@ -59,8 +71,7 @@ export function initShell({ onSettingsClose = () => {} } = {}) {
   });
   function closeSettings() {
     const navigate = pendingNavigation; pendingNavigation = null;
-    host.hidden = true; app.classList.remove('settings-open');
-    link.removeAttribute('aria-current');
+    setPage('chat');
     onSettingsClose(); lastFocus?.focus();
     navigate?.click();
   }
@@ -72,8 +83,7 @@ export function initShell({ onSettingsClose = () => {} } = {}) {
     }
     lastFocus = document.activeElement;
     if (!frame.hasAttribute('src')) frame.src = '/settings?embedded=1';
-    host.hidden = false; app.classList.add('settings-open');
-    link.setAttribute('aria-current', 'page');
+    setPage('settings');
     document.getElementById('close-details').click();
     // Close the mobile navigation using the chat controller's normal path.
     if (mobile.matches) document.getElementById('close-sidebar').click();
@@ -82,13 +92,20 @@ export function initShell({ onSettingsClose = () => {} } = {}) {
   // Navigation only runs after the settings frame has accepted the close.
   // Capture first so the chat's existing click handlers cannot run early.
   sidebar.addEventListener('click', event => {
-    const navigation = event.target.closest('.session-link,#new-chat,.brand');
+    const navigation = event.target.closest('.session-link,#new-chat,.brand,[data-primary-page]');
     if (navigation && !host.hidden) {
       event.preventDefault(); event.stopImmediatePropagation();
       pendingNavigation = navigation;
       frame.contentWindow?.postMessage({ type: 'chefmate:request-close' }, location.origin);
     }
   }, true);
+  for (const button of sidebar.querySelectorAll('[data-primary-page]')) button.addEventListener('click', () => {
+    setPage(button.dataset.primaryPage);
+    if (mobile.matches) document.getElementById('close-sidebar').click();
+  });
+  sidebar.addEventListener('click', event => {
+    if (event.target.closest('.session-link,#new-chat,.brand')) setPage('chat');
+  });
   window.addEventListener('message', event => {
     if (event.origin !== location.origin || event.source !== frame.contentWindow) return;
     if (event.data?.type === 'chefmate:close-settings') closeSettings();
@@ -97,4 +114,6 @@ export function initShell({ onSettingsClose = () => {} } = {}) {
   });
   document.querySelectorAll('[data-icon]').forEach(node => node.replaceChildren(icon(node.dataset.icon)));
   paint();
+  app.dataset.page = 'chat';
+  return { setPage, get page() { return app.dataset.page || 'chat'; } };
 }

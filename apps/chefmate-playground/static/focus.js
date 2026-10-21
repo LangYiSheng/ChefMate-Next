@@ -38,6 +38,11 @@ export class CookingFocus {
     this.status = document.getElementById('focus-activity'); this.assistant = document.getElementById('focus-assistant');
     this.work = document.getElementById('focus-workspace'); this.workToggle = document.getElementById('focus-work-toggle');
     this.tools = document.getElementById('focus-tools');
+    this.finish = document.getElementById('finish-meal');
+    this.finish.addEventListener('click', () => {
+      if (!this.active || this.finish.disabled) return;
+      window.dispatchEvent(new CustomEvent('chefmate:finish-meal', { detail: { sessionId: this.active.sessionId } }));
+    });
     this.slot = document.getElementById('focus-composer-slot'); this.prompts = document.getElementById('focus-prompts');
     this.composer = document.querySelector('.composer-area'); this.input = document.getElementById('composer-input');
     this.homeAnchor = document.createComment('composer-home'); this.composer.before(this.homeAnchor);
@@ -61,7 +66,7 @@ export class CookingFocus {
     this.workspace.onTimerStateChange = () => this.contentPager.schedule();
     document.getElementById('exit-focus').addEventListener('click', () => this.close());
     this.workToggle.addEventListener('click', () => this.setTalking(false));
-    this.talk.addEventListener('click', () => this.setTalking(true));
+    this.talk.addEventListener('click', () => this.setTalking(!this.talking));
     this.composer.addEventListener('submit', () => { if (this.active) this.setTalking(true); });
     this.root.addEventListener('keydown', event => {
       if (document.querySelector('dialog[open]')) return;
@@ -116,16 +121,17 @@ export class CookingFocus {
   showSuggestions(open) { this.root.classList.toggle('suggestions-open', open); this.suggestionToggle.setAttribute('aria-expanded', String(open)); }
   updateTalking() {
     this.root.classList.toggle('talking', this.talking);
-    this.work.hidden = this.talking; this.work.inert = this.talking;
+    this.work.hidden = false; this.work.inert = false;
     this.assistant.hidden = !this.talking; this.assistant.inert = !this.talking;
-    this.talk.setAttribute('aria-pressed', String(this.talking)); this.workToggle.setAttribute('aria-pressed', String(!this.talking));
-    this.contentPager.setEnabled(Boolean(this.active && !this.talking)); this.replyPager.setEnabled(Boolean(this.active && this.talking));
-    this.input.placeholder = this.talking ? '还有哪里不确定？接着问问…' : '问问这份清单或当前步骤…';
+    this.talk.setAttribute('aria-expanded', String(this.talking));
+    this.contentPager.setEnabled(Boolean(this.active)); this.replyPager.setEnabled(Boolean(this.active && this.talking));
+    this.talk.replaceChildren(icon('message-circle'), node('span', '', this.talking ? '收起交流' : '展开交流'));
+    this.input.placeholder = '有问题就直接问我，做菜进度会保留…';
   }
   renderConversation(active, state) {
     const signature = JSON.stringify([state.messages, state.failed]);
     if (signature !== this.replySignature) {
-      const units = [];
+      const units = []; let latestKey = null;
       state.messages.forEach((message, index) => {
         const parts = [];
         if (message.images?.length) {
@@ -144,6 +150,7 @@ export class CookingFocus {
           const retry = node('button', 'retry-button focus-retry', message.cancelled ? '重新执行' : '重试这次回复'); retry.type = 'button';
           retry.prepend(icon('refresh-cw')); retry.addEventListener('click', () => this.retry(message)); parts.push(retry);
         }
+        if (parts.length) latestKey = `message-${index}-0`;
         parts.forEach((part, partIndex) => {
           const item = node('article', `focus-message ${message.role}`);
           if (partIndex === 0) item.append(node('div', 'focus-message-label', message.role === 'user' ? '你' : 'ChefMate'));
@@ -152,7 +159,7 @@ export class CookingFocus {
         });
       });
       if (!units.length) units.push({ node: node('div', 'focus-empty', '遇到不确定的地方，随时问问助手。清单和做菜进度都会保留。'), key: 'empty' });
-      this.replyPager.setContent(units, { follow: true }); this.replySignature = signature;
+      this.replyPager.setContent(units, { follow: true, followAnchor: latestKey ? { key: latestKey, start: 0 } : null }); this.replySignature = signature;
     }
     this.status.hidden = !state.status || !state.running;
     if (state.status !== this.activityText) {
@@ -171,8 +178,9 @@ export class CookingFocus {
     this.title.textContent = cooking ? view.data.recipe_name : view.title || '厨房工作区';
     this.subtitle.textContent = cooking ? `已完成 ${(view.data.steps || []).filter(step=>step.status==='done').length} / ${(view.data.steps || []).length} 步`
       : conversationLabel(snapshotStatus(entry.snapshot || {}));
-    const stage = ({ prep_checklist:'备菜清单', cooking_guide:'专心做菜', recipe_detail:'菜谱做法' })[view.kind]
-      || STAGE_NAMES[entry.snapshot?.stage] || '厨房工作区';
+    const stage = entry.snapshot?.stage === 'completed' ? '本次烹饪已完成'
+      : ({ prep_checklist:'备菜清单', cooking_guide:'专心做菜', recipe_detail:'菜谱做法' })[view.kind]
+        || STAGE_NAMES[entry.snapshot?.stage] || '厨房工作区';
     this.stage.textContent = stage; document.getElementById('focus-work-label').textContent = stage;
     const signature = JSON.stringify([view, entry.saving, entry.viewState[view.id], entry.drafts[view.id]]);
     if (signature !== this.signature) {
@@ -195,7 +203,11 @@ export class CookingFocus {
     const state = focusConversation(this.session(), active.startIndex, this.activity(active.sessionId));
     if (state.running && !this.wasRunning) this.setTalking(true);
     this.wasRunning = state.running; this.root.classList.toggle('focus-running', state.running);
-    this.talk.replaceChildren(icon('message-circle'), node('span', '', state.running ? '助手正在回复' : '问问助手'));
+    const progress = entry.snapshot?.progress || entry.views.find(item => item.kind === 'task_progress')?.data;
+    const complete = entry.snapshot?.stage === 'cooking' && (entry.snapshot.allowed_transitions?.includes('completed')
+      || progress?.steps_total > 0 && progress.steps_done >= progress.steps_total);
+    this.finish.hidden = !complete;
+    this.finish.disabled = state.running || entry.saving || entry.confirming;
     this.renderConversation(active, state);
     this.workspace.tick();
   }

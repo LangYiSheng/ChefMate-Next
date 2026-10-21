@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="light">
   <meta name="theme-color" content="#f2f4f2">
-  <title>ChefMate · 菜谱助手</title>
+  <title>ChefMate · 您的个性化烹饪助手</title>
   <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="/static/colors.css">
   <link rel="stylesheet" href="/static/styles.css">
@@ -28,13 +28,17 @@
     <aside class="sidebar" id="sidebar" aria-label="会话导航">
       <div class="brand-row">
         <a class="brand" href="/" aria-label="ChefMate 首页">
-          <img class="brand-icon" data-chefmate-icon src="/static/brand/pot-c.svg" alt="">
-          <span>ChefMate</span>
+          <img class="brand-icon" data-chefmate-icon src="/static/brand/friendly-pot.svg" alt="">
+          <span class="brand-copy"><strong>ChefMate</strong><small>您的个性化烹饪助手</small></span>
         </a>
         <button class="icon-button desktop-only" id="collapse-sidebar" type="button" aria-label="收起侧栏" aria-controls="sidebar" aria-expanded="true" data-icon="panel-left-close"></button>
         <button class="icon-button mobile-only" id="close-sidebar" type="button" aria-label="收起会话导航" data-icon="x"></button>
       </div>
       <button class="new-chat" id="new-chat" type="button"><span data-icon="plus" aria-hidden="true"></span><span class="new-chat-label">新会话</span></button>
+      <nav id="primary-navigation" class="primary-navigation" aria-label="厨房空间">
+        <button type="button" data-primary-page="journal"><span data-icon="utensils" aria-hidden="true"></span><span>食光手记</span></button>
+        <button type="button" data-primary-page="recipes"><span data-icon="book-open" aria-hidden="true"></span><span>菜谱中心</span></button>
+      </nav>
       <div class="sidebar-heading">最近会话</div>
       <nav class="sessions" id="sessions" aria-label="最近会话"></nav>
       <div class="sidebar-footer"><a class="settings-link" href="/settings"><span data-icon="settings" aria-hidden="true"></span><span>设置</span></a></div>
@@ -48,18 +52,19 @@
           <button class="icon-button mobile-only" id="open-sidebar" type="button" aria-label="展开会话导航" aria-controls="sidebar" aria-expanded="false" data-icon="panel-left"></button>
           <span id="chat-title">菜谱助手</span>
           <span class="conversation-stage" id="conversation-stage" hidden></span>
+          <button type="button" id="current-kitchen" class="current-kitchen-button" hidden>查看本次做菜</button>
         </div>
         <div class="topbar-actions">
           <button class="timer-trigger" id="chat-timer-toggle" data-timer-trigger type="button" aria-label="打开厨房计时" aria-haspopup="dialog" aria-expanded="false" aria-controls="kitchen-timer-popover" hidden></button>
           <button class="status-pill" id="status-button" type="button" aria-label="查看连接状态" hidden><span class="status-dot" id="status-dot" aria-hidden="true"></span><span id="status-label">连接中</span></button>
-          <button class="icon-button panel-toggle" id="toggle-details" type="button" aria-label="展开查询与菜谱详情" aria-controls="detail-panel" aria-expanded="false" data-icon="panel-right"></button>
+          <button class="icon-button panel-toggle" id="toggle-details" type="button" aria-label="展开厨房工作区" aria-controls="detail-panel" aria-expanded="false" data-icon="panel-right" hidden></button>
         </div>
       </header>
 
       <div class="connection-banner" id="connection-banner" role="status" hidden></div>
       <div class="conversation" id="conversation" tabindex="-1" aria-label="聊天记录">
         <section class="welcome" id="welcome">
-          <img class="welcome-icon" data-chefmate-icon src="/static/brand/pot-c.svg" alt="">
+          <img class="welcome-icon" data-chefmate-icon src="/static/brand/friendly-pot.svg" alt="">
           <h1>今天想吃什么？</h1>
           <p>说说食材、时间和人数，<br class="welcome-break">一起选菜、备菜，把这顿饭做好。</p>
           <div id="welcome-templates" class="starter-templates" aria-label="试试这些开场"></div>
@@ -116,8 +121,9 @@
       <div class="focus-header-actions"><button class="focus-button" id="exit-focus" type="button" aria-label="返回聊天" title="返回聊天"><span data-icon="arrow-left" aria-hidden="true"></span></button><button class="timer-trigger" id="focus-timer-toggle" data-timer-trigger type="button" aria-label="打开厨房计时" aria-haspopup="dialog" aria-expanded="false" aria-controls="kitchen-timer-popover" hidden></button></div>
     </header>
     <nav class="focus-modes" aria-label="厨房工作区">
-      <button id="focus-work-toggle" type="button" aria-controls="focus-workspace" aria-pressed="true"><span data-icon="list-checks" aria-hidden="true"></span><span id="focus-work-label">专心准备</span></button>
-      <button id="focus-talk-toggle" type="button" aria-controls="focus-assistant" aria-pressed="false"><span data-icon="message-circle" aria-hidden="true"></span><span>问问助手</span></button>
+      <span id="focus-work-label" class="focus-work-label">专心准备</span>
+      <button id="focus-work-toggle" type="button" aria-controls="focus-workspace" hidden></button>
+      <button id="focus-talk-toggle" type="button" aria-controls="focus-assistant" aria-expanded="false"><span data-icon="message-circle" aria-hidden="true"></span><span>展开交流</span></button>
       <button id="focus-suggestions-toggle" class="focus-suggestions-toggle" type="button" aria-controls="reply-suggestions" aria-expanded="false" hidden><span data-icon="ellipsis" aria-hidden="true"></span>接着聊</button>
     </nav>
     <div id="focus-body" class="focus-body">
@@ -132,6 +138,7 @@
       </section>
     </div>
     <footer class="focus-footer">
+      <button id="finish-meal" class="finish-meal primary-button" type="button" hidden><span data-icon="check-check" aria-hidden="true"></span>完成本次菜肴</button>
       <div id="focus-activity" class="focus-activity" role="status" hidden></div>
       <div class="focus-quick-prompts" id="focus-prompts"></div>
       <div id="focus-composer-slot" class="focus-composer-slot"></div>

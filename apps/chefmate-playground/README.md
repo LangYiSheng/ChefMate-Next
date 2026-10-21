@@ -2,6 +2,19 @@
 
 一个本地厨房工作台，连接真实菜谱检索、标准 LangChain Agent 和独立厨房任务服务。前端使用原生 HTML/CSS/JavaScript；FastAPI 负责应用配置、HTTP、SSE 与会话保存。
 
+## 个性化厨房（2026-10-21）
+
+- **食光手记**：开始做菜时记为尝试，确认全部菜完成后保存整餐快照。按天查看菜品、营养制作量、均分参考和做菜感受；删除聊天不删除这些记录。新增记录以真实任务时间为准，不为旧对话补造做菜日期。
+- **菜谱中心**：搜索和分页浏览原有菜谱、收藏喜欢的菜；上传截图或粘贴文字后由真实模型生成待核对草稿。可修改名称、原文、用量、步骤、人数和时间，确认保存后再用于选菜、备菜与烹饪。个人菜谱在应用数据库独立表中标记 `origin=user`。
+- **长期记忆**：设置里编辑个人口味与忌口；助手维护单独的简短总结。当前请求优先，用户记忆优先于助手总结；相关历史通过有界检索按需读取。关闭记忆开关或对应技能后停用读取与维护。
+- **共享餐单**：`diners` 是整餐人数，默认 `portion_mode=shared`；单菜的 `target_servings` 是配方等效份量。五人四菜默认每盘2.5配方份，可按实际食量改动，源配方人数未知时保留原量及提示。
+- **烹饪同屏**：做菜、提问、回复和输入框融合在同一屏；全部菜的步骤确认后，点击“完成本次菜肴”先保存，再自动续聊。顶部“继续做菜”可随时找回已保存的任务。
+- **计时与主题**：浏览器页面打开时到期播放提醒音，可在设置里关闭或试听。计时保留服务端截止时间，刷新后恢复后台计时会话；浏览器需要一次点击或键盘交互解锁声音。主题支持浅色、深色和跟随系统，偏好保存在当前浏览器。
+
+个人菜谱、收藏、饮食记录和长期记忆均保存在 `.runtime/sessions.db` 的独立表，不混入只读的 PostgreSQL 基础菜谱库。自定义菜谱复用 `chefmate-recipe-processing` 的菜谱契约验证与确定性营养计算；原文未给时间、人数和克重时保留未知，不直接让模型生成营养数字。
+
+技能与工具权限同时检查模型可见性和实际执行。共用阶段工具按目标阶段检查对应技能，关闭菜谱创作后也不能绕过工具读取个人菜谱。
+
 ## 启动
 
 在仓库根目录运行：
@@ -22,7 +35,7 @@ uv run --project apps/chefmate-playground chefmate-playground
 - `CHEFMATE_AGENT_TIMEOUT`、`CHEFMATE_AGENT_MAX_ROUNDS`、`CHEFMATE_AGENT_MAX_TOOL_CALLS`：单轮执行预算。
 - `CHEFMATE_AGENT_MODEL_TIMEOUT`、`CHEFMATE_AGENT_MODEL_RETRIES`：单次模型请求超时与 SDK 重试次数；默认 120 秒、0 次，整轮预算默认 300 秒，失败由用户明确重试。
 - `CHEFMATE_AGENT_STREAM_TOOL_CALLS`：模板默认 `false`，只有验证过所配置服务的标准流式工具协议后才打开。本机配置已启用：修正嵌套 schema 后，真实候选结果下的续轮请求已返回标准流式工具调用。
-- `CHEFMATE_ENABLED_SKILLS`：逗号分隔的应用内技能名，默认 `meal-planning,pantry-preparation,cooking-guide`。只允许应用已声明的技能目录。
+- `CHEFMATE_ENABLED_SKILLS`：逗号分隔的应用内技能名，默认 `meal-planning,pantry-preparation,cooking-guide,recipe-authoring,personal-memory`。只允许应用已声明的技能目录。
 
 应用读取自己的 `.env`，以及通过设置页保存的本地覆盖配置。库包不会自动读取清洗端配置。启动不会下载 USDA、启动数据库、迁移菜谱表或重新导入数据。
 
@@ -38,7 +51,7 @@ uv run --project apps/chefmate-playground chefmate-playground
 
 时间和配方来自原始菜谱。可换算的用量按可靠份数依据缩放；原份数未知时保留原量并显示提示。备菜按具体菜品保留食材与状态。计时器保存 UTC 截止时间和暂停剩余量，刷新可恢复；全部备料经用户确认才能开始烹饪，全部步骤完成才能结束。
 
-模型使用标准 `langchain.agents.create_agent` 和 middleware 执行模型/工具循环，按最新阶段筛选业务工具。三个内置 Skills 先只提供简介，调用 `load_skill` 才加载正文；“技能”页显示可用内容和实际加载记录。具体职责和状态协议见[架构说明](../../docs/agent-ui-architecture.md)。
+模型使用标准 `langchain.agents.create_agent` 和 middleware 执行模型/工具循环，按最新阶段筛选业务工具。五个内置 Skills 先只提供简介，调用 `load_skill` 才加载正文；技能设置同时控制对应工具权限。具体职责和状态协议见[架构说明](../../docs/agent-ui-architecture.md)。
 
 页面提供会话切换、停止、重试、真实菜谱卡片、详情和折叠的工具输入输出。未配置模型时显示明确状态，不使用假回答替代。停止本轮不会写入半截工具历史。切换对话或浏览器断开只分离实时视图，后台本轮继续运行；重新打开可恢复状态。停止按钮会取消模型调用。
 
@@ -82,7 +95,7 @@ HTTP 与生命周期测试注入明确的测试模型，不请求生产模型。
 
 工具保留版本与导入时间组成的快照，未知营养不补零，估算保留标记。当前资料没有可靠的“主料／必选”字段，界面展示原文和 warnings 供核对。
 
-本轮完成厨房主流程。旧版账号、图片识别、语音和长期记忆的接入边界见[迁移矩阵](../../packages/chefmate-workflow/docs/legacy-feature-matrix.md)，这些能力尚未迁入当前工作台。
+当前工作台已支持图片输入和长期记忆。旧版账号及语音仍未迁入，历史设计可查[迁移矩阵](../../packages/chefmate-workflow/docs/legacy-feature-matrix.md)，能力现状以本文和实际接口为准。
 
 
 ## 设置与聊天内交互（2026-10-14）

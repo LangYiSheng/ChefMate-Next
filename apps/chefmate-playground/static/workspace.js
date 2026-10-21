@@ -375,6 +375,8 @@ export class WorkspaceController {
   context(view, id = this.activeId) {
     const entry = this.entry(id); const draft = entry.drafts[view.id];
     return { historical: false, busy: entry.saving, draft, selectedRecipeIds: entry.snapshot?.selected_recipe_ids || [],
+        sessionId: id,
+        canCompleteMeal: entry.snapshot?.stage === 'cooking' && entry.snapshot?.allowed_transitions?.includes('completed'),
         stage: entry.snapshot?.stage,
         activeRecipeId: entry.snapshot?.active_recipe_id,
         onServings:(origin,recipeId,value)=>this.setServingsDraft(origin,recipeId,value,id),
@@ -503,31 +505,35 @@ export class WorkspaceController {
   }
   tick() {
     if (typeof document === 'undefined') return;
-    const entry = this.entries.get(this.activeId), timers = workspaceTimers(entry?.views || []);
     let stateChanged = false; const reminders=[];
-    for (const timer of timers) {
-      const presentation = timerPresentation(timer,entry.timerNow());
-      const prior = entry.timerStates.get(timer.id);
-      if (prior && prior !== presentation.state) stateChanged = true;
-      if (prior === 'running' && presentation.expired) reminders.push(timer);
-      entry.timerStates.set(timer.id,presentation.state);
-      const targets = document.querySelectorAll(`[data-timer-id="${CSS.escape(timer.id)}"]`);
-      for (const target of targets) {
-        target.textContent = presentation.clock;
-        target.dataset.timerState = presentation.state;
-        target.setAttribute('aria-label',presentation.remaining == null ? '剩余时间未知' : `剩余 ${presentation.remaining} 秒`);
+    for (const [sessionId, entry] of this.entries) {
+      for (const timer of workspaceTimers(entry.views || [])) {
+        const presentation = timerPresentation(timer,entry.timerNow());
+        const prior = entry.timerStates.get(timer.id);
+        if (prior && prior !== presentation.state) stateChanged = true;
+        if (prior === 'running' && presentation.expired && !entry.timerAcknowledged.has(timer.id)) reminders.push({timer,sessionId});
+        entry.timerStates.set(timer.id,presentation.state);
+        // A background session may remind, but never rewrites the current dish's DOM.
+        if (sessionId !== this.activeId) continue;
+        const targets = document.querySelectorAll(`[data-timer-id="${CSS.escape(timer.id)}"]`);
+        for (const target of targets) {
+          target.textContent = presentation.clock;
+          target.dataset.timerState = presentation.state;
+          target.setAttribute('aria-label',presentation.remaining == null ? '剩余时间未知' : `剩余 ${presentation.remaining} 秒`);
+        }
+        const selector = CSS.escape(timer.id);
+        for (const row of document.querySelectorAll(`[data-timer-row="${selector}"]`)) row.dataset.timerState = presentation.state;
+        for (const status of document.querySelectorAll(`[data-timer-status="${selector}"]`)) status.textContent = presentation.status;
+        for (const progress of document.querySelectorAll(`[data-timer-progress="${selector}"]`)) progress.value = presentation.progress;
+        for (const controls of document.querySelectorAll(`[data-timer-controls="${selector}"]`)) controls.hidden = presentation.expired;
+        for (const expired of document.querySelectorAll(`[data-timer-expired="${selector}"]`)) expired.hidden = !presentation.expired;
       }
-      const selector = CSS.escape(timer.id);
-      for (const row of document.querySelectorAll(`[data-timer-row="${selector}"]`)) row.dataset.timerState = presentation.state;
-      for (const status of document.querySelectorAll(`[data-timer-status="${selector}"]`)) status.textContent = presentation.status;
-      for (const progress of document.querySelectorAll(`[data-timer-progress="${selector}"]`)) progress.value = presentation.progress;
-      for (const controls of document.querySelectorAll(`[data-timer-controls="${selector}"]`)) controls.hidden = presentation.expired;
-      for (const expired of document.querySelectorAll(`[data-timer-expired="${selector}"]`)) expired.hidden = !presentation.expired;
     }
+    const entry = this.entries.get(this.activeId), timers = workspaceTimers(entry?.views || []);
     this.onTimerRender?.(timers,entry,this.activeId);
-    for (const timer of reminders) {
+    for (const {timer,sessionId} of reminders) {
       this.notify(`${timer.label}时间到，看看锅里的状态。`);
-      this.onTimerReminder?.(timer,this.activeId);
+      this.onTimerReminder?.(timer,sessionId);
     }
     if (stateChanged) this.onTimerStateChange?.();
   }

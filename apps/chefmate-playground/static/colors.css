@@ -34,3 +34,25 @@
   --radius-shell: 18px;
   --font-reading: "Source Han Serif SC", "Noto Serif CJK SC", "Noto Serif SC", "Songti SC", "STSong", "SimSun", serif;
 }
+
+:root[data-theme="dark"] {
+  --color-background: #18211c;
+  --color-canvas: #202b24;
+  --color-surface: #253229;
+  --color-hover: #2d3d32;
+  --color-border: #3a4b3f;
+  --color-border-strong: #647d6a;
+  --color-text: #edf3ee;
+  --color-muted: #b4c4b8;
+  --color-subtle: #8fa794;
+  --color-accent: #a2c5ad;
+  --color-accent-hover: #c0ddc8;
+  --color-accent-soft: #304636;
+  --color-success: #a5d8b3;
+  --color-warning: #e7c48d;
+  --color-warning-soft: #3c3425;
+  --color-danger: #f0aca2;
+  --color-danger-soft: #432f2b;
+  --color-overlay: #050c08b3;
+  --color-shadow: #00000033;
+}
