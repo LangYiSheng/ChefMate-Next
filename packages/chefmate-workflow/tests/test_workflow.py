@@ -358,7 +358,7 @@ def test_step_timer_duplicate_does_not_restart_or_replace_a_paused_timer(kitchen
     assert action(kitchen, "cancel_timer", {"timer_id": timer["id"]})["status"] == "ok"
     restarted = action(kitchen, "start_timer", payload)
     assert restarted["status"] == "ok"
-    assert len(host.state["timers"]) == 2 and host.state["timers"][-1]["id"] != timer["id"]
+    assert len(host.state["timers"]) == 1 and host.state["timers"][0]["id"] != timer["id"]
     assert host.state["timers"][-1]["remaining_seconds"] == 60
 
 
@@ -408,6 +408,31 @@ def test_terminal_history_never_evicts_an_active_timer(kitchen):
     assert len(host.state["timers"]) == 30
     retained = next(timer for timer in host.state["timers"] if timer["id"] == long_timer["id"])
     assert retained["status"] == "running" and retained["deadline_at"] == long_timer["deadline_at"]
+
+
+def test_legacy_step_history_projects_one_clock_without_silently_removing_active_duplicates(kitchen):
+    _, host, retrieval, clock = kitchen
+    prepare(kitchen)
+    action(kitchen, "start_timer", {"seconds": 60, "label": "原计时", "recipe_id": "r1", "step_id": "r1:step:0"})
+    original = copy.deepcopy(host.state["timers"][0])
+    terminal = {**original, "status": "finished", "remaining_seconds": 0., "deadline_at": None}
+    host.state["timers"] = [{**terminal, "id": "old-done"}, {**terminal, "id": "last-done"},
+        {**original, "id": "old-running"}, {**original, "id": "last-running"},
+        {**terminal, "id": "other-step", "step_id": "r1:step:1"}]
+    policy = {"timer_limit": 1, "clear_timer_on_step_change": False}
+    service = WorkflowService(retrieval, host.get, host.mutate, now=lambda: clock[0], cooking_settings=lambda: policy)
+    before = copy.deepcopy(host.state)
+    result = service.get_workspace()
+    guide = next(view["data"] for view in result["views"] if view["kind"] == "cooking_guide")
+    assert [timer["id"] for timer in guide["timers"]] == ["last-running", "other-step"]
+    assert result["ui_snapshot"]["timer_capacity"] == {"limit": 1, "active_count": 2,
+        "available_slots": 0, "over_limit": True}
+    assert not result["ui_snapshot"]["current_actions"]["set_cooking_timer"]["available"]
+    assert host.state == before
+    service.execute_tool("show_timers")
+    assert [timer["id"] for timer in host.state["timers"]] == ["old-running", "last-running", "other-step"]
+    policy["timer_limit"] = 3
+    assert service.model_snapshot()["timer_capacity"]["available_slots"] == 1
 
 
 def test_tool_timer_duration_requires_source_or_trusted_user_text(kitchen):

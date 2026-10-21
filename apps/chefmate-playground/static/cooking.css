@@ -50,12 +50,6 @@
 .timer-duration-field .ui-input{width:76px;min-width:0;min-height:46px;padding:9px 10px;font-size:17px;font-variant-numeric:tabular-nums}
 .timer-create-form .timer-submit{grid-column:auto;min-width:110px;align-self:center;white-space:nowrap}
 .timer-form-feedback{grid-column:1/-1;font-size:12px;color:var(--color-muted);line-height:1.7;margin:0;min-height:20px}
-.cooking-timer-dock{display:flex;align-items:center;gap:12px;min-width:0;padding:8px 2px;color:var(--color-accent)}
-.cooking-timer-dock .dock-timer{display:flex;align-items:center;gap:9px;min-height:44px;min-width:0;flex:1;text-align:left;background:transparent;border:0;padding:0;color:inherit}
-.dock-timer-clock{font-size:20px;line-height:1.4;font-weight:600;font-variant-numeric:tabular-nums;white-space:nowrap}
-.dock-timer-label{font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
-.dock-timer-count{font-size:12px;color:var(--color-muted);white-space:nowrap}.cooking-timer-dock .timer-dock-dismiss{min-width:44px;min-height:44px;padding:8px;color:inherit}
-.cooking-timer-dock[data-state=expired]{color:var(--color-warning)}
 .focus-content .ui-step-heading{display:flex;align-items:center;gap:13px}
 .focus-page>.cooking-step-actions,.focus-page>.timer-readout,.focus-page>.timer-progress{margin:0}
 .focus-page>.timer-duration-fields .ui-input{min-height:44px;font-size:16px}
@@ -63,7 +57,6 @@
 .focus-page>.timer-submit{align-self:flex-start;min-height:44px;padding:10px 16px}
 .focus-page>input.ui-input{min-height:44px;font-size:16px}
 .kitchen-focus[data-kind=cooking_guide] .ui-step-instruction{font-size:clamp(23px,2.3vw,30px);line-height:1.75}
-.dock-timer-status{font-size:12px;white-space:nowrap}
 @media(max-width:760px){
   .ui-cooking-guide .ui-recipe-name{font-size:20px}.ui-cooking-guide .ui-step-instruction{font-size:23px;line-height:1.8}
   .cooking-overview{margin-bottom:17px;gap:13px}.step-navigator.cooking-step-nav{margin-bottom:22px}
@@ -72,6 +65,5 @@
   .ui-timer-form.timer-create-form{grid-template-columns:minmax(0,1fr);padding-top:20px}.timer-create-form .timer-submit{width:100%;grid-column:1/-1}
   .timer-duration-fields{justify-content:space-between;gap:14px}.timer-duration-field{flex:1}.timer-duration-field .ui-input{flex:1;width:100%;max-width:none}
   .timer-heading{align-items:flex-start}.timer-status{padding-top:2px}.timer-readout .ui-timer-clock{font-size:46px}
-  .dock-timer-count{font-size:11px}.cooking-timer-dock{gap:8px}.dock-timer-label{font-size:12px}
 }
 @media(prefers-reduced-motion:reduce){.cooking-progress,.timer-progress,.ui-timer-panel *{animation:none!important;transition:none!important}}

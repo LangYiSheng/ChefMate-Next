@@ -1,0 +1,23 @@
+.timer-trigger{display:inline-flex;align-items:center;justify-content:center;gap:6px;min-height:40px;padding:6px 9px;border:0;border-radius:10px;background:transparent;color:var(--color-accent);font:inherit;font-size:13px;white-space:nowrap}
+.timer-trigger>.icon{width:18px;height:18px}.timer-trigger-clock{font-variant-numeric:tabular-nums;min-width:32px;text-align:center}.timer-trigger-count{display:grid;place-items:center;min-width:17px;height:17px;font-size:10px;border-radius:50%;background:var(--color-accent-soft)}
+.timer-trigger:hover,.timer-trigger[aria-expanded=true]{background:var(--color-surface)}.timer-trigger[data-state=expired]{color:var(--color-warning)}
+.timer-trigger[data-state=expired]>.icon{animation:timer-nudge 1.8s ease-in-out infinite}
+.timer-popover{position:fixed;z-index:120;padding:14px;border:1px solid var(--color-border);border-radius:16px;background:var(--color-canvas);box-shadow:0 8px 32px var(--color-shadow);box-sizing:border-box;color:var(--color-text);max-width:calc(100vw - 24px)}
+.timer-popup-heading{display:flex;align-items:center;gap:4px;margin-bottom:5px}.timer-popup-heading>strong{flex:1;font-size:14px;line-height:1.6;font-weight:600}
+.timer-popup-button{display:inline-flex;align-items:center;justify-content:center;min-width:40px;min-height:40px;padding:8px;border:0;border-radius:9px;background:transparent;color:var(--color-accent);flex:none}
+.timer-popup-button:hover{background:var(--color-surface)}.timer-popup-button .icon{width:17px;height:17px}.timer-popup-button:disabled{opacity:.35;cursor:default}
+.timer-popup-list{min-width:0}.timer-popup-row{display:flex;align-items:center;gap:8px;padding:13px 0;border-top:1px solid var(--color-border)}.timer-popup-row:first-child{border:0}
+.timer-popup-copy{flex:1;min-width:0}.timer-popup-copy>strong{display:block;font-size:12px;line-height:1.6;font-weight:500;overflow-wrap:anywhere}
+.timer-popup-readout{display:flex;align-items:baseline;gap:9px;margin-top:5px}.timer-popup-clock{font-size:27px;font-weight:550;font-variant-numeric:tabular-nums;line-height:1.2;letter-spacing:-.5px}.timer-popup-readout>span{font-size:11px;color:var(--color-muted)}
+.timer-popup-row[data-state=expired] .timer-popup-clock{color:var(--color-warning)}.timer-popup-row[data-state=paused] .timer-popup-clock{color:var(--color-muted)}
+.timer-popup-actions{display:flex;gap:1px;flex:none}.timer-popup-policy{font-size:11px;line-height:1.7;color:var(--color-muted);margin:10px 0 0;border-top:1px solid var(--color-border);padding-top:10px}
+.timer-popup-empty{padding:12px 0;font-size:13px;color:var(--color-muted);line-height:1.8}.timer-popup-pages{display:flex;align-items:center;justify-content:space-between;gap:8px;border-top:1px solid var(--color-border);padding-top:5px}.timer-popup-pages>span{font-size:11px;color:var(--color-muted)}
+.timer-popup-error{font-size:12px;color:var(--color-danger);line-height:1.7;margin:8px 0}
+.timer-popover .timer-create-form{margin:7px 0 0;padding:0;border:0;gap:10px;grid-template-columns:minmax(0,1fr) auto}.timer-popover .timer-form-title{display:none}.timer-popover .timer-create-form>.ui-input{min-height:42px;font-size:16px;padding:8px 10px}
+.timer-popover .timer-duration-fields{gap:10px;justify-content:flex-start}.timer-popover .timer-duration-field{font-size:12px;gap:5px;flex:initial}.timer-popover .timer-duration-field .ui-input{min-height:42px;width:55px;max-width:55px;font-size:16px;padding:8px}
+.timer-popover .timer-create-form .timer-submit{grid-column:auto;width:auto;min-width:82px;min-height:44px;font-size:13px;padding:9px}.timer-popover .timer-form-feedback{font-size:11px;min-height:18px}
+.step-timer-shortcut{font-variant-numeric:tabular-nums}.step-timer-status{font-size:11px;color:var(--color-muted)}
+@keyframes timer-nudge{0%,70%,100%{transform:rotate(0)}76%,88%{transform:rotate(-12deg)}82%,94%{transform:rotate(12deg)}}
+@media(max-width:760px){.timer-trigger{min-height:44px;gap:4px;padding:6px}.timer-popover{padding:12px}.timer-popup-button{min-height:44px;min-width:44px}.timer-popup-actions{gap:0}.timer-popup-row{padding:10px 0}.timer-popover .timer-duration-fields{gap:7px}.timer-popover .timer-duration-field .ui-input{width:49px;max-width:49px}.timer-trigger-count{display:none}}
+@media(max-height:520px){.timer-popover{padding:8px 12px}.timer-popup-heading{margin:0}.timer-popup-row{padding:7px 0}.timer-popup-policy{padding-top:7px;margin-top:5px}.timer-popover .timer-create-form{gap:7px}.timer-popover .timer-create-form>.ui-input{min-height:38px}.timer-popup-clock{font-size:24px}}
+@media(prefers-reduced-motion:reduce){.timer-trigger[data-state=expired]>.icon{animation:none}}

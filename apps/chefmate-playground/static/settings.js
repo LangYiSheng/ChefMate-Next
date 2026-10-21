@@ -1,6 +1,7 @@
 import { node } from "./ui-components.js";
 import { BRAND_ICONS, iconPath, applyBranding } from "./branding.js";
 import { icon } from './icons.js';
+import {navigationIndex, navigationEdges, revealNavigationItem} from './settings-navigation.js';
 applyBranding();
 const embedded = window.parent !== window && new URLSearchParams(location.search).get('embedded') === '1';
 document.body.classList.toggle('settings-embedded', embedded);
@@ -12,6 +13,7 @@ const names = {
   model: ["模型连接", "选择模型、端点和连接方式。保存后用于接下来的对话。"],
   display: ["界面显示", "把注意力留给菜谱和下一步。"],
   interaction: ["对话建议", "让下一步更好开口，也保留你自己的表达。"],
+  cooking: ["烹饪与计时", "让计时和步骤切换更符合你的做饭习惯。"],
   developer: ["开发者", "按需查看公开执行记录、工具参数和模型实际用量。"],
   skills: ["厨房技能", "让助手按需使用你启用的厨房知识。"],
   runtime: ["执行设置", "设置一次任务的等待时间和操作上限。"],
@@ -34,6 +36,18 @@ let current = "model",
 const drafts = new Map(),
   draftRevisions = new Map(),
   dirty = new Set();
+const navigation = document.querySelector('.settings-nav');
+function updateNavigation(ensureCurrent=false) {
+  const horizontal=window.matchMedia('(max-width:760px)').matches;
+  const edges=horizontal?navigationEdges(navigation.scrollLeft,navigation.clientWidth,navigation.scrollWidth):{left:false,right:false};
+  navigation.dataset.overflowLeft=String(edges.left);navigation.dataset.overflowRight=String(edges.right);
+  if(!ensureCurrent || !horizontal)return;
+  const selected=navigation.querySelector('[aria-current="page"]');if(!selected)return;
+  const navRect=navigation.getBoundingClientRect(),itemRect=selected.getBoundingClientRect();
+  const left=revealNavigationItem({scrollLeft:navigation.scrollLeft,viewportLeft:navRect.left,viewportWidth:navigation.clientWidth,
+    itemLeft:itemRect.left,itemRight:itemRect.right,maximum:Math.max(0,navigation.scrollWidth-navigation.clientWidth)});
+  if(Math.abs(left-navigation.scrollLeft)>1)navigation.scrollTo({left,behavior:window.matchMedia('(prefers-reduced-motion:reduce)').matches?'instant':'smooth'});
+}
 function readDisplay() {
   try {
     const { inline_limit = 2, density = "comfortable", brand_icon = "pot-c" } = JSON.parse(localStorage.getItem("chefmate:ui-settings") || "{}");
@@ -90,6 +104,7 @@ function updateFooter() {
       button.dataset.section === current ? "page" : "false",
     );
   });
+  requestAnimationFrame(()=>updateNavigation(true));
 }
 function heading(text) {
   $("settings-form").append(node("h2", "", text));
@@ -201,6 +216,14 @@ function render() {
     field("显示推荐回复", "reply_suggestions", {type:"checkbox",
       note:"每次回复结束后，提供三条左右的接话思路。",
       hint:"点击只替换输入框里的文字，你可以修改后再发送。关闭后也会隐藏历史回复中的建议。"});
+  } else if (current === "cooking") {
+    heading("烹饪计时");
+    field("同时进行的计时器", "timer_limit", {type:"number",options:[[1,"单计时器"],[3,"最多 3 个"]],
+      note:"运行和暂停中的计时器计入上限。",
+      hint:"达到上限时，先结束已有计时再开始新的计时。调低上限会保留当前计时。"});
+    field("切换步骤时清除上一步计时", "clear_timer_on_step_change", {type:"checkbox",
+      note:"默认关闭，计时可跨步骤继续。",
+      hint:"进入另一实际步骤或切换菜品时，清除离开步骤的计时；仅浏览步骤不会清除。"});
   } else if (current === "developer") {
     heading("调试信息");
     field("开发者模式", "enabled", { type: "checkbox", note: "默认关闭。在右侧调试面板查看可用工具、调用记录、技能与实际上下文。" });
@@ -335,7 +358,7 @@ async function load() {
     ]);
     loaded = result[0];
     status = result[1];
-    for (const section of ["model", "skills", "runtime", "context", "interaction", "display", "developer"])
+    for (const section of ["model", "skills", "runtime", "context", "interaction", "cooking", "display", "developer"])
       if (!dirty.has(section)) {
         draftRevisions.set(section,loaded.revision);
         drafts.set(
@@ -354,6 +377,8 @@ async function load() {
                 : section === "context"
                   ? { ...loaded.context }
                 : section === "interaction" ? {reply_suggestions:loaded.interaction?.reply_suggestions !== false}
+                : section === "cooking" ? {timer_limit:loaded.cooking?.timer_limit===1?1:3,
+                    clear_timer_on_step_change:loaded.cooking?.clear_timer_on_step_change===true}
                 : section === "developer" ? readDeveloper() : readDisplay(),
         );
       }
@@ -369,6 +394,7 @@ async function save() {
   if (busy || testing || !$("settings-form").reportValidity()) return;
   const section = current,
     values = { ...drafts.get(section) };
+  if(section==='cooking')values.timer_limit=Number(values.timer_limit);
   busy = true;
   updateFooter();
   message("");
@@ -410,7 +436,7 @@ async function save() {
     notifyParent('chefmate:settings-saved');
     if (current === section) {
       render();
-      message("设置已保存。接下来的对话使用新设置。", true);
+      message(section==='cooking'?'计时设置已保存，对当前和新会话立即生效。':"设置已保存。接下来的对话使用新设置。", true);
     }
   } catch (error) {
     message(error.message);
@@ -456,6 +482,26 @@ document.querySelectorAll("[data-section]").forEach((button) =>
     render();
   }),
 );
+navigation.addEventListener('scroll',()=>updateNavigation(),{passive:true});
+navigation.addEventListener('focusin',()=>requestAnimationFrame(()=>{
+  const focused=document.activeElement;
+  if(focused?.dataset.section && window.matchMedia('(max-width:760px)').matches) {
+    const navRect=navigation.getBoundingClientRect(),itemRect=focused.getBoundingClientRect();
+    const left=revealNavigationItem({scrollLeft:navigation.scrollLeft,viewportLeft:navRect.left,viewportWidth:navigation.clientWidth,
+      itemLeft:itemRect.left,itemRight:itemRect.right,maximum:Math.max(0,navigation.scrollWidth-navigation.clientWidth)});
+    navigation.scrollTo({left,behavior:'instant'});
+  }
+}));
+navigation.addEventListener('keydown',event=>{
+  if(!window.matchMedia('(max-width:760px)').matches)return;
+  const buttons=[...navigation.querySelectorAll('[data-section]')];
+  const focused=event.target.closest('[data-section]');
+  const index=buttons.indexOf(focused || buttons.find(button=>button.dataset.section===current));
+  const next=navigationIndex(event.key,index,buttons.length);if(next==null)return;
+  event.preventDefault();buttons[next].focus({preventScroll:true});buttons[next].click();
+});
+window.addEventListener('resize',()=>updateNavigation(true));
+if(typeof ResizeObserver!=='undefined')new ResizeObserver(()=>updateNavigation(true)).observe(navigation);
 $("settings-form").addEventListener("submit", (event) => {
   event.preventDefault();
   save();

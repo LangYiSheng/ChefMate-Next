@@ -2,17 +2,21 @@
 .focus-scene-active #app .main{transform:translateX(calc(-100vw - 24px))}
 .focus-scene-active #app .sidebar,.focus-scene-active #app .detail-panel{opacity:0;transition:opacity .2s ease;pointer-events:none}
 .kitchen-focus{position:fixed;inset:12px;z-index:65;min-height:0;overflow:hidden;display:flex;flex-direction:column;border:1px solid var(--line);border-radius:var(--radius-shell,20px);background:var(--color-canvas);color:var(--text);box-shadow:0 6px 28px var(--color-shadow)}
-.focus-header{display:flex;align-items:center;justify-content:space-between;gap:24px;padding:21px 30px 18px;background:var(--color-canvas);border:0;flex:none}
-.focus-heading{min-width:0}.focus-stage{display:block;font-size:10px;line-height:1.6;color:var(--accent);letter-spacing:.06em;margin-bottom:5px}
-.focus-header h2{font-size:22px;font-weight:550;line-height:1.45;letter-spacing:-.4px;white-space:normal;overflow-wrap:anywhere;margin:0}
-.focus-header .focus-heading p{font-size:11px;line-height:1.6;color:var(--muted);margin:5px 0 0}
+.focus-header{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 20px 8px;background:var(--color-canvas);border:0;flex:none}
+.focus-heading{display:flex;align-items:baseline;gap:10px;min-width:0;flex:1}.focus-stage,.focus-mode-note{display:none}
+.focus-header h2{font-size:18px;font-weight:550;line-height:1.5;letter-spacing:-.2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0;margin:0}
+#focus-subtitle:not(.focus-header-progress){display:none}
+.focus-header-progress{font-size:12px;line-height:1.5;color:var(--muted);white-space:nowrap;flex:none;font-variant-numeric:tabular-nums}
 .focus-header-actions{display:flex;align-items:center;gap:8px;flex:none}
 .focus-button{min-height:36px;padding:8px 12px;font-size:12px;line-height:1.4;border:1px solid var(--line);border-radius:10px;background:var(--color-canvas);color:var(--muted);white-space:nowrap}
 .focus-button .icon{width:16px;height:16px}.focus-button:hover{background:var(--color-surface);color:var(--accent)}
-.focus-modes{display:flex;align-items:center;gap:5px;padding:0 30px 13px;border-bottom:1px solid var(--line);flex:none}
-.focus-modes button{display:inline-flex;align-items:center;justify-content:center;gap:7px;min-height:36px;border:1px solid transparent;border-radius:10px;padding:7px 12px;color:var(--muted);font-size:12px;transition:background .18s,color .18s}
-.focus-modes .icon{width:16px;height:16px}.focus-modes button[aria-pressed=true]{background:var(--color-accent-soft);color:var(--accent);border-color:var(--line)}
-.focus-modes button:hover{background:var(--color-hover)}.focus-mode-note{margin-left:auto;color:var(--muted);font-size:10px;line-height:1.6}
+#exit-focus.focus-button{display:inline-flex;align-items:center;justify-content:center;width:40px;height:40px;min-width:40px;min-height:40px;padding:0;border:0;background:transparent;border-radius:50%}
+#exit-focus.focus-button:hover{background:var(--color-surface)}
+.focus-modes{display:flex;align-items:center;gap:22px;padding:0 20px 4px;border-bottom:1px solid var(--line);flex:none}
+.focus-modes button{display:inline-flex;align-items:center;justify-content:center;gap:6px;min-height:36px;border:0;border-bottom:2px solid transparent;border-radius:0;background:transparent;padding:6px 1px;color:var(--muted);font-size:12px;transition:color .18s}
+.focus-modes .icon{display:none}.focus-modes button[aria-pressed=true]{background:transparent;color:var(--accent);border-bottom-color:var(--color-accent);font-weight:550}
+.focus-modes button:hover{background:transparent;color:var(--accent)}
+.focus-modes button:focus-visible{outline:2px solid var(--color-accent);outline-offset:2px}
 .focus-modes .focus-suggestions-toggle{display:none}
 .focus-running #focus-talk-toggle:after{content:'';width:6px;height:6px;border-radius:50%;background:var(--accent);animation:focus-pulse 1.4s ease-in-out infinite}
 .focus-body{flex:1;min-height:0;min-width:0;display:flex;position:relative;overflow:hidden;background:var(--color-canvas)}
@@ -62,9 +66,10 @@
 @keyframes focus-pulse{50%{opacity:.35}}
 @media(max-width:760px){
   .kitchen-focus{inset:0;border:0;border-radius:0;box-shadow:none}
-  .focus-header{padding:15px 18px 12px;gap:12px;align-items:center}.focus-stage{font-size:10px;margin-bottom:3px}.focus-header h2{font-size:18px;letter-spacing:-.2px}
-  .focus-header .focus-heading p{font-size:10px;margin-top:3px}.focus-header-actions .focus-button{font-size:11px;padding:7px 9px;gap:5px;min-height:34px}.focus-header-actions .icon{width:14px;height:14px}
-  .focus-modes{padding:0 16px 11px;gap:4px}.focus-modes button{min-height:34px;padding:7px 10px;font-size:11px;gap:6px}.focus-mode-note{font-size:9px;max-width:95px;text-align:right}
+  .focus-header{padding:7px 12px 4px;gap:8px;align-items:center}.focus-header h2{font-size:17px;letter-spacing:-.2px}.focus-heading{gap:7px}
+  .focus-header-progress{font-size:11px}.focus-header-actions{gap:5px}.focus-header-actions .focus-button{font-size:11px;padding:7px 9px;gap:5px;min-height:40px}.focus-header-actions .icon{width:17px;height:17px}
+  #exit-focus.focus-button{width:44px;height:44px;min-width:44px;min-height:44px}
+  .focus-modes{padding:0 18px 3px;gap:22px}.focus-modes button{min-height:36px;padding:5px 1px;font-size:12px;gap:6px}
   .focus-deck{padding:20px 21px 10px;gap:12px}.focus-page{gap:12px}.focus-content .ui-step-instruction{font-size:21px;line-height:1.85}.focus-content .ui-adaptation{font-size:16px;line-height:1.85}
   .focus-content .ui-check-row{padding:12px 1px;gap:12px}.focus-content .ui-check-row strong{font-size:16px}.focus-content .ui-check-row small{font-size:12px}.focus-content .ui-check-row input{width:22px;height:22px}
   .focus-content .ui-recipe-name{font-size:16px}.focus-content .checklist-scope .ui-text-button{font-size:11px;min-height:34px}.focus-content .ui-button{font-size:13px;min-height:38px;padding:9px 14px}
@@ -73,13 +78,13 @@
   .focus-composer-slot .composer-bottom{margin-top:5px}.focus-composer-slot .composer-hint{font-size:9px}.focus-activity{font-size:11px;margin-bottom:7px}.focus-page-button{font-size:11px;min-height:34px;padding:7px 10px}.focus-page-counter{font-size:10px}
 }
 @media(max-height:600px){
-  .focus-header{padding-top:10px;padding-bottom:8px}.focus-header .focus-heading p,.focus-stage,.focus-mode-note{display:none}.focus-header h2{font-size:17px}.focus-modes{padding-bottom:8px}
+  .focus-header{padding-top:5px;padding-bottom:3px}.focus-header h2{font-size:17px}.focus-modes{padding-bottom:2px}
   .focus-deck{padding-top:12px;gap:8px}.focus-content .ui-step-instruction{font-size:19px;line-height:1.7}.focus-page{gap:9px}.focus-footer{padding-bottom:8px}.focus-composer-slot .composer textarea{max-height:55px}
   .focus-composer-slot .workspace-context,.focus-composer-slot .composer-hint{display:none}.focus-composer-slot .composer-choices{margin-bottom:5px}
 }
 @media(max-height:500px){
-  .focus-header{padding:5px 18px;gap:12px}.focus-header h2{font-size:17px;line-height:1.6;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:65vw}.focus-header-actions .focus-button{min-height:30px;padding:5px 9px}
-  .focus-modes{padding:0 18px 5px;gap:5px}.focus-modes button{min-height:30px;padding:5px 10px}.focus-modes .focus-suggestions-toggle{display:inline-flex;margin-left:auto}
+  .focus-header{padding:3px 14px;gap:9px}.focus-header h2{font-size:16px;line-height:1.5;max-width:none}.focus-header-actions .focus-button{min-height:36px;padding:5px 9px}
+  .focus-modes{padding:0 18px 1px;gap:22px}.focus-modes button{min-height:32px;padding:4px 1px}.focus-modes .focus-suggestions-toggle{display:inline-flex;margin-left:auto}
   .focus-deck{padding:10px 22px 7px;gap:8px}.focus-page{gap:9px}.focus-pagination{min-height:30px}.focus-page-button{min-height:30px;padding:6px 10px}.focus-tools .page-button{min-height:30px;padding:6px 10px}
   .focus-footer{position:relative;padding:0 18px 8px}.focus-composer-slot .composer{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px;align-items:end;padding:8px 11px}.focus-composer-slot .composer textarea{max-height:52px;min-height:27px;line-height:1.65}
   .focus-composer-slot .composer-bottom{margin:0;min-height:27px;gap:7px;align-self:end}.focus-composer-slot .send-button,.focus-composer-slot .attach-button{width:29px;height:29px;min-height:29px}.focus-composer-slot .composer-hint{display:none}

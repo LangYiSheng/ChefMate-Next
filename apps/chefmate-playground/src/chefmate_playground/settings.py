@@ -10,13 +10,14 @@ from tempfile import NamedTemporaryFile
 from urllib.parse import urlsplit
 
 from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator
+from chefmate_workflow import CookingSettings
 
 from .config import APP_ROOT
 
 SKILLS = ("meal-planning", "pantry-preparation", "cooking-guide")
 PERSISTED = {"model", "base_url", "api_key", "api_format", "stream_tool_calls", "supports_images", "max_images", "enabled_skills",
              "turn_timeout_s", "model_timeout_s", "model_max_retries", "max_model_rounds", "max_tool_calls",
-             "max_history_chars", "max_tool_result_chars", "reply_suggestions"}
+             "max_history_chars", "max_tool_result_chars", "reply_suggestions", "timer_limit", "clear_timer_on_step_change"}
 
 
 class ModelSettings(BaseModel):
@@ -104,7 +105,8 @@ def load_overrides(config):
                                              for key in ContextSettings.model_fields})
     interaction = InteractionSettings.model_validate({key: values.get(key, getattr(config, key))
                                                       for key in InteractionSettings.model_fields})
-    return replace(config, **updated, **runtime.model_dump(), **context.model_dump(), **interaction.model_dump())
+    cooking = CookingSettings.model_validate({key: values.get(key, getattr(config, key)) for key in CookingSettings.model_fields})
+    return replace(config, **updated, **runtime.model_dump(), **context.model_dump(), **interaction.model_dump(), **cooking.model_dump())
 
 
 def resolve_model(config, value):
@@ -131,7 +133,8 @@ def public_settings(config):
             "available_skills": list(SKILLS),
             "runtime": {key: payload[key] for key in RuntimeSettings.model_fields},
             "context": {key: payload[key] for key in ContextSettings.model_fields},
-            "interaction": {key: payload[key] for key in InteractionSettings.model_fields}}
+            "interaction": {key: payload[key] for key in InteractionSettings.model_fields},
+            "cooking": {key: payload[key] for key in CookingSettings.model_fields}}
 
 
 def persist_settings(config):

@@ -99,6 +99,7 @@ export class CookingFocus {
     this.motion.start(animations.length ? { finished: Promise.all(animations.map(animation => animation.finished)), cancel: () => animations.forEach(animation => animation.cancel()) } : null, finish);
   }
   open(view, sessionId, source = this.captureSource(view)) {
+    this.workspace.onTimerSceneChange?.();
     const previous = this.active;
     this.motion.cancel(); this.closing = false; this.completeClose = null;
     this.root.classList.remove('focus-closing'); this.root.style.pointerEvents = '';
@@ -201,6 +202,7 @@ export class CookingFocus {
   close({ immediate = false } = {}) {
     const active = this.active;
     if (!active) { if (immediate && this.closing && this.completeClose) { this.motion.cancel(); this.completeClose(); } return; }
+    this.workspace.onTimerSceneChange?.();
     this.active = null; this.closing = true; this.root.classList.add('focus-closing'); this.root.style.pointerEvents = 'none';
     this.contentPager.setEnabled(false); this.replyPager.setEnabled(false);
     const finish = () => {

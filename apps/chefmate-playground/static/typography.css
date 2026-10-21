@@ -1,0 +1,23 @@
+/* Offline reading faces for recipe prose. Controls retain the interface face. */
+.ui-step-instruction,.ui-steps,.ui-description,.recipe-description,.ui-adaptation {
+  font-family:var(--font-reading);
+  font-kerning:normal;
+  letter-spacing:.025em;
+}
+.ui-cooking-guide .ui-step-instruction,.focus-content .ui-step-instruction {
+  font-family:var(--font-reading);
+  font-weight:400;
+  line-height:1.95;
+}
+.ui-description,.recipe-description {
+  font-size:16px;
+  font-weight:400;
+  line-height:1.95;
+}
+.ui-steps {line-height:1.95}
+.ui-recipe_detail .ui-disclosure>.ui-hint {
+  font-family:var(--font-reading);
+  font-size:15px;
+  line-height:1.95;
+  letter-spacing:.02em;
+}

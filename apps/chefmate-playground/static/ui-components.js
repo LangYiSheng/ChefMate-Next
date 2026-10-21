@@ -338,12 +338,15 @@ function cookingGuide(view, ctx) {
     }
     card.append(actions);
     const savedTimer=timerForStep(data.timers,data.recipe_id,step.id);
-    if(savedTimer) card.append(timerRow(savedTimer,ctx,true));
-    else if (step.timer_seconds > 0 && !step.adapted_instruction && step.status!=='done') {
-      const timing=node('div','cooking-step-timing');
-      timing.append(node('span','cooking-timing-note',`这一步可计时 ${durationText(step.timer_seconds)}`));
+    if(savedTimer && ['running','paused'].includes(savedTimer.status)) {
+      const display=timerPresentation(savedTimer,ctx.timerNow?.() ?? Date.now());
+      const show=button('',()=>ctx.openTimers?.(savedTimer.id),!ctx.openTimers,'ui-button cooking-secondary step-timer-shortcut');
+      const clock=node('time','step-timer-time',display.clock);clock.dataset.timerId=savedTimer.id;
+      const status=node('span','step-timer-status',display.status);status.dataset.timerStatus=savedTimer.id;
+      show.setAttribute('aria-label','查看这一步的计时');show.append(icon('timer'),clock,status);actions.append(show);
+    } else if (step.timer_seconds > 0 && !step.adapted_instruction && step.status!=='done') {
       const start=button(`开始 ${durationText(step.timer_seconds)}计时`,()=>ctx.action('start_timer',{recipe_id:data.recipe_id,step_id:step.id,seconds:step.timer_seconds,label:`${data.recipe_name} · 第 ${Number(step.ordinal)+1} 步`}),ctx.locked || ctx.stage!=='cooking','ui-button cooking-secondary timer-start-button');
-      start.prepend(icon('play'));timing.append(start);card.append(timing);
+      start.prepend(icon('timer'));actions.append(start);
     }
     root.append(card);
   }
@@ -381,10 +384,20 @@ function timerRow(timer,ctx,attached=false) {
 
 function timers(view, ctx) {
   const root = node('div','ui-timers-guide');
-  const newTimerLocked = ctx.locked || ctx.stage !== 'cooking';
+  if(ctx.openTimers && !ctx.historical) {
+    root.append(button('打开厨房计时',()=>ctx.openTimers(),false,'ui-button cooking-secondary'));
+    root.append(hint('计时与控制收在右上角，步骤里不再占用大块空间。'));
+    return root;
+  }
   root.append(pagedList(view.data.timers || [],ctx,'timerPage',timer=>timerRow(timer,ctx),2));
   if (!view.data.timers?.length) root.append(node('p','timer-empty','还没有计时器，设好时间就能开始。'));
   if(ctx.historical) return root;
+  root.append(timerForm(view,ctx));
+  return root;
+}
+
+export function timerForm(view, ctx) {
+  const newTimerLocked = ctx.locked || ctx.busy || !view.editable || ctx.stage !== 'cooking';
   const form=node('form','ui-timer-form timer-create-form');form.setAttribute('aria-label','新建厨房计时器');
   form.append(node('h4','timer-form-title','新建计时'));
   const label=node('input','ui-input');label.placeholder='例如：焖煮、静置';label.maxLength=100;label.setAttribute('aria-label','计时名称');label.disabled=newTimerLocked;
@@ -419,8 +432,7 @@ function timers(view, ctx) {
   for(const input of [label,minutes,seconds])input.addEventListener('keydown',event=>{
     if(event.key==='Enter' && !input.form){event.preventDefault();startTimer(event);}
   });
-  root.append(form);
-  return root;
+  return form;
 }
 
 function taskProgress(view, ctx) {

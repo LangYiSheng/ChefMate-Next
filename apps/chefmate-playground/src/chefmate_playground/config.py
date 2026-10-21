@@ -30,6 +30,8 @@ class PlaygroundConfig:
     supports_images: bool = False
     max_images: int = 3
     reply_suggestions: bool = True
+    timer_limit: int = 3
+    clear_timer_on_step_change: bool = False
     api_format: str = "chat_completions"
     port: int = 18765
     sessions_database: Path = APP_ROOT / ".runtime" / "sessions.db"
@@ -40,6 +42,10 @@ class PlaygroundConfig:
             raise ValueError("模型图片上限必须是 1 到 12 之间的整数")
         if type(self.reply_suggestions) is not bool:
             raise ValueError("推荐回复开关必须是布尔值")
+        if type(self.timer_limit) is not int or self.timer_limit not in {1, 3}:
+            raise ValueError("同时计时上限必须为1或3")
+        if type(self.clear_timer_on_step_change) is not bool:
+            raise ValueError("切换步骤清理计时器开关必须是布尔值")
 
     @property
     def model_configured(self) -> bool:
@@ -75,6 +81,8 @@ class PlaygroundConfig:
             stream_tool_calls=(values.get("CHEFMATE_AGENT_STREAM_TOOL_CALLS", "false") or "false").lower() == "true",
             supports_images=(values.get("CHEFMATE_MODEL_SUPPORTS_IMAGES", "false") or "false").lower() == "true",
             max_images=int(values.get("CHEFMATE_MODEL_MAX_IMAGES", "3")),
+            timer_limit=int(values.get("CHEFMATE_TIMER_LIMIT", "3")),
+            clear_timer_on_step_change=(values.get("CHEFMATE_CLEAR_TIMER_ON_STEP_CHANGE", "false") or "false").lower() == "true",
             port=int(values.get("CHEFMATE_PLAYGROUND_PORT", "18765")),
             enabled_skills=skill_names,
         )

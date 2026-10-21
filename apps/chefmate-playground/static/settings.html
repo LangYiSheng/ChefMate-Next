@@ -10,11 +10,12 @@
     <link rel="stylesheet" href="/static/settings.css" />
     <link rel="stylesheet" href="/static/theme.css" />
     <link rel="stylesheet" href="/static/shell.css" />
+    <link rel="stylesheet" href="/static/typography.css" />
     <script type="module" src="/static/settings.js"></script>
   </head>
   <body>
     <main class="settings-page">
-      <nav class="settings-nav" aria-label="设置分类">
+      <nav class="settings-nav" aria-label="设置分类，可左右滑动或使用方向键切换" tabindex="0">
         <a class="settings-brand" href="/"><img class="brand-icon" data-chefmate-icon src="/static/brand/pot-c.svg" alt=""><span>ChefMate</span></a>
         <a class="back-link" href="/"><span data-icon="arrow-left" aria-hidden="true"></span> 返回对话</a>
         <h2>个人偏好</h2>
@@ -23,6 +24,9 @@
         </button>
         <button type="button" data-section="interaction">
           <span data-icon="message-circle" aria-hidden="true"></span> <span>对话建议</span>
+        </button>
+        <button type="button" data-section="cooking">
+          <span data-icon="timer" aria-hidden="true"></span> <span>烹饪与计时</span>
         </button>
         <h2>模型与能力</h2>
         <button type="button" data-section="model">

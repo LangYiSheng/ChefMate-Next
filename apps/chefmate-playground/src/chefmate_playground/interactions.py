@@ -43,9 +43,10 @@ def approved_recipes(messages: list[dict]) -> list[dict]:
 
 
 class WorkspaceBinding:
-    def __init__(self, repository: SessionRepository, retrieval):
+    def __init__(self, repository: SessionRepository, retrieval, *, cooking_settings=None):
         self.repository = repository
         self.retrieval = retrieval
+        self.cooking_settings = cooking_settings
 
     def service(self, session_id: str) -> WorkflowService:
         def get_state():
@@ -61,7 +62,7 @@ class WorkspaceBinding:
                 return result
             return self.repository.mutate(session_id, update)
 
-        return WorkflowService(self.retrieval, get_state, mutate)
+        return WorkflowService(self.retrieval, get_state, mutate, cooking_settings=self.cooking_settings)
 
     def for_turn(self, session_id: str, turn_id: str, cancelled: asyncio.Event, expected_revision: int):
         return ScopedWorkspace(self, session_id, turn_id, cancelled, expected_revision)
@@ -76,7 +77,7 @@ class ScopedWorkspace:
         self.turn_id = turn_id
         self.cancelled = cancelled
         self.expected_revision = expected_revision
-        self.service = WorkflowService(binding.retrieval, self._read, self._mutate)
+        self.service = WorkflowService(binding.retrieval, self._read, self._mutate, cooking_settings=binding.cooking_settings)
 
     def _read(self):
         state = self.binding.repository.get(self.session_id)

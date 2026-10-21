@@ -53,7 +53,7 @@ TOOL_CONTRACTS = {item.name: item for item in (
     _tool("update_cooking_guidance", "按用户条件为当前任务补充备菜/步骤建议，保留冻结原件与真实完成进度；保存后自动展示，无需再次show。",
           ("planning", "prep", "cooking"), "write", True, ("保存任务建议", "可能切换当前步骤", "展示建议"), ("已有餐单", "真实菜谱/步骤ID")),
     _tool("set_cooking_timer", "设置持久化计时器；仅cooking可用。秒数必须来自用户本轮明确指定，或源步骤唯一明确时长；不猜范围与时长。同一步骤已有未结束计时器时，相同时长复用原计时器而不重新开始，不同时长须先取消旧计时器。自动展示计时器。",
-          ("cooking",), "write", True, ("创建运行中计时器", "展示计时器"), ("明确时长来源", "最多12个运行/暂停计时器")),
+          ("cooking",), "write", True, ("创建运行中计时器", "展示计时器"), ("明确时长来源", "运行/暂停计时器受cooking_settings.timer_limit限制，默认3个；满额须先结束已有计时器")),
     _tool("show_timers", "展示现有计时器；依据截止时间计算剩余时间，不创建计时器、不提升业务版本。",
           ALL_STAGES, "presentation", True, ("替换计时视图",)),
     _tool("advance_cooking_stage", "按用户意图明确切换阶段，目标须在allowed_transitions中。idea无餐单；选菜自动到planning；准备进入prep；食材全部ready/skipped才可cooking；全部步骤done才可completed。回到idea会清空当前餐单、备菜、步骤与计时。自动展示对应阶段。",

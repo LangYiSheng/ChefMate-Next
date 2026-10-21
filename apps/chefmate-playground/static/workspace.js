@@ -1,4 +1,4 @@
-import { clone, changedValues, makeAction, remainingSeconds, EXECUTION_STAGES, messageViews } from './ui-protocol.js';
+import { clone, changedValues, makeAction, EXECUTION_STAGES, messageViews } from './ui-protocol.js';
 import { viewChoices, VIEW_LABELS, STAGE_NAMES } from './presentation.js';
 import { node, renderView } from './ui-components.js';
 import { icon } from './icons.js';
@@ -332,6 +332,7 @@ export class WorkspaceController {
         for (const guide of entry.views.filter(item => item.kind === 'cooking_guide')) delete (entry.viewState[guide.id] ||= {}).stepIndex;
       }
       if (options.clearDraft) delete entry.drafts[options.clearDraft];
+      if(type==='start_timer')this.onTimerStarted?.(payload,id);
       writeDrafts(id, entry.drafts); this.notify('已同步到当前任务。'); return response;
     } catch (error) {
       if (error.status === 409 || error.data?.status === 'revision_conflict') {
@@ -380,6 +381,7 @@ export class WorkspaceController {
         onTimer:(origin,label,minutes,duration)=>this.setTimerDraft(origin,label,minutes,id,duration),
         onStartTimer:(origin,payload)=>this.startTimer(origin,payload,id),
         timerNow:()=>entry.timerNow(),
+        openTimers:timerId=>this.onOpenTimers?.(timerId),
         openFocus: (origin,trigger) => this.onFocus?.(origin,id,trigger),
         mealRecipes: entry.views.find(item => item.kind === 'meal_plan')?.data.recipes ||
           entry.snapshot?.components?.find(item => item.kind === 'meal_plan')?.data.recipes || [],
@@ -499,46 +501,15 @@ export class WorkspaceController {
     try { localStorage.setItem(`chefmate:timer-ack:${id}`, JSON.stringify([...entry.timerAcknowledged].slice(-100))); } catch { /* Keep the acknowledgement in this tab. */ }
     this.tick();
   }
-  renderTimerDock(timers, entry) {
-    const dock = document.getElementById?.('cooking-timer-dock');
-    if (!dock) return;
-    const candidates = timers.filter(timer => ['running', 'paused', 'finished'].includes(timer.status) && !entry?.timerAcknowledged.has(timer.id));
-    const now = entry?.timerNow() ?? Date.now();
-    const priority = timer => timerPresentation(timer,now).expired ? 0 : timer.status === 'running' ? 1 : 2;
-    candidates.sort((a,b) => priority(a) - priority(b) || (remainingSeconds(a,now) ?? Infinity) - (remainingSeconds(b,now) ?? Infinity));
-    const timer = candidates[0], presentation = timer && timerPresentation(timer,now);
-    const identity = JSON.stringify([this.activeId, timer?.id, presentation?.state, candidates.length]);
-    dock.hidden = !timer;
-    if (!timer) { dock.replaceChildren(); dock.dataset.identity = identity; return; }
-    if (dock.dataset.identity !== identity) {
-      dock.dataset.identity = identity; dock.dataset.state = presentation.state;
-      const open = node('button','dock-timer'); open.type = 'button';
-      open.append(icon('timer'),node('span','dock-timer-label',timer.label));
-      const clock = node('span','dock-timer-clock',presentation.clock); clock.dataset.dockClock = timer.id;
-      open.append(clock,node('span','dock-timer-status',presentation.status));
-      if (candidates.length > 1) open.append(node('span','dock-timer-count',`共 ${candidates.length} 个`));
-      const id = this.activeId;
-      open.addEventListener('click',()=>{
-        const view = this.entries.get(id)?.views.find(view => view.kind === 'timers');
-        if (view) this.onFocus?.(view,id,open); else this.openCurrent('cooking_guide');
-      });
-      dock.replaceChildren(open);
-      if (presentation.expired) {
-        const dismiss = node('button','timer-dock-dismiss','知道了'); dismiss.type = 'button';
-        dismiss.addEventListener('click',()=>this.acknowledgeTimer(id,timer.id)); dock.append(dismiss);
-      }
-    }
-    const clock = dock.querySelector('[data-dock-clock]'); if (clock) clock.textContent = presentation.clock;
-  }
   tick() {
     if (typeof document === 'undefined') return;
     const entry = this.entries.get(this.activeId), timers = workspaceTimers(entry?.views || []);
-    let stateChanged = false;
+    let stateChanged = false; const reminders=[];
     for (const timer of timers) {
       const presentation = timerPresentation(timer,entry.timerNow());
       const prior = entry.timerStates.get(timer.id);
       if (prior && prior !== presentation.state) stateChanged = true;
-      if (prior === 'running' && presentation.expired) this.notify(`${timer.label}时间到，看看锅里的状态。`);
+      if (prior === 'running' && presentation.expired) reminders.push(timer);
       entry.timerStates.set(timer.id,presentation.state);
       const targets = document.querySelectorAll(`[data-timer-id="${CSS.escape(timer.id)}"]`);
       for (const target of targets) {
@@ -553,7 +524,11 @@ export class WorkspaceController {
       for (const controls of document.querySelectorAll(`[data-timer-controls="${selector}"]`)) controls.hidden = presentation.expired;
       for (const expired of document.querySelectorAll(`[data-timer-expired="${selector}"]`)) expired.hidden = !presentation.expired;
     }
-    this.renderTimerDock(timers,entry);
+    this.onTimerRender?.(timers,entry,this.activeId);
+    for (const timer of reminders) {
+      this.notify(`${timer.label}时间到，看看锅里的状态。`);
+      this.onTimerReminder?.(timer,this.activeId);
+    }
     if (stateChanged) this.onTimerStateChange?.();
   }
 }

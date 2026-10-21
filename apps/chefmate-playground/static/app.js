@@ -14,6 +14,7 @@ import {moveDrafts,releaseImages,imageMetadata,suggestedReplies,matchesDraft,rec
 import {QuestionState,answerRequestId,matchesAnswer} from './question-state.js';
 import {QuestionComposer} from './question.js';
 import {DeveloperPanel} from './developer-panel.js';
+import {TimerPopover} from './timer-popover.js';
 applyBranding();
 
 const $ = (id) => document.getElementById(id);
@@ -82,6 +83,12 @@ const workspace = new WorkspaceController({
 const cookingFocus=new CookingFocus(workspace,{session:currentSession,onChange:updateComposer,
   activity:id=>({running:busy(id),status:state.runs.get(id)?.status,cancelling:state.runs.get(id)?.cancelling}),
   renderMessage:markdown,retry:message=>sendMessage(message.retryMessage,!message.retryAsNew,message)});
+const timerPopover=new TimerPopover(workspace);
+workspace.onTimerRender=(timers,entry,id)=>timerPopover.update(timers,entry,id);
+workspace.onOpenTimers=timerId=>timerPopover.open(undefined,{timerId});
+workspace.onTimerReminder=(timer,id)=>timerPopover.remind(timer,id);
+workspace.onTimerStarted=(payload,id)=>timerPopover.started(payload,id);
+workspace.onTimerSceneChange=()=>timerPopover.close(false);
 const developerPanel=new DeveloperPanel({api,sessionId:()=>state.currentId,session:currentSession,enabled:()=>state.developer});
 document.addEventListener('visibilitychange',()=>{ if(!document.hidden)workspace.tick(); });
 const questionComposer=new QuestionComposer(ui['question-composer'],{state:questions,onAnswer:submitAnswer,
@@ -1390,5 +1397,8 @@ async function initialize() {
   state.initializing=false;
   updateComposer();
 }
-initShell({onSettingsClose:()=>{refreshDisplayPreferences();loadStatus();}});
+initShell({onSettingsClose:()=>{
+  refreshDisplayPreferences();loadStatus();
+  if(state.currentId)workspace.load(state.currentId).catch(()=>{});
+}});
 initialize();

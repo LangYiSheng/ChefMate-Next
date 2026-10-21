@@ -11,7 +11,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
-from chefmate_workflow import UISnapshot, UserActionRequest
+from chefmate_workflow import CookingSettings, UISnapshot, UserActionRequest
 
 from .config import APP_ROOT, PlaygroundConfig
 from .interactions import WorkspaceBinding
@@ -68,7 +68,8 @@ def create_app(config: PlaygroundConfig | None = None, *, service=None, agent=No
             service = RetrievalService(store, foods=foods)
         except (ValueError, OSError):
             setup_error = "数据库或本地 USDA 配置无效。"
-    workspace_binding = WorkspaceBinding(repo, service) if service is not None else None
+    workspace_binding = WorkspaceBinding(repo, service, cooking_settings=lambda: {
+        key: getattr(settings, key) for key in CookingSettings.model_fields}) if service is not None else None
     skill_registry = None
     try:
         configured_agent, skill_registry = build_agent(settings, service)
@@ -138,7 +139,7 @@ def create_app(config: PlaygroundConfig | None = None, *, service=None, agent=No
     async def update_settings(body: SettingsRequest):
         nonlocal settings, agent, skill_registry, setup_error
         async with manager._lock:
-            if manager.active:
+            if manager.active and body.section != "cooking":
                 raise HTTPException(409, "还有对话正在运行，请等它完成后再保存设置。")
             if body.revision != public_settings(settings)["revision"]:
                 raise HTTPException(409, "设置已在另一页面更新；当前草稿保留，请重新读取后复核。")
@@ -151,6 +152,8 @@ def create_app(config: PlaygroundConfig | None = None, *, service=None, agent=No
                     candidate = replace(settings, **ContextSettings.model_validate(body.values).model_dump())
                 elif body.section == "interaction":
                     candidate = replace(settings, **InteractionSettings.model_validate(body.values).model_dump())
+                elif body.section == "cooking":
+                    candidate = replace(settings, **CookingSettings.model_validate(body.values).model_dump())
                 elif body.section == "skills":
                     names = body.values.get("enabled_skills")
                     if (set(body.values) != {"enabled_skills"} or not isinstance(names, list)
@@ -159,7 +162,7 @@ def create_app(config: PlaygroundConfig | None = None, *, service=None, agent=No
                     candidate = replace(settings, enabled_skills=tuple(dict.fromkeys(names)))
                 else:
                     raise ValueError("无效设置分类")
-                replacement, registry = build_agent(candidate, service)
+                replacement, registry = (agent, skill_registry) if body.section == "cooking" else build_agent(candidate, service)
                 persist_settings(candidate)
             except ValueError:
                 raise HTTPException(422, "设置值无效；更换供应商时必须填写专用密钥。") from None
@@ -170,7 +173,8 @@ def create_app(config: PlaygroundConfig | None = None, *, service=None, agent=No
             manager.reply_suggestions = settings.reply_suggestions
             manager.debug_secrets = (settings.api_key, settings.database_url)
             app.state.config, app.state.skills = settings, skill_registry
-            setup_error = None
+            if body.section != "cooking":
+                setup_error = None
             return public_settings(settings)
 
     @app.get("/api/status")

@@ -2,7 +2,7 @@
 
 from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, RootModel, model_validator
+from pydantic import BaseModel, ConfigDict, Field, RootModel, field_validator, model_validator
 
 from chefmate_retrieval import DatasetSnapshot
 
@@ -17,6 +17,25 @@ PreferenceName = Literal["servings", "max_total_time_min", "taste_tags", "availa
 
 class StrictModel(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True, str_strip_whitespace=True)
+
+
+class CookingSettings(StrictModel):
+    timer_limit: Literal[1, 3] = 3
+    clear_timer_on_step_change: bool = False
+
+    @field_validator("timer_limit", mode="before")
+    @classmethod
+    def timer_limit_integer(cls, value):
+        if type(value) is not int:
+            raise ValueError("Timer limit must be the integer 1 or 3")
+        return value
+
+
+class TimerCapacity(StrictModel):
+    limit: Literal[1, 3] = 3
+    active_count: Annotated[int, Field(ge=0)] = 0
+    available_slots: Annotated[int, Field(ge=0)] = 3
+    over_limit: bool = False
 
 
 class PreferenceValues(StrictModel):
@@ -282,6 +301,8 @@ class UISnapshot(StrictModel):
     current_actions: dict[str, Any] = Field(default_factory=dict)
     allowed_transitions: list[Stage] = Field(default_factory=list)
     blockers: dict[str, list[dict[str, str]]] = Field(default_factory=dict)
+    cooking_settings: CookingSettings = Field(default_factory=CookingSettings)
+    timer_capacity: TimerCapacity = Field(default_factory=TimerCapacity)
 
     @model_validator(mode="before")
     @classmethod

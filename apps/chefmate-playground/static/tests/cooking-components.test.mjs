@@ -52,18 +52,17 @@ test('manual timer does not submit zero duration or start outside cooking',async
   await byClass(prep,'timer-create-form').emit('submit');assert.deepEqual(starts,[]);
 });
 
-test('cooking steps retain the whole instruction and directly resume their own paused timer',async t=>{
-  const actions=[],ctx=context(t,{action:async(type,payload)=>actions.push({type,payload})});
+test('cooking steps retain the whole instruction and open their timer without a large nested panel',async t=>{
+  const opened=[],ctx=context(t,{openTimers:id=>opened.push(id)});
   const instruction='轻轻翻动锅里的食材，保持小火。'.repeat(30);
   const view={id:'cooking',kind:'cooking_guide',editable:true,revision:2,data:{recipe_id:'r1',recipe_name:'测试菜',
     active_step_id:'s1',steps:[{id:'s1',ordinal:0,status:'pending',instruction,timer_seconds:30}],
     timers:[{id:'timer-one',recipe_id:'r1',step_id:'s1',label:'焖煮',seconds:30,status:'paused',remaining_seconds:17}]}};
   const root=renderView(view,ctx);
   assert.equal(byClass(root,'ui-step-instruction').textContent,instruction);
-  assert.equal(byClass(root,'ui-timer-clock').textContent,'0:17');
-  assert.equal(byClass(root,'ui-timer').dataset.timerRow,'timer-one');
-  const resume=descendants(root).find(element=>element.tagName==='BUTTON' && element.textContent==='继续');
-  await resume.emit('click');assert.deepEqual(actions,[{type:'resume_timer',payload:{timer_id:'timer-one'}}]);
+  assert.equal(byClass(root,'step-timer-time').textContent,'0:17');
+  assert.equal(byClass(root,'ui-timer'),undefined);
+  await byClass(root,'step-timer-shortcut').emit('click');assert.deepEqual(opened,['timer-one']);
   assert.equal(byClass(root,'timer-start-button'),undefined);
   const prep=renderView({...view,data:{...view.data,timers:[]}}, {...ctx,stage:'prep'});
   assert.equal(byClass(prep,'timer-start-button').disabled,true);

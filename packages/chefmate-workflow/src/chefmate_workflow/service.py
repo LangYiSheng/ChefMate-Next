@@ -14,10 +14,10 @@ from chefmate_storage.queries import NUTRIENTS
 from .contracts import TOOL_CONTRACTS
 from .models import (
     TOOL_REQUEST_MODELS, ActionRecord, ApprovedRecipeRef, CompactComponentSnapshot,
-    CookingData, CookingGuide, FrozenRecipe, IngredientView, MealPlan, PreferenceField, PreferenceForm,
+    CookingData, CookingGuide, CookingSettings, FrozenRecipe, IngredientView, MealPlan, PreferenceField, PreferenceForm,
     CookingAdaptation, PreferenceFormData, PreferenceValues, PrepChecklist, PrepData, ProgressData, RecipeChoices,
     PendingQuestion, QuestionAnswer, RecipeDetail, RecipeDetailData, RecipeListData, RecipeView,
-    SourceInfo, StepView, TaskProgress, TimerState, Timers, TimersData, UIAction, UISnapshot,
+    SourceInfo, StepView, TaskProgress, TimerCapacity, TimerState, Timers, TimersData, UIAction, UISnapshot,
     UserActionRequest, WorkspaceState,
 )
 
@@ -103,16 +103,60 @@ class WorkflowService:
     get_state and mutate must use the same session, and must not expose credentials.
     """
 
-    def __init__(self, retrieval, get_state, mutate, *, now=None):
+    def __init__(self, retrieval, get_state, mutate, *, now=None, cooking_settings=None):
         self.retrieval = retrieval
         self._get_state = get_state
         self._mutate = mutate
         self._now = now or (lambda: datetime.now(timezone.utc))
+        self._get_cooking_settings = cooking_settings
+
+    def cooking_settings(self):
+        value = self._get_cooking_settings() if callable(self._get_cooking_settings) else self._get_cooking_settings
+        return CookingSettings.model_validate(value or {})
 
     def _state(self, raw):
         state = WorkspaceState.model_validate(raw or {})
         self._refresh_timers(state)
+        self._prune_step_timer_history(state)
         return state
+
+    @staticmethod
+    def _prune_step_timer_history(state):
+        # Old terminal duplicates are redundant. Preserve every active reminder until explicitly ended.
+        active_keys = {(timer.recipe_id, timer.step_id) for timer in state.timers
+                       if timer.step_id is not None and timer.status in {"running", "paused"}}
+        seen = set(active_keys)
+        kept = []
+        for timer in reversed(state.timers):
+            key = timer.recipe_id, timer.step_id
+            if timer.step_id is not None and timer.status not in {"running", "paused"}:
+                if key in seen:
+                    continue
+                seen.add(key)
+            kept.append(timer)
+        state.timers = list(reversed(kept))
+
+    @staticmethod
+    def _step_timers(state, recipe_id):
+        preferred = {}
+        for timer in state.timers:
+            if recipe_id is None or timer.recipe_id != recipe_id or timer.step_id is None:
+                continue
+            prior = preferred.get(timer.step_id)
+            if prior is None or timer.status in {"running", "paused"} or prior.status not in {"running", "paused"}:
+                preferred[timer.step_id] = timer
+        selected = {timer.id for timer in preferred.values()}
+        return [timer for timer in state.timers if timer.recipe_id == recipe_id
+                and recipe_id is not None and (timer.step_id is None or timer.id in selected)]
+
+    def _timer_capacity(self, state, settings=None):
+        limit = (settings or self.cooking_settings()).timer_limit
+        active = sum(timer.status in {"running", "paused"} for timer in state.timers)
+        return TimerCapacity(limit=limit, active_count=active, available_slots=max(0, limit - active), over_limit=active > limit)
+
+    @staticmethod
+    def _timer_limit_message(capacity):
+        return f"当前已有{capacity.active_count}个运行或暂停的计时器，上限为{capacity.limit}个；请先结束已有计时器再添加。"
 
     def _refresh_timers(self, state):
         instant = self._now()
@@ -270,7 +314,7 @@ class WorkflowService:
             return CookingData(recipe_id=identity, recipe_name=view.name if view else None,
                                steps=view.steps if view else [], active_step_id=state.active_step_id,
                                guidance=[note.instruction for note in state.adaptations if note.recipe_id == identity and note.step_id is None],
-                               timers=[timer for timer in state.timers if identity is not None and timer.recipe_id == identity],
+                               timers=self._step_timers(state, identity),
                                server_now=_stamp(self._now()))
         if kind == "timers":
             return TimersData(timers=state.timers, server_now=_stamp(self._now()))
@@ -333,12 +377,14 @@ class WorkflowService:
                 payload = {"changed_fields": sorted((payload.get("values") or {}).keys())}
             recent.append(record.model_copy(update={"payload": payload}))
         allowed, blockers = self._transitions(state)
+        settings = self.cooking_settings()
         return UISnapshot(revision=state.revision, presentation_revision=state.presentation_revision,
                           stage=state.stage, components=components,
                           preferences=state.preferences, selected_recipe_ids=[recipe.recipe_id for recipe in state.meal_plan],
                           active_recipe_id=state.active_recipe_id, active_step_id=state.active_step_id,
                           recent_actions=recent, pending_question=state.pending_question, last_answer=state.last_answer,
-                          current_actions=self._current_actions(state, allowed), allowed_transitions=allowed, blockers=blockers)
+                          current_actions=self._current_actions(state, allowed), allowed_transitions=allowed, blockers=blockers,
+                          cooking_settings=settings, timer_capacity=self._timer_capacity(state, settings))
 
     def _response(self, state, status="ok", message=None, action_component=None):
         views = self._views(state)
@@ -382,11 +428,16 @@ class WorkflowService:
                 if view is None or not view.editable:
                     return self._response(state, "stale_view", "这张界面已失效或只读，请在当前工作区操作。")
             business_before = self._business_state(state)
+            previous_step = state.active_recipe_id, state.active_step_id
             presentation_before = [view.model_dump(mode="json") for view in state.components]
             try:
                 component = callback(state)
             except DomainConflict as error:
                 return self._response(self._state(raw), error.status, str(error))
+            if (self.cooking_settings().clear_timer_on_step_change and previous_step[1] is not None
+                    and previous_step != (state.active_recipe_id, state.active_step_id)):
+                state.timers = [timer for timer in state.timers
+                    if (timer.recipe_id, timer.step_id) != previous_step]
             if self._business_state(state) != business_before:
                 state.revision += 1
             if [view.model_dump(mode="json") for view in state.components] != presentation_before:
@@ -545,8 +596,9 @@ class WorkflowService:
             blockers.append({"code": "stage_conflict", "message": "此工具在当前阶段不可用，请查看allowed_transitions及blockers。"})
         if name in {"show_meal_plan", "show_prep_checklist", "show_cooking_guide", "update_prep_items", "update_cooking_guidance"} and not state.meal_plan:
             blockers.append({"code": "plan_required", "message": "请先选择真实菜谱作为本次餐单。"})
-        if name == "set_cooking_timer" and sum(timer.status in {"running", "paused"} for timer in state.timers) >= 12:
-            blockers.append({"code": "timer_limit", "message": "同时计时已达上限，请结束已有计时器后再添加。"})
+        capacity = self._timer_capacity(state)
+        if model_visible and name == "set_cooking_timer" and capacity.available_slots == 0:
+            blockers.append({"code": "timer_limit", "message": self._timer_limit_message(capacity)})
         if name == "advance_cooking_stage" and model_visible:
             allowed = self._transitions(state)[0] if allowed_transitions is None else allowed_transitions
             if not allowed:
@@ -632,14 +684,17 @@ class WorkflowService:
             step = next((item for item in steps if item.id == step_id), None) if recipe_id else None
             if step is None or step.timer_seconds != payload["seconds"]:
                 raise DomainConflict("unverified_duration", "源步骤没有这个明确时长；请让用户指定，不能猜测。")
-        existing = next((timer for timer in state.timers if step_id is not None
+        existing = next((timer for timer in reversed(state.timers) if step_id is not None
             and timer.status in {"running", "paused"} and timer.recipe_id == recipe_id and timer.step_id == step_id), None)
         if existing is not None:
             if existing.seconds != payload["seconds"]:
                 raise DomainConflict("timer_already_exists", "这个步骤已有未结束的计时器，请先继续或取消它，再设置新的时长。")
             return self._ensure_component(state, Timers, "厨房计时", TimersData(timers=state.timers))
-        if sum(timer.status in {"running", "paused"} for timer in state.timers) >= 12:
-            raise DomainConflict("timer_limit", "同时计时已达上限，请结束已有计时器后再添加。")
+        capacity = self._timer_capacity(state)
+        if capacity.available_slots == 0:
+            raise DomainConflict("timer_limit", self._timer_limit_message(capacity))
+        if step_id is not None:
+            state.timers = [timer for timer in state.timers if (timer.recipe_id, timer.step_id) != (recipe_id, step_id)]
         state.timers.append(TimerState(id=str(uuid4()), label=payload["label"], seconds=payload["seconds"],
             remaining_seconds=float(payload["seconds"]), deadline_at=_stamp(self._now() + timedelta(seconds=payload["seconds"])),
             recipe_id=recipe_id, step_id=step_id, basis=basis))

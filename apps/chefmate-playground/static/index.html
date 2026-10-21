@@ -18,6 +18,8 @@
   <link rel="stylesheet" href="/static/conversation.css">
   <link rel="stylesheet" href="/static/question.css">
   <link rel="stylesheet" href="/static/cooking.css">
+  <link rel="stylesheet" href="/static/timer-popover.css">
+  <link rel="stylesheet" href="/static/typography.css">
   <script type="module" src="/static/app.js"></script>
 </head>
 <body class="app-page">
@@ -48,6 +50,7 @@
           <span class="conversation-stage" id="conversation-stage" hidden></span>
         </div>
         <div class="topbar-actions">
+          <button class="timer-trigger" id="chat-timer-toggle" data-timer-trigger type="button" aria-label="打开厨房计时" aria-haspopup="dialog" aria-expanded="false" aria-controls="kitchen-timer-popover" hidden></button>
           <button class="status-pill" id="status-button" type="button" aria-label="查看连接状态" hidden><span class="status-dot" id="status-dot" aria-hidden="true"></span><span id="status-label">连接中</span></button>
           <button class="icon-button panel-toggle" id="toggle-details" type="button" aria-label="展开查询与菜谱详情" aria-controls="detail-panel" aria-expanded="false" data-icon="panel-right"></button>
         </div>
@@ -66,7 +69,6 @@
       </div>
 
       <div class="composer-area">
-        <div id="cooking-timer-dock" class="cooking-timer-dock" aria-label="厨房计时" hidden></div>
         <section id="question-composer" class="question-composer" aria-label="回答助手的问题" hidden></section>
         <button id="resume-draft" class="resume-draft" type="button" hidden><span data-icon="undo-2" aria-hidden="true"></span>继续未发送的消息</button>
         <div id="composer-choices" class="composer-choices" aria-label="当前表单操作" hidden></div>
@@ -110,14 +112,13 @@
   <div class="toast" id="toast" role="status" hidden></div>
   <section class="kitchen-focus" id="kitchen-focus" role="dialog" aria-modal="true" aria-labelledby="focus-title" hidden>
     <header class="focus-header">
-      <div class="focus-heading"><span id="focus-stage" class="focus-stage">厨房工作台</span><h2 id="focus-title">这一餐，慢慢来</h2><p id="focus-subtitle">一次专心做好一件事。</p></div>
-      <div class="focus-header-actions"><button class="focus-button" id="exit-focus" type="button"><span data-icon="arrow-left" aria-hidden="true"></span>返回聊天</button></div>
+      <div class="focus-heading"><span id="focus-stage" class="focus-stage" hidden>厨房工作台</span><h2 id="focus-title">这一餐，慢慢来</h2><span id="focus-subtitle" class="focus-header-progress"></span></div>
+      <div class="focus-header-actions"><button class="focus-button" id="exit-focus" type="button" aria-label="返回聊天" title="返回聊天"><span data-icon="arrow-left" aria-hidden="true"></span></button><button class="timer-trigger" id="focus-timer-toggle" data-timer-trigger type="button" aria-label="打开厨房计时" aria-haspopup="dialog" aria-expanded="false" aria-controls="kitchen-timer-popover" hidden></button></div>
     </header>
     <nav class="focus-modes" aria-label="厨房工作区">
       <button id="focus-work-toggle" type="button" aria-controls="focus-workspace" aria-pressed="true"><span data-icon="list-checks" aria-hidden="true"></span><span id="focus-work-label">专心准备</span></button>
       <button id="focus-talk-toggle" type="button" aria-controls="focus-assistant" aria-pressed="false"><span data-icon="message-circle" aria-hidden="true"></span><span>问问助手</span></button>
       <button id="focus-suggestions-toggle" class="focus-suggestions-toggle" type="button" aria-controls="reply-suggestions" aria-expanded="false" hidden><span data-icon="ellipsis" aria-hidden="true"></span>接着聊</button>
-      <span class="focus-mode-note">左右轻扫，逐张查看</span>
     </nav>
     <div id="focus-body" class="focus-body">
       <div class="focus-deck" id="focus-workspace">
