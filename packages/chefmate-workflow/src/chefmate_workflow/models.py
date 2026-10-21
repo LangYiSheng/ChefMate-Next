@@ -76,6 +76,7 @@ class FrozenRecipe(StrictModel):
     data_snapshot: DatasetSnapshot
     recipe: dict[str, Any]
     target_servings: Positive | None = None
+    portion_override: bool = False
 
 
 class TimerState(StrictModel):
@@ -186,6 +187,9 @@ class QuestionAnswer(StrictModel):
 
 class RecipeListData(StrictModel):
     recipes: list[RecipeView]
+    meal_diners: Positive | None = None
+    portion_mode: Literal["shared", "per_dish"] = "shared"
+    portion_note: str = ""
 
 
 class RecipeDetailData(StrictModel):
@@ -291,6 +295,9 @@ class UISnapshot(StrictModel):
     presentation_revision: Annotated[int, Field(ge=0)] = 0
     stage: Stage
     preferences: PreferenceValues = Field(default_factory=PreferenceValues)
+    meal_diners: Positive | None = None
+    portion_mode: Literal["shared", "per_dish"] = "shared"
+    portion_note: str = ""
     selected_recipe_ids: list[str] = Field(default_factory=list)
     active_recipe_id: str | None = None
     active_step_id: str | None = None
@@ -324,6 +331,11 @@ class WorkspaceState(StrictModel):
     presentation_revision: Annotated[int, Field(ge=0)] = 0
     stage: Stage = "idea"
     preferences: PreferenceValues = Field(default_factory=PreferenceValues)
+    meal_diners: Positive | None = None
+    portion_mode: Literal["shared", "per_dish"] = "shared"
+    meal_id: str | None = None
+    started_at: str | None = None
+    completed_at: str | None = None
     candidates: list[FrozenRecipe] = Field(default_factory=list)
     meal_plan: list[FrozenRecipe] = Field(default_factory=list)
     prep_status: dict[str, PrepStatus] = Field(default_factory=dict)
@@ -397,6 +409,8 @@ class RecipeDetailInput(ToolInput):
 class MealPlanInput(ToolInput):
     recipe_ids: Annotated[list[Text], Field(min_length=1, max_length=4)]
     servings: dict[str, Positive] = Field(default_factory=dict)
+    diners: Positive | None = None
+    portion_mode: Literal["shared", "per_dish"] = "shared"
     data_snapshot: DatasetSnapshot
 
 
@@ -447,7 +461,11 @@ class SelectRecipesInput(ExpectedRevisionInput):
     data_snapshot: DatasetSnapshot | None = Field(default=None,
         description="新检索候选建议提供对应来源snapshot；省略时只在服务器有唯一可信来源时解析，不猜来源。")
     servings: dict[str, Positive] = Field(default_factory=dict,
-        description="只为需要覆盖的已选recipe_id指定目标人数；省略沿用已选份量或当前用餐人数。")
+        description="仅覆盖某盘的配方等效份量，通常省略让系统分配共享菜量；不是整餐人数。只有用户明确要求某道的量时才填写。")
+    diners: Positive | None = Field(default=None,
+        description="整餐实际用餐人数；省略沿用偏好中的用餐人数。5人共享4菜应填5，通常不要填写servings。")
+    portion_mode: Literal["shared", "per_dish"] = Field(default="shared",
+        description="shared按整餐人数与菜数分配每盘共享量；仅用户明确每道都要足额人数份时用per_dish。")
 
 
 class PrepItemUpdate(StrictModel):
@@ -535,6 +553,10 @@ class StagePayload(StrictModel):
     stage: Stage
 
 
+class CompleteMealPayload(StrictModel):
+    pass
+
+
 class AnswerQuestionPayload(StrictModel):
     question_id: Text
     option_ids: Annotated[list[str], Field(max_length=6)] = Field(default_factory=list)
@@ -554,6 +576,7 @@ ACTION_PAYLOAD_MODELS = {
     "set_checklist_scope": ChecklistScopePayload,
     "set_active_recipe": RecipeIdPayload, "set_active_step": StepPayload,
     "complete_step": CompleteStepPayload, "change_stage": StagePayload,
+    "complete_meal": CompleteMealPayload,
     "start_timer": TimerPayload, "pause_timer": TimerIdPayload,
     "resume_timer": TimerIdPayload, "cancel_timer": TimerIdPayload,
 }

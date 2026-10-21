@@ -29,6 +29,7 @@ response = service.execute_tool(
 - `apply_action(UserActionRequest | dict)`：执行用户界面动作。
 - `get_workspace()`：读取当前界面投影，不增加修订号。
 - `model_snapshot()`：返回给下一轮模型的短快照字典。
+- `meal_record()`：返回具有真实开始时间的本次做菜快照，含菜品、整餐人数、来源及营养；没有观测开始时间的旧工作区返回 `None`。应用在会话事务提交后写入独立饮食记录，不能在原事务内另开 SQLite 写事务。
 
 导出 `WorkspaceState`、`UISnapshot`、`ViewComponent`、`UIAction`、`UserActionRequest` 和 `WorkflowToolResult`。`TOOL_REQUEST_MODELS` 中每个参数类支持 `model_json_schema()`。`TOOL_CONTRACTS` 是模型说明与执行阶段的唯一注册表，每项包含 `name/description/allowed_stages/effect/auto_display/side_effects/preconditions/model_visible`；`TOOL_DESCRIPTIONS` 由它派生。应用应按快照 `current_actions[name].available` 提供当前模型工具，不能另写一套阶段表。
 
@@ -65,7 +66,7 @@ recovery        可选的恢复动作说明
 | `get_cooking_workspace` | 无业务参数 | 短快照 |
 | `advance_cooking_stage` | 明确目标阶段 | `task_progress` |
 | `update_preferences` | 必填 `changed_fields` 修改掩码、对应 `values`、必填 `expected_revision` | 仅展示实际提交字段的保存值 |
-| `select_recipes` | 真实检索/当前任务 `recipe_ids`、可选来源快照与目标人数、必填 `expected_revision` | 保存后的餐单 |
+| `select_recipes` | 真实检索/当前任务 `recipe_ids`、可选来源快照、整餐 `diners` 和单菜份量覆盖、必填 `expected_revision` | 保存后的餐单 |
 | `update_prep_items` | 真实 `item_id/status` 数组、必填 `expected_revision` | 保存后的统一备菜清单 |
 | `ask_user` | 问题、至多6个不同选项、是否多选/允许自填 | 持久化待答问题 |
 
@@ -87,7 +88,7 @@ recovery        可选的恢复动作说明
 }
 ```
 
-支持 `update_preferences`、`select_recipes`、`open_recipe_detail`、`change_servings`、`check_prep_item`、`answer_question`、`set_active_recipe`、`set_active_step`、`complete_step`、`change_stage`、`start_timer`、`pause_timer`、`resume_timer`、`cancel_timer`。各动作有不同的严格 payload；未知字段、任意 ID、非法数字和类型被拒绝。
+支持 `update_preferences`、`select_recipes`、`open_recipe_detail`、`change_servings`、`check_prep_item`、`answer_question`、`set_active_recipe`、`set_active_step`、`complete_step`、`complete_meal`、`change_stage`、`start_timer`、`pause_timer`、`resume_timer`、`cancel_timer`。`complete_meal` 的 payload 为 `{}`，必须全餐步骤均由用户确认完成，之后才保存完成时间；界面成功保存后可发起收尾聊天。各动作有不同的严格 payload；未知字段、任意 ID、非法数字和类型被拒绝。
 
 偏好更新是 Partial，不会清掉未提交字段。直接传已验证的模型对象，或者使用 `model_dump(exclude_unset=True)`；不要把所有未提交默认值展开成显式 `null`。可空字段可以明确清空，列表字段使用 `[]` 清空。
 
@@ -97,7 +98,11 @@ recovery        可选的恢复动作说明
 
 模型批量修改偏好、餐单和备菜工具的 `expected_revision` 是必填字段，批量食材修改先校验全部ID再原子提交。工具按照真实ID执行用户指令，不根据名称自动划分“小料”，不绕过烹饪阶段门槛。模型偏好更新要求 `changed_fields`，只保存其中显式提供的字段；严格输出补齐的其他 `values` 占位值也忽略。UI偏好动作仍使用Partial，省略保留；人数/时间/厨具允许null清空，列表用[]、文字用空串，其他字段null在schema层拒绝。`show_preference_form` 始终展示当前保存值。
 
-`select_recipes` 可直接使用应用批准的检索引用，不要求先展示候选；同一ID有多个可信来源时必须提供 `data_snapshot`。它与历史 `set_meal_plan` 共用选择事务，重复完全相同的来源、菜品及份量保留阶段和执行进度；更换餐单清理旧备菜/步骤/计时。重复相同餐单要重新制作时，先明确回到idea再选择。修改工具返回的组件已展示保存结果，无需再调用show。`show_recipe_choices` 登记候选、`show_recipe_details` 登记新来源、`show_cooking_guide` 切换当前菜谱/步骤可能实际修改业务版本；重看既有状态只改变展示版本。
+`select_recipes` 可直接使用应用批准的检索引用，不要求先展示候选；同一ID有多个可信来源时必须提供 `data_snapshot`。它与历史 `set_meal_plan` 共用选择事务，重复完全相同的来源、菜品及份量保留阶段和执行进度；更换餐单清理旧备菜/步骤/计时。已完成后再次选择会创建新的 `meal_id`，不沿用上一次完成时间。修改工具返回的组件已展示保存结果，无需再调用show。`show_recipe_choices` 登记候选、`show_recipe_details` 登记新来源、`show_cooking_guide` 切换当前菜谱/步骤可能实际修改业务版本；重看既有状态只改变展示版本。
+
+`diners` 与偏好 `servings` 表示整餐人数，保存为 `meal_diners`。默认 `portion_mode="shared"`：一道菜按人数全量，两道菜每盘按人数×0.75、三道×0.6、四道×0.5 的配方等效份量起算。例如5人共享4道菜，各盘默认2.5配方份，不能标成每道各吃5人的完整一餐。这是透明可调的家常初始量，不是营养标准或实际摄入推断。模型通常省略 `servings`；用户明确某道的量时用该字典覆盖，之后换菜数仍保留该覆盖。用户明确每道都要足额人数份才用 `per_dish`。原份量未知、不可缩放与估算的限制仍保留。`meal_plan.data` 和短快照均携带整餐人数、模式及 `portion_note`。
+
+开始烹饪时记录真实 `started_at`，完成时记录 `completed_at`；重复完成保持原时间。`meal_record()` 用同一份量/营养投影输出观察到的任务快照，供应用独立保存饮食记录。旧工作区没有观测时间时不回填虚构日期。
 
 `ask_user` 的结构为 `{title?,question,options:[{id,label}],allow_custom:true,multiple:false}`。问题最多500字，标题与选项各80字，至多6个不同选项；没有选项时必须允许自填。待答问题不会被新的提问工具悄悄替换，调用方应停止本轮推理并等用户输入。`answer_question` 使用 `{question_id,option_ids:[],text:""}`，同时携带普通动作的 `action_id/base_revision`；不符合当前问题、多选限制、自填限制或版本的答案不保存。成功后清除 `pending_question`，将题目、选项标签与自填文字存入 `last_answer`，再由应用启动下一轮。
 

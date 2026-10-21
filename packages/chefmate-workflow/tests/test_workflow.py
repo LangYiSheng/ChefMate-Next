@@ -93,6 +93,61 @@ def choose(kitchen, ids=None, servings=None):
     return result
 
 
+def test_shared_meal_separates_diners_from_each_dish_equivalent_portions(kitchen):
+    service, host, retrieval, _ = kitchen
+    retrieval.recipes["r4"] = recipe("r4")
+    action(kitchen, "update_preferences", {"values": {"servings": 5}})
+    result = choose(kitchen, ids=["r1", "r2", "r3", "r4"])
+    assert host.state["meal_diners"] == 5
+    assert [item["target_servings"] for item in host.state["meal_plan"]] == [2.5] * 4
+    plan = next(view for view in result["views"] if view["kind"] == "meal_plan")
+    assert plan["data"]["meal_diners"] == 5
+    assert "共享4道菜" in plan["data"]["portion_note"]
+    assert service.model_snapshot()["meal_diners"] == 5
+    assert service.meal_record() is None
+
+
+def test_explicit_per_dish_mode_and_individual_portion_overrides(kitchen):
+    _, host, _, _ = kitchen
+    action(kitchen, "update_preferences", {"values": {"servings": 5}})
+    result = tool(kitchen, "select_recipes", {"recipe_ids": ["r1", "r2"], "data_snapshot": SNAPSHOT,
+        "expected_revision": host.state["revision"], "diners": 5, "portion_mode": "per_dish", "servings": {"r1": 3}})
+    assert result["status"] == "ok"
+    assert [item["target_servings"] for item in host.state["meal_plan"]] == [3, 5]
+    assert host.state["portion_mode"] == "per_dish"
+
+
+def test_change_shared_dish_count_recomputes_defaults_and_preserves_user_override(kitchen):
+    _, host, _, _ = kitchen
+    action(kitchen, "update_preferences", {"values": {"servings": 5}})
+    choose(kitchen, ids=["r1", "r2"], servings={"r1": 4})
+    assert [item["target_servings"] for item in host.state["meal_plan"]] == [4, 3.75]
+    choose(kitchen, ids=["r1", "r2", "r3"])
+    assert [item["target_servings"] for item in host.state["meal_plan"]] == [4, 3, 3]
+
+
+def test_complete_meal_action_observes_start_and_finish_and_new_meal_identity(kitchen):
+    service, host, _, clock = kitchen
+    prepare(kitchen)
+    identity = host.state["meal_id"]
+    started_at = host.state["started_at"]
+    assert started_at == clock[0].isoformat()
+    assert action(kitchen, "complete_meal", {})["status"] == "steps_incomplete"
+    for ordinal in (0, 1):
+        action(kitchen, "complete_step", {"recipe_id": "r1", "step_id": f"r1:step:{ordinal}"})
+    clock[0] += timedelta(minutes=20)
+    assert action(kitchen, "complete_meal", {})["status"] == "ok"
+    assert service.meal_record()["status"] == "completed"
+    assert host.state["completed_at"] == clock[0].isoformat()
+    finished = host.state["completed_at"]
+    clock[0] += timedelta(minutes=1)
+    assert action(kitchen, "complete_meal", {})["status"] == "ok"
+    assert host.state["completed_at"] == finished
+    choose(kitchen)
+    assert host.state["meal_id"] != identity
+    assert host.state["started_at"] is None and host.state["completed_at"] is None
+
+
 def prepare(kitchen):
     choose(kitchen)
     assert action(kitchen, "change_stage", {"stage": "prep"})["status"] == "ok"

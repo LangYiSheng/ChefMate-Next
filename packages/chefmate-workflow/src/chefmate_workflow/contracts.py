@@ -38,7 +38,7 @@ TOOL_CONTRACTS = {item.name: item for item in (
           SELECT_STAGES, "mixed", True, ("登记真实候选（若有变化）", "替换候选视图"), ("真实检索引用",)),
     _tool("show_recipe_details", "展示当前冻结菜谱或真实检索详情。执行中只可用当前餐单；新候选需来源快照并会登记候选。浏览详情不会确认备菜或完成步骤。",
           ALL_STAGES, "mixed", True, ("登记新候选（如必要）", "替换详情视图"), ("可信菜谱引用；新候选须data_snapshot",)),
-    _tool("select_recipes", "按用户授权把真实检索或当前候选ID选为餐单，最多4道；可直接引用检索结果，无需先show。新来源建议带data_snapshot，expected_revision用最新业务版本。自动进入planning并展示餐单；重复相同餐单保留进度，改变餐单会清理旧备菜/步骤/计时。",
+    _tool("select_recipes", "按用户授权把真实检索或当前候选ID选为餐单，最多4道；可直接引用检索结果，无需先show。diners是整餐人数，shared默认按菜数分配每盘共享量（2菜每盘人数×0.75、3菜×0.6、4菜×0.5），属可调整的初始配方量，不是吃饭人数。通常省略servings；仅用户明确指定某盘配方份量才覆盖，明确每道都要足额人数份时用per_dish。新来源建议带data_snapshot，expected_revision用最新业务版本。自动进入planning并展示餐单；重复相同餐单保留进度，改变餐单会清理旧备菜/步骤/计时。",
           SELECT_STAGES, "write", True, ("冻结真实餐单", "进入planning", "餐单变化时清理旧执行状态", "展示餐单"), ("用户已授权选择", "可信菜谱引用")),
     _tool("set_meal_plan", "历史兼容入口，与select_recipes使用同一选择事务；新模型应使用select_recipes。",
           SELECT_STAGES, "write", True, ("与select_recipes相同",), ("真实检索引用",), model_visible=False),

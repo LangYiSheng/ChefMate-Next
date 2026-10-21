@@ -276,6 +276,22 @@ class WorkflowService:
         return [ingredient for recipe in state.meal_plan if recipe_ids is None or recipe.recipe_id in recipe_ids
                 for ingredient in self._recipe_view(recipe, state).ingredients]
 
+    @staticmethod
+    def _portion_note(state):
+        if state.meal_diners is None:
+            return "尚未确认整餐用餐人数；保留菜谱原量，可按实际食量调整。"
+        if state.portion_mode == "per_dish":
+            return f"整餐{state.meal_diners:g}人；按明确要求，每道菜分别准备足量，单菜仍可调整。"
+        count = len(state.meal_plan)
+        factor = {1: 1.0, 2: 0.75, 3: 0.6, 4: 0.5}.get(count, 1.0)
+        return (f"整餐{state.meal_diners:g}人共享{count}道菜；默认每盘按人数×{factor:g}的配方等效份量起算。"
+                "这是便于家常搭配的初始菜量，不是每盘各供这么多人单独吃一餐；请结合实际食材量、主食和食量调整。")
+
+    def _meal_data(self, state):
+        return RecipeListData(recipes=[self._recipe_view(recipe, state, summary=True) for recipe in state.meal_plan],
+                              meal_diners=state.meal_diners, portion_mode=state.portion_mode,
+                              portion_note=self._portion_note(state))
+
     def _component_data(self, component, state):
         kind = component.kind
         if kind == "preference_form":
@@ -284,6 +300,8 @@ class WorkflowService:
                 name=field.name, label=field.label, input_type=field.input_type, value=values[field.name],
                 options=field.options) for field in component.data.fields])
         if kind in {"meal_plan", "recipe_choices"}:
+            if kind == "meal_plan":
+                return self._meal_data(state)
             source = state.meal_plan if kind == "meal_plan" else state.candidates
             return RecipeListData(recipes=[self._recipe_view(recipe, state, summary=True) for recipe in source])
         if kind == "recipe_detail":
@@ -350,6 +368,9 @@ class WorkflowService:
                                       "source": recipe["source"]}
                                      for recipe in raw["recipes"]],
                         "selected_recipe_ids": [recipe.recipe_id for recipe in state.meal_plan]}
+                if view.kind == "meal_plan":
+                    data.update(meal_diners=state.meal_diners, portion_mode=state.portion_mode,
+                                portion_note=self._portion_note(state))
             elif view.kind == "recipe_detail":
                 recipe = raw["recipe"]
                 data = {"recipe_id": recipe["recipe_id"], "name": recipe["name"], "source": recipe["source"]}
@@ -381,6 +402,8 @@ class WorkflowService:
         return UISnapshot(revision=state.revision, presentation_revision=state.presentation_revision,
                           stage=state.stage, components=components,
                           preferences=state.preferences, selected_recipe_ids=[recipe.recipe_id for recipe in state.meal_plan],
+                          meal_diners=state.meal_diners, portion_mode=state.portion_mode,
+                          portion_note=self._portion_note(state) if state.meal_plan else "",
                           active_recipe_id=state.active_recipe_id, active_step_id=state.active_step_id,
                           recent_actions=recent, pending_question=state.pending_question, last_answer=state.last_answer,
                           current_actions=self._current_actions(state, allowed), allowed_transitions=allowed, blockers=blockers,
@@ -406,6 +429,21 @@ class WorkflowService:
 
     def model_snapshot(self):
         return self.get_workspace()["ui_snapshot"]
+
+    def meal_record(self):
+        """Return a source-marked meal snapshot for a host's independent food journal.
+
+        Historic workspaces without observed start times are deliberately excluded.
+        Reading a journal must never invent when an older meal was cooked.
+        """
+        state = self._state(self._get_state())
+        if not state.meal_id or not state.started_at or not state.meal_plan:
+            return None
+        return {"meal_id": state.meal_id, "started_at": state.started_at,
+                "completed_at": state.completed_at, "status": "completed" if state.completed_at else "attempted",
+                "diners": state.meal_diners, "portion_mode": state.portion_mode,
+                "portion_note": self._portion_note(state),
+                "recipes": [self._recipe_view(recipe, state).model_dump(mode="json") for recipe in state.meal_plan]}
 
     @staticmethod
     def _business_state(state):
@@ -523,23 +561,30 @@ class WorkflowService:
             recipes.extend(self._freeze([identity], next(iter(refs.values())), approved))
         return recipes
 
-    def _plan(self, state, recipes, servings=None):
+    def _plan(self, state, recipes, servings=None, *, diners=None, portion_mode="shared"):
         if state.stage not in {"idea", "planning", "completed"}:
             raise DomainConflict("stage_conflict", "请先回到选菜阶段，再更换餐单；不会重置正在烹饪的任务。")
         requested = servings or {}
         if set(requested) - {recipe.recipe_id for recipe in recipes}:
             raise DomainConflict("invalid_reference", "份量参数包含未选中的菜谱。")
         existing = {(item.recipe_id, _dump(item.data_snapshot.model_dump(mode="json"))): item for item in state.meal_plan}
+        diners = diners if diners is not None else state.preferences.servings
+        diners = diners if diners is not None else state.meal_diners
+        factor = 1.0 if portion_mode == "per_dish" else {1: 1.0, 2: 0.75, 3: 0.6, 4: 0.5}[len(recipes)]
+        default_target = round(diners * factor, 2) if diners is not None else None
         selected = []
         for recipe in recipes:
             prior = existing.get((recipe.recipe_id, _dump(recipe.data_snapshot.model_dump(mode="json"))))
-            target = requested.get(recipe.recipe_id, prior.target_servings if prior else state.preferences.servings)
-            selected.append(recipe.model_copy(deep=True, update={"target_servings": target}))
-        same_plan = [item.model_dump(mode="json") for item in selected] == [item.model_dump(mode="json") for item in state.meal_plan]
+            override = recipe.recipe_id in requested or bool(prior and prior.portion_override)
+            target = requested.get(recipe.recipe_id, prior.target_servings if prior and prior.portion_override else default_target)
+            selected.append(recipe.model_copy(deep=True, update={"target_servings": target, "portion_override": override}))
+        same_plan = (state.stage != "completed" and diners == state.meal_diners and portion_mode == state.portion_mode
+                     and [item.model_dump(mode="json") for item in selected] == [item.model_dump(mode="json") for item in state.meal_plan])
         if same_plan:
-            return self._show(state, MealPlan, "这次的餐单", RecipeListData(
-                recipes=[self._recipe_view(recipe, state, summary=True) for recipe in state.meal_plan]))
+            return self._show(state, MealPlan, "这次的餐单", self._meal_data(state))
         state.meal_plan = selected
+        state.meal_diners, state.portion_mode = diners, portion_mode
+        state.meal_id, state.started_at, state.completed_at = str(uuid4()), None, None
         state.stage = "planning"
         state.prep_status = {}
         state.step_status = {}
@@ -549,8 +594,7 @@ class WorkflowService:
         first = self._recipe_view(state.meal_plan[0], state).steps if state.meal_plan else []
         state.active_step_id = first[0].id if first else None
         state.components = [view for view in state.components if view.kind in {"preference_form", "recipe_choices"}]
-        plan = self._show(state, MealPlan, "这次的餐单", RecipeListData(
-            recipes=[self._recipe_view(recipe, state, summary=True) for recipe in state.meal_plan]))
+        plan = self._show(state, MealPlan, "这次的餐单", self._meal_data(state))
         self._ensure_component(state, TaskProgress, "当前进度", self._progress(state))
         return plan
 
@@ -568,6 +612,7 @@ class WorkflowService:
         if stage == "cooking" and any(item.status == "pending" for item in self._prep_items(state)):
             blockers.append({"code": "prep_incomplete", "message": "仍有待确认食材；请先标记备齐或明确确认跳过。"})
         if stage == "completed":
+            state.completed_at = state.completed_at or _stamp(self._now())
             steps = [step for recipe in state.meal_plan for step in self._recipe_view(recipe, state).steps]
             if any(step.status != "done" for step in steps):
                 blockers.append({"code": "steps_incomplete", "message": "仍有未完成步骤，不能把本次烹饪标为完成。"})
@@ -626,8 +671,10 @@ class WorkflowService:
             state.meal_plan, state.prep_status, state.step_status = [], {}, {}
             state.active_recipe_id, state.active_step_id, state.timers = None, None, []
             state.adaptations = []
+            state.meal_id, state.started_at, state.completed_at, state.meal_diners = None, None, None, None
             state.components = [view for view in state.components if view.kind == "preference_form"]
         if stage == "cooking":
+            state.started_at = state.started_at or _stamp(self._now())
             recipe = self._find_recipe(state, state.active_recipe_id or state.meal_plan[0].recipe_id)
             steps = self._recipe_view(recipe, state).steps
             target = next((step for step in steps if step.id == state.active_step_id and step.status != "done"), None)
@@ -636,8 +683,7 @@ class WorkflowService:
                 self._activate_step(state, recipe.recipe_id, target.id)
         progress = self._ensure_component(state, TaskProgress, "当前进度", self._progress(state))
         if stage == "planning":
-            return self._ensure_component(state, MealPlan, "这次的餐单", RecipeListData(
-                recipes=[self._recipe_view(recipe, state, summary=True) for recipe in state.meal_plan]))
+            return self._ensure_component(state, MealPlan, "这次的餐单", self._meal_data(state))
         if stage == "prep":
             return self._ensure_component(state, PrepChecklist, "逐项确认备料",
                                           PrepData(items=self._prep_items(state), notes=[PREP_NOTE]))
@@ -780,7 +826,8 @@ class WorkflowService:
                 return self._show(state, PreferenceForm, "核对已更新的用餐条件",
                                   PreferenceFormData(fields=fields, values=state.preferences))
             if name == "select_recipes":
-                return self._plan(state, frozen, validated.servings)
+                return self._plan(state, frozen, validated.servings,
+                                  diners=validated.diners, portion_mode=validated.portion_mode)
             if name == "update_prep_items":
                 if state.stage not in {"planning", "prep"}:
                     raise DomainConflict("stage_conflict", "只有选菜和备菜阶段可以调整准备状态。")
@@ -801,7 +848,8 @@ class WorkflowService:
                 return self._show(state, RecipeChoices, validated.title, RecipeListData(
                     recipes=[self._recipe_view(recipe, state, summary=True) for recipe in frozen]))
             if name == "set_meal_plan":
-                return self._plan(state, frozen, validated.servings)
+                return self._plan(state, frozen, validated.servings,
+                                  diners=validated.diners, portion_mode=validated.portion_mode)
             if name == "show_recipe_details":
                 if not any(recipe.recipe_id == frozen[0].recipe_id and recipe.data_snapshot == frozen[0].data_snapshot
                            for recipe in [*state.meal_plan, *state.candidates]):
@@ -809,8 +857,7 @@ class WorkflowService:
                     state.candidates.append(frozen[0])
                 return self._show(state, RecipeDetail, "菜谱详情", RecipeDetailData(recipe=self._recipe_view(frozen[0], state)))
             if name == "show_meal_plan":
-                return self._show(state, MealPlan, "这次的餐单", RecipeListData(
-                    recipes=[self._recipe_view(recipe, state, summary=True) for recipe in state.meal_plan]))
+                return self._show(state, MealPlan, "这次的餐单", self._meal_data(state))
             if name == "show_prep_checklist":
                 return self._show(state, PrepChecklist, "逐项确认备料", PrepData(
                     items=self._prep_items(state, validated.recipe_ids), recipe_ids=validated.recipe_ids, notes=[PREP_NOTE]))
@@ -927,6 +974,7 @@ class WorkflowService:
                     raise DomainConflict("stage_conflict", "请先回到备料或选菜阶段调整份量。")
                 recipe = self._find_recipe(state, payload["recipe_id"])
                 recipe.target_servings = payload["servings"]
+                recipe.portion_override = True
                 for item in self._recipe_view(recipe, state).ingredients:
                     state.prep_status[item.id] = "pending"
                 # A changed batch needs fresh execution confirmation; old completed steps cannot finish new quantities.
@@ -978,6 +1026,8 @@ class WorkflowService:
                         state.step_status[next_step.id] = "current"
             elif kind == "change_stage":
                 return self._set_stage(state, payload["stage"])
+            elif kind == "complete_meal":
+                return self._set_stage(state, "completed")
             elif kind == "start_timer":
                 return self._start_timer(state, payload)
             else:
