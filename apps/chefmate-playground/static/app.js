@@ -231,7 +231,8 @@ function renderWelcomeTemplates(force=false) {
   }});
 }
 function renderReplySuggestions() {
-  const replies=suggestedReplies(currentSession()?.messages,state.status?.reply_suggestions!==false);
+  const replies=suggestedReplies(currentSession()?.messages,state.status?.reply_suggestions!==false,
+    workspace.entries.get(state.currentId)?.snapshot);
   const host=ui['reply-suggestions'];host.hidden=!replies.length || busy() || Boolean(pendingQuestion() || savedAnswer() || state.confirmationQueue.get(state.currentId));
   host.replaceChildren();
   for(const reply of replies) {
@@ -1451,6 +1452,7 @@ window.addEventListener('chefmate:finish-meal',async event=>{
   try {
     const result=await workspace.dispatch('complete_meal',{},null,{sessionId:id});
     if(result?.status && result.status!=='ok')return;
+    if(cookingFocus.active?.sessionId===id && workspace.entry(id).snapshot?.stage==='completed')cookingFocus.close();
     state.confirmationQueue.enqueue(id,'这顿饭所有菜都做好啦，我已点击完成本次菜肴。');
     await continueConfirmations();
   } catch(error){toast(error.message || '还没有完成，请核对步骤后再试。');}

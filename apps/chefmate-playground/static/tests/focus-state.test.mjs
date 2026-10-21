@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { focusConversation, focusStartIndex, focusSceneFrames, FocusMotion } from '../focus-state.js';
+import { focusConversation, focusStartIndex, focusSceneFrames, focusCompletion, FocusMotion } from '../focus-state.js';
 
 test('reopening during a reply retains its question and skips unrelated earlier turns', () => {
   const question = { role:'user', content:'刚才那份清单怎么替换？' };
@@ -53,4 +53,19 @@ test('a late close completion cannot hide a reopened workspace, including reduce
   assert.equal(opened, 1);
   motion.start(null, () => { closed++; });
   assert.equal(closed, 1);
+});
+
+test('finish controls use the trusted whole-meal component, not the visible recipe scope', () => {
+  const snapshot = {stage:'prep',components:[{kind:'prep_checklist',data:{items:[{status:'ready'}]}},
+    {kind:'task_progress',data:{prep_total:7,prep_ready:6,steps_total:5,steps_done:0}}]};
+  assert.equal(focusCompletion(snapshot,'prep_checklist'),null);
+  snapshot.components[1].data.prep_ready=7;
+  assert.equal(focusCompletion(snapshot,'prep_checklist'),'prep');
+  assert.equal(focusCompletion({...snapshot,stage:'cooking'},'prep_checklist'),null);
+  assert.equal(focusCompletion({...snapshot,stage:'cooking'},'cooking_guide'),null);
+  snapshot.components[1].data.steps_done=5;
+  assert.equal(focusCompletion({...snapshot,stage:'cooking'},'cooking_guide'),'meal');
+  assert.equal(focusCompletion({stage:'completed'},'cooking_guide'),'completed');
+  assert.equal(focusCompletion({stage:'completed'},'recipe_detail'),null);
+  assert.equal(focusCompletion(null,'prep_checklist'),null);
 });

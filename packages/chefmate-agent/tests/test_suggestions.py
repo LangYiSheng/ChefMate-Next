@@ -5,7 +5,7 @@ import asyncio
 import pytest
 
 from chefmate_agent import AgentConfig, ChefMateAgent
-from chefmate_agent.suggestions import finalize_reply_suggestions
+from chefmate_agent.suggestions import PANTRY_REPLY, finalize_reply_suggestions
 from test_agent import REQUESTS, ScriptedModel, Service, answer, tool
 
 REPLIES = [
@@ -39,6 +39,33 @@ def test_missing_suggestions_use_trusted_stage_without_another_model_call():
     assert len(result.suggested_replies) == 3
     assert result.suggested_replies[0].title == "安排备菜顺序"
     assert all("已完成" not in item.text for item in result.suggested_replies)
+
+
+def test_pantry_shortcut_survives_model_replies_and_requires_live_pending_preparation():
+    context = {"stage": "prep", "components": [{"kind": "prep_checklist", "data": {"items": [
+        {"id": "salt", "status": "pending"}, {"id": "egg", "status": "pending"},
+    ]}}]}
+    replies = finalize_reply_suggestions(REPLIES, context)
+    assert len(replies) == 3 and replies[0] == PANTRY_REPLY
+    assert "主料保持原来的状态" in replies[0]["text"]
+    assert context["components"][0]["data"]["items"][0]["status"] == "pending"
+    # The host finalizes the agent result again using the newest authoritative snapshot.
+    assert finalize_reply_suggestions(replies, context) == replies
+    for item in context["components"][0]["data"]["items"]:
+        item["status"] = "ready"
+    ready_replies = finalize_reply_suggestions(replies, context)
+    assert len(ready_replies) == 3 and PANTRY_REPLY not in ready_replies
+    context["components"][0]["data"]["items"][0]["status"] = "pending"
+    context["stage"] = "cooking"
+    assert PANTRY_REPLY not in finalize_reply_suggestions(replies, context)
+
+
+def test_pantry_shortcut_deduplicates_model_suggestion_without_hiding_other_choices():
+    context = {"stage": "prep", "components": [{"kind": "prep_checklist", "data": {"items": [
+        {"id": "salt", "status": "pending"},
+    ]}}]}
+    replies = finalize_reply_suggestions([REPLIES[0], PANTRY_REPLY, REPLIES[1]], context)
+    assert replies == [PANTRY_REPLY, REPLIES[0], REPLIES[1]]
 
 
 @pytest.mark.parametrize("bad", [

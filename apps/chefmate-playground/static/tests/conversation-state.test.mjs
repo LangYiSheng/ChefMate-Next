@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {moveDrafts,releaseImages,imageMetadata,suggestedReplies,matchesDraft,recoverLocalImages} from '../conversation-state.js';
+import {moveDrafts,releaseImages,imageMetadata,suggestedReplies,matchesDraft,recoverLocalImages,PANTRY_REPLY} from '../conversation-state.js';
 import {drawStarters,STARTERS} from '../welcome.js';
 
 test('first-send draft migration retains attachments and does not touch another conversation',()=>{
@@ -51,6 +51,23 @@ test('suggested replies belong only to the latest completed successful answer an
   assert.deepEqual(suggestedReplies([answer,{role:'user',content:'新问题'}]),[]);
   for(const flag of ['streaming','error','cancelled'])assert.deepEqual(suggestedReplies([{...answer,[flag]:true}]),[]);
   assert.deepEqual(suggestedReplies([answer],false),[]);
+});
+
+test('the pantry shortcut uses live preparation state and stays an editable user request',()=>{
+  const answer={role:'assistant',suggested_replies:[{title:'看看清单',text:'看看清单'},{...PANTRY_REPLY},{title:'看看清单',text:'看看清单'}]};
+  const context={stage:'prep',components:[{kind:'prep_checklist',data:{items:[{id:'salt',status:'pending'},{id:'egg',status:'pending'}]}}]};
+  const replies=suggestedReplies([answer],true,context);
+  assert.equal(replies[0].title,'已拥有所有小料，帮我勾选掉');
+  assert.ok(replies[0].text.includes('主料保持原来的状态'));
+  assert.equal(replies.filter(item=>item.title===PANTRY_REPLY.title).length,1);
+  assert.equal(replies.filter(item=>item.title==='看看清单').length,1);
+  assert.equal(context.components[0].data.items.every(item=>item.status==='pending'),true);
+  assert.deepEqual(suggestedReplies([answer],false,context),[]);
+  assert.deepEqual(suggestedReplies([answer,{role:'user',content:PANTRY_REPLY.text}],true,context),[]);
+  context.components[0].data.items.forEach(item=>item.status='ready');
+  assert.equal(suggestedReplies([answer],true,context).some(item=>item.title===PANTRY_REPLY.title),false);
+  context.components[0].data.items[0].status='pending';context.stage='cooking';
+  assert.equal(suggestedReplies([answer],true,context).some(item=>item.title===PANTRY_REPLY.title),false);
 });
 
 test('random welcome templates are unique and never offer images to a text-only model',()=>{

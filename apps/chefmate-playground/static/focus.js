@@ -3,7 +3,7 @@ import { conversationLabel, snapshotStatus, STAGE_NAMES } from './presentation.j
 import { icon } from './icons.js';
 import { imageThumbnail } from './image-preview.js';
 import { activityLabel } from './activity.js';
-import { focusConversation, focusStartIndex, focusSceneFrames, FocusMotion } from './focus-state.js';
+import { focusConversation, focusStartIndex, focusSceneFrames, focusCompletion, FocusMotion } from './focus-state.js';
 import { FocusPager } from './focus-pager.js';
 
 // Flatten structural wrappers, keeping actual controls and their listeners intact.
@@ -38,9 +38,17 @@ export class CookingFocus {
     this.status = document.getElementById('focus-activity'); this.assistant = document.getElementById('focus-assistant');
     this.work = document.getElementById('focus-workspace'); this.workToggle = document.getElementById('focus-work-toggle');
     this.tools = document.getElementById('focus-tools');
+    this.overview = node('details', 'focus-overview-pane');
+    this.overviewSummary = node('summary', '', '全部项目'); this.overviewBody = node('div', 'focus-overview-body');
+    this.overview.append(this.overviewSummary, this.overviewBody); this.overview.hidden = true;
+    this.work.insertBefore(this.overview, this.content);
+    this.overview.open = matchMedia('(min-width: 1000px)').matches;
     this.finish = document.getElementById('finish-meal');
     this.finish.addEventListener('click', () => {
       if (!this.active || this.finish.disabled) return;
+      const completion = focusCompletion(this.workspace.entry(this.active.sessionId).snapshot, this.active.kind);
+      if (completion === 'prep') { this.close(); return; }
+      if (completion !== 'meal') return;
       window.dispatchEvent(new CustomEvent('chefmate:finish-meal', { detail: { sessionId: this.active.sessionId } }));
     });
     this.slot = document.getElementById('focus-composer-slot'); this.prompts = document.getElementById('focus-prompts');
@@ -124,7 +132,7 @@ export class CookingFocus {
     this.work.hidden = false; this.work.inert = false;
     this.assistant.hidden = !this.talking; this.assistant.inert = !this.talking;
     this.talk.setAttribute('aria-expanded', String(this.talking));
-    this.contentPager.setEnabled(Boolean(this.active)); this.replyPager.setEnabled(Boolean(this.active && this.talking));
+    this.contentPager.setEnabled(Boolean(this.active && !this.listMode)); this.replyPager.setEnabled(Boolean(this.active && this.talking));
     this.talk.replaceChildren(icon('message-circle'), node('span', '', this.talking ? '收起交流' : '展开交流'));
     this.input.placeholder = '有问题就直接问我，做菜进度会保留…';
   }
@@ -170,6 +178,7 @@ export class CookingFocus {
   refresh() {
     if (!this.active) return;
     const active = this.active, entry = this.workspace.entry(active.sessionId);
+    if (focusCompletion(entry.snapshot, active.kind) === 'completed') { this.close(); return; }
     if (entry.snapshot?.stage === 'cooking' && active.kind==='prep_checklist') active.kind = 'cooking_guide';
     const view = entry.views.find(item => item.kind === active.kind) || (entry.loading || entry.presentationPending ? active.view : null);
     if (!view) { this.close(); return; }
@@ -186,28 +195,45 @@ export class CookingFocus {
     if (signature !== this.signature) {
       const displayedStep = view.data.steps?.[entry.viewState[view.id]?.stepIndex]
         || view.data.steps?.find(step=>step.id===view.data.active_step_id) || view.data.steps?.[0];
-      const identity = JSON.stringify([view.kind, view.data.recipe_id, view.data.recipe_ids, displayedStep?.id,
-        entry.viewState[view.id]?.stepIndex, entry.viewState[view.id]?.detailSection]);
+      const displayState = entry.viewState[view.id] || {};
+      const identity = JSON.stringify([view.kind, view.data.recipe_id, view.data.recipe_ids, displayState.displayMode,
+        displayState.displayMode === 'list' ? null : [displayedStep?.id, displayState.stepIndex, displayState.prepIndex], displayState.detailSection]);
       const ctx = { ...this.workspace.context(view, active.sessionId), focused: true };
       ctx.onViewState = () => { this.workspace.onInlineChange?.(); this.refresh(); };
-      const focusedTool = this.tools.contains(document.activeElement) ? document.activeElement?.dataset.controlKey : null;
+      const focusedTool = this.work.contains(document.activeElement) ? document.activeElement?.dataset.controlKey : null;
       const blocks = contentBlocks(renderView(view, ctx)).filter(block => !cooking || !block.matches('.ui-recipe-name,.cooking-overview'));
-      this.tools.replaceChildren(...blocks.filter(block => block.classList.contains('step-navigator')));
+      const toolBlock = block => block.matches('.step-navigator,.workflow-mode-bar,.cooking-recipe-scope');
+      this.tools.replaceChildren(...blocks.filter(toolBlock));
       this.work.classList.toggle('with-step-tools', Boolean(this.tools.children.length));
-      this.tools.querySelectorAll('button').forEach((button, index) => { button.dataset.controlKey = `focus-step-${index}`; });
-      if (focusedTool) [...this.tools.querySelectorAll('[data-control-key]')].find(control => control.dataset.controlKey === focusedTool && !control.disabled)?.focus({ preventScroll: true });
-      const units = blocks.filter(block => !block.classList.contains('step-navigator')).map((block, index) => ({ node: block,
+      this.tools.querySelectorAll('button').forEach((button, index) => { button.dataset.controlKey ||= `focus-step-${index}`; });
+      const overview = blocks.find(block => block.classList.contains('workflow-overview'));
+      const overviewScroll = this.overviewBody.scrollTop;
+      this.overviewBody.replaceChildren(...(overview ? [overview] : [])); this.overviewBody.scrollTop = overviewScroll;
+      this.overview.hidden = !overview; this.work.classList.toggle('with-overview', Boolean(overview));
+      this.overviewSummary.textContent = view.kind === 'prep_checklist' ? '全部食材' : '全部步骤';
+      const units = blocks.filter(block => !toolBlock(block) && block !== overview).map((block, index) => ({ node: block,
         key: block.dataset.focusKey || block.querySelector('[data-control-key]')?.dataset.controlKey || `content-${index}` }));
-      this.contentPager.setContent(units, { reset: identity !== this.contentIdentity }); this.contentIdentity = identity; this.signature = signature;
+      this.listMode = ctx.viewState.displayMode === 'list';
+      this.content.classList.toggle('focus-list-content', this.listMode);
+      this.contentPager.controls.hidden = this.listMode;
+      if (this.listMode) {
+        const scroll = identity === this.contentIdentity ? this.content.scrollTop : 0;
+        this.contentPager.clear(); this.content.replaceChildren(...units.map(unit => unit.node)); this.content.scrollTop = scroll;
+        this.content.setAttribute('aria-label', view.kind === 'prep_checklist' ? '完整备菜清单' : '完整烹饪步骤');
+      } else {
+        this.contentPager.setEnabled(true); this.contentPager.setContent(units, { reset: identity !== this.contentIdentity });
+      }
+      if (focusedTool) [...this.work.querySelectorAll('[data-control-key]')].find(control => control.dataset.controlKey === focusedTool && !control.disabled)?.focus({ preventScroll: true });
+      this.contentIdentity = identity; this.signature = signature;
     }
     const state = focusConversation(this.session(), active.startIndex, this.activity(active.sessionId));
     if (state.running && !this.wasRunning) this.setTalking(true);
     this.wasRunning = state.running; this.root.classList.toggle('focus-running', state.running);
-    const progress = entry.snapshot?.progress || entry.views.find(item => item.kind === 'task_progress')?.data;
-    const complete = entry.snapshot?.stage === 'cooking' && (entry.snapshot.allowed_transitions?.includes('completed')
-      || progress?.steps_total > 0 && progress.steps_done >= progress.steps_total);
-    this.finish.hidden = !complete;
-    this.finish.disabled = state.running || entry.saving || entry.confirming;
+    const completion = focusCompletion(entry.snapshot, active.kind);
+    this.finish.hidden = !['prep', 'meal'].includes(completion);
+    this.finish.replaceChildren(icon('check-check'), node('span', '', completion === 'prep' ? '我已全部备齐' : '完成本次菜肴'));
+    this.finish.disabled = Boolean(state.running || entry.saving || entry.confirming || entry.failedRequest || entry.conflict ||
+      entry.autoSaveError || entry.presentationPending || entry.loading);
     this.renderConversation(active, state);
     this.workspace.tick();
   }

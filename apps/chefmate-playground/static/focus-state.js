@@ -32,6 +32,18 @@ export function focusSceneFrames(distance, closing = false) {
   return { focus: closing ? [...focus].reverse() : focus, main: closing ? [...main].reverse() : main };
 }
 
+// Completion always follows the complete meal snapshot, including a scoped checklist.
+export function focusCompletion(snapshot = {}, kind) {
+  snapshot ||= {};
+  const progress = snapshot.components?.find(item => item.kind === 'task_progress')?.data || {};
+  if (snapshot.stage === 'completed' && ['prep_checklist', 'cooking_guide'].includes(kind)) return 'completed';
+  if (kind === 'prep_checklist' && ['planning', 'prep'].includes(snapshot.stage) &&
+      progress.prep_total > 0 && progress.prep_ready >= progress.prep_total) return 'prep';
+  if (kind === 'cooking_guide' && snapshot.stage === 'cooking' &&
+      (snapshot.allowed_transitions?.includes('completed') || progress.steps_total > 0 && progress.steps_done >= progress.steps_total)) return 'meal';
+  return null;
+}
+
 // Cancel old transitions so a late close cannot hide a reopened view.
 export class FocusMotion {
   constructor() { this.generation = 0; this.animation = null; }

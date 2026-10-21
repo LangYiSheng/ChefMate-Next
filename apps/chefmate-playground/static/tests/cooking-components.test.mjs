@@ -105,3 +105,46 @@ test('a planning checklist accepts explicit user confirmations without requiring
   const cooked=renderView(view,{...ctx,stage:'cooking'});
   assert.equal(descendants(cooked).find(element=>element.type==='checkbox').disabled,true);
 });
+
+test('focused prep exposes every item in its compact overview and a single large current item',async t=>{
+  const actions=[],ctx=context(t,{stage:'prep',focused:true,action:async(type,payload)=>actions.push({type,payload})});
+  const items=Array.from({length:9},(_,index)=>({id:`item-${index}`,canonical_name:`食材${index+1}`,amount_text:'少许',status:index===0?'ready':'pending'}));
+  const root=renderView({id:'prep',kind:'prep_checklist',editable:true,data:{items}},ctx);
+  const overview=byClass(root,'workflow-overview');
+  assert.equal(descendants(overview).filter(element=>element.type==='checkbox').length,9);
+  assert.equal(input(root,'prep:item-1').checked,false);
+  const last=input(overview,'overview-prep:item-8');last.checked=true;await last.emit('change');
+  assert.deepEqual(actions,[{type:'check_prep_item',payload:{item_id:'item-8',status:'ready'}}]);
+  const list=renderView({id:'prep',kind:'prep_checklist',editable:true,data:{items}},{...ctx,viewState:{displayMode:'list'}});
+  assert.equal(descendants(byClass(list,'workflow-list')).filter(element=>element.type==='checkbox').length,9);
+  assert.equal(byClass(list,'workflow-overview'),undefined);
+});
+
+test('step overview can complete any actual step and the list preserves all full instructions',async t=>{
+  const actions=[],ctx=context(t,{focused:true,action:async(type,payload)=>actions.push({type,payload})});
+  const steps=Array.from({length:7},(_,index)=>({id:`s${index}`,ordinal:index,status:'pending',instruction:`第${index+1}步完整说明。`.repeat(8)}));
+  const view={id:'cooking',kind:'cooking_guide',editable:true,data:{recipe_id:'r1',recipe_name:'测试菜',active_step_id:'s0',steps,timers:[]}};
+  const root=renderView(view,ctx),overview=byClass(root,'workflow-overview');
+  assert.equal(descendants(overview).filter(element=>element.type==='checkbox').length,7);
+  const last=input(overview,'overview-step:s6');last.checked=true;await last.emit('change');
+  assert.deepEqual(actions,[{type:'complete_step',payload:{recipe_id:'r1',step_id:'s6',completed:true}}]);
+  const list=renderView(view,{...ctx,viewState:{recipeId:'r1',displayMode:'list'}});
+  const instructions=descendants(byClass(list,'workflow-list')).filter(element=>element.classList.contains('ui-step-instruction'));
+  assert.deepEqual(instructions.map(element=>element.textContent),steps.map(step=>step.instruction));
+});
+
+test('a multi-dish guide switches using real meal recipe IDs and keeps list controls concise',async t=>{
+  const actions=[],ctx=context(t,{focused:true,mealRecipes:[{recipe_id:'r1',name:'滑蛋'},{recipe_id:'r2',name:'青菜'}],
+    action:async(type,payload)=>actions.push({type,payload})});
+  const view={id:'cooking',kind:'cooking_guide',editable:true,data:{recipe_id:'r1',recipe_name:'滑蛋',active_step_id:'s1',
+    steps:[{id:'s1',ordinal:0,status:'pending',instruction:'打蛋'},{id:'s2',ordinal:1,status:'pending',instruction:'炒蛋'}],timers:[]}};
+  const root=renderView(view,ctx),scope=byClass(root,'cooking-recipe-scope');
+  const dishes=scope.children;
+  assert.equal(dishes[0].disabled,true);assert.equal(dishes[1].disabled,false);
+  await dishes[1].emit('click');
+  assert.deepEqual(actions,[{type:'set_active_recipe',payload:{recipe_id:'r2'}}]);
+  const list=renderView(view,{...ctx,viewState:{displayMode:'list'}});
+  assert.doesNotMatch(list.textContent,/回到正在做的步骤|从这一步继续/);
+  const modes=byClass(list,'workflow-mode-bar');
+  assert.deepEqual(modes.children.map(tab=>tab.tabIndex),[-1,0]);
+});

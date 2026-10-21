@@ -6,6 +6,10 @@ from .extensions import InjectedToolSpec
 from .models import ReplySuggestion
 
 REPLY_SUGGESTIONS_TOOL = "suggest_replies"
+PANTRY_REPLY = {
+    "title": "已拥有所有小料，帮我勾选掉",
+    "text": "当前清单里的调味小料我都已有，请帮我勾选为已备齐；主料保持原来的状态，不确定属于小料的项目先问我。",
+}
 
 
 class ReplySuggestionsRequest(BaseModel):
@@ -72,7 +76,23 @@ def finalize_reply_suggestions(value, ui_context: dict | None = None) -> list[di
     """Reject an invalid batch in full; defaults request help without inventing facts."""
     try:
         batch = ReplySuggestionsRequest.model_validate({"suggested_replies": value})
-        return [item.model_dump(mode="json") for item in batch.suggested_replies]
+        replies = [item.model_dump(mode="json") for item in batch.suggested_replies]
     except (ValidationError, TypeError):
         stage = (ui_context or {}).get("stage", "idea")
-        return [{"title": title, "text": text} for title, text in _FALLBACKS.get(stage, _FALLBACKS["idea"])]
+        replies = [{"title": title, "text": text} for title, text in _FALLBACKS.get(stage, _FALLBACKS["idea"])]
+    if ui_context is None:
+        return replies
+    replies = [item for item in replies if item["title"] != PANTRY_REPLY["title"] and item["text"] != PANTRY_REPLY["text"]]
+    pending_prep = ui_context.get("stage") == "prep" and any(
+        view.get("kind") == "prep_checklist"
+        and any(item.get("status") == "pending" for item in (view.get("data") or {}).get("items", []))
+        for view in ui_context.get("components", [])
+    )
+    if pending_prep:
+        replies.insert(0, dict(PANTRY_REPLY))
+    for title, text in _FALLBACKS.get(ui_context.get("stage"), _FALLBACKS["idea"]):
+        if len(replies) >= 3:
+            break
+        if all(item["title"] != title and item["text"] != text for item in replies):
+            replies.append({"title": title, "text": text})
+    return replies[:3]

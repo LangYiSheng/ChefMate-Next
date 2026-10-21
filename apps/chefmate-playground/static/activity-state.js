@@ -16,7 +16,7 @@ export class ActivityTimeline {
 
 export function activityFrame(text, elapsed, reducedMotion = false) {
   const characters = Array.from(text);
-  const duration = Math.min(700, characters.length * 28);
+  const duration = Math.min(1800, characters.length * 72);
   const count = reducedMotion || duration === 0 ? characters.length :
     Math.min(characters.length, Math.max(1, Math.ceil(characters.length * Math.max(0,elapsed) / duration)));
   return {text:characters.slice(0,count).join(''), done:count >= characters.length};
