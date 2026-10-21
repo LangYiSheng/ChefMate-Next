@@ -62,6 +62,7 @@ test('application updates all roles, browser chrome and cross-window/system chan
   globalThis.document={documentElement:{dataset,style:{setProperty:(key,value)=>tokens.set(key,value)}},querySelector:()=>meta};
   globalThis.window={matchMedia:()=>media,addEventListener:(name,fn)=>events[name]=fn};
   initAppearance();assert.equal(dataset.palette,'ink');assert.equal(dataset.fontPairing,'mixed');
+  assert.equal(dataset.showEstimates,'true');
   media.matches=true;media.change();assert.equal(dataset.palette,'deep-blue');assert.equal(meta.content,'#151e29');
   storage.value=JSON.stringify({...DEFAULT_APPEARANCE,light_palette:'rose',font_pairing:'wenkai'});
   events.storage({key:'chefmate:ui-settings'});assert.equal(dataset.palette,'rose');assert.equal(dataset.fontPairing,'wenkai');
@@ -69,4 +70,7 @@ test('application updates all roles, browser chrome and cross-window/system chan
   storage.value=null;events.storage({key:null});assert.equal(dataset.palette,'ink');
   applyAppearance({...DEFAULT_APPEARANCE,theme:'dark',dark_palette:'night'});assert.equal(dataset.palette,'night');
   assert.equal(tokens.get('--color-on-accent'),'#16251b');assert.equal(tokens.get('--color-accent'),'#b1d4b9');
+  applyAppearance({...DEFAULT_APPEARANCE,show_estimates:false});assert.equal(dataset.showEstimates,'false');
+  assert.equal(readAppearance({getItem:()=>'{"show_estimates":false}'}).show_estimates,false);
+  assert.equal(normalizeAppearance({show_estimates:'false'}).show_estimates,true);
 });

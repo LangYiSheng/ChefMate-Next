@@ -352,7 +352,9 @@ function render() {
       ],
       hint:"仅调整留白，做菜模式自动放大文字。",
     });
+    field('显示估算标记','show_estimates',{type:'checkbox',note:'显示用量、营养和上下文 Token 的估算标记。'});
     heading('对话建议');field('显示推荐回复','reply_suggestions',{type:'checkbox',note:'回复后提供接话思路，点击后仍可修改再发送。'});
+    field('推荐回复数量','reply_suggestion_count',{type:'number',options:[1,2,3,4,5,6].map(count=>[count,`${count} 条${count===3?'（默认）':''}`])});
   } else if (current === 'memory') {
     const initialize = !memoryHost;
     memoryHost ||= node('section','memory-settings'); memoryHost.id = 'memory-settings';
@@ -473,11 +475,11 @@ async function load() {
                 ? { ...loaded.runtime }
                 : section === "context"
                   ? { ...loaded.context }
-                : section === "interaction" ? {reply_suggestions:loaded.interaction?.reply_suggestions !== false}
+                : section === "interaction" ? {...loaded.interaction}
                 : section === "cooking" ? {timer_limit:loaded.cooking?.timer_limit===1?1:3,
                     clear_timer_on_step_change:loaded.cooking?.clear_timer_on_step_change===true,
                     ...readKitchenPreferences()}
-                : section === "developer" ? readDeveloper() : {...readDisplay(),reply_suggestions:loaded.interaction?.reply_suggestions!==false},
+                : section === "developer" ? readDeveloper() : {...readDisplay(),reply_suggestions:loaded.interaction?.reply_suggestions!==false,reply_suggestion_count:loaded.interaction?.reply_suggestion_count ?? 3},
         );
       }
     render();
@@ -502,11 +504,11 @@ async function save() {
     if (section === "developer") {
       localStorage.setItem("chefmate:developer-settings", JSON.stringify(values));
     } else if (section === "display") {
-      if(values.reply_suggestions!==loaded.interaction?.reply_suggestions){
-        const revision=draftRevisions.get(section);loaded=await api('/api/settings',{method:'PATCH',body:JSON.stringify({revision,section:'interaction',values:{reply_suggestions:values.reply_suggestions}})});
+      if(values.reply_suggestions!==loaded.interaction?.reply_suggestions || values.reply_suggestion_count!==loaded.interaction?.reply_suggestion_count){
+        const revision=draftRevisions.get(section);loaded=await api('/api/settings',{method:'PATCH',body:JSON.stringify({revision,section:'interaction',values:{reply_suggestions:values.reply_suggestions,reply_suggestion_count:values.reply_suggestion_count}})});
         for(const [name,baseline] of draftRevisions)if(baseline===revision)draftRevisions.set(name,loaded.revision);
       }
-      delete values.reply_suggestions;
+      delete values.reply_suggestions;delete values.reply_suggestion_count;
       values.inline_limit = Number(values.inline_limit);
       localStorage.setItem("chefmate:ui-settings", JSON.stringify(values));
       applyBranding(); applyAppearance(values);

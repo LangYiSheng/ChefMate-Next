@@ -23,6 +23,7 @@ class AgentConfig(BaseModel):
     supports_images: bool = False
     max_images: int = Field(default=3, ge=1, le=12, strict=True)
     reply_suggestions: bool = Field(default=True, strict=True)
+    reply_suggestion_count: int = Field(default=3, ge=1, le=6, strict=True)
     max_output_tokens: int = Field(default=4096, ge=128, le=16384)
     model_timeout_s: float = Field(default=120, gt=0, le=300)
     max_model_retries: int = Field(default=0, ge=0, le=2)
@@ -127,7 +128,7 @@ class AgentTurnResult(BaseModel):
     actions: list[dict[str, Any]] = Field(default_factory=list)
     usage: dict[str, Any] = Field(default_factory=dict)
     context_usage: dict[str, Any] = Field(default_factory=dict)
-    suggested_replies: list[ReplySuggestion] = Field(default_factory=list, max_length=3)
+    suggested_replies: list[ReplySuggestion] = Field(default_factory=list, max_length=6)
     awaiting_user: bool = False
     pending_question: dict[str, Any] | None = None
     debug_trace: list[dict[str, Any]] = Field(default_factory=list)

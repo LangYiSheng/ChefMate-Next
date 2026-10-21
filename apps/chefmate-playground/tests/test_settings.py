@@ -81,11 +81,11 @@ def test_reply_suggestions_toggle_is_strict_applies_and_survives_reload(tmp_path
     app = create_app(initial, service=Service(), agent=Agent())
     with TestClient(app) as client:
         before = client.get("/api/settings").json()
-        assert before["interaction"] == {"reply_suggestions": True}
+        assert before["interaction"] == {"reply_suggestions": True, "reply_suggestion_count": 3}
         saved = client.patch("/api/settings", json={"revision": before["revision"], "section": "interaction",
                                                    "values": {"reply_suggestions": False}})
         assert saved.status_code == 200
-        assert saved.json()["interaction"] == {"reply_suggestions": False}
+        assert saved.json()["interaction"] == {"reply_suggestions": False, "reply_suggestion_count": 3}
         assert client.get("/api/status").json()["reply_suggestions"] is False
         assert app.state.manager.reply_suggestions is False
         assert app.state.manager.agent.config.reply_suggestions is False
@@ -95,6 +95,26 @@ def test_reply_suggestions_toggle_is_strict_applies_and_survives_reload(tmp_path
                 "section": "interaction", "values": {"reply_suggestions": invalid}})
             assert response.status_code == 422
         assert load_overrides(initial).reply_suggestions is False
+
+
+def test_reply_count_applies_to_model_runtime_and_persistence_with_strict_bounds(tmp_path):
+    initial = config(tmp_path)
+    app = create_app(initial, service=Service(), agent=Agent())
+    with TestClient(app) as client:
+        before = client.get("/api/settings").json()
+        saved = client.patch("/api/settings", json={"revision": before["revision"], "section": "interaction",
+            "values": {"reply_suggestions": True, "reply_suggestion_count": 5}})
+        assert saved.status_code == 200
+        assert saved.json()["interaction"]["reply_suggestion_count"] == 5
+        assert client.get("/api/status").json()["reply_suggestion_count"] == 5
+        assert app.state.manager.reply_suggestion_count == 5
+        assert app.state.manager.agent.config.reply_suggestion_count == 5
+        assert load_overrides(initial).reply_suggestion_count == 5
+        for invalid in (0, 7, True, "3", 2.5, None):
+            response = client.patch("/api/settings", json={"revision": saved.json()["revision"],
+                "section": "interaction", "values": {"reply_suggestions": True, "reply_suggestion_count": invalid}})
+            assert response.status_code == 422
+        assert load_overrides(initial).reply_suggestion_count == 5
 
 
 def test_persisted_model_applies_atomically_survives_reload_and_rejects_stale_tab(tmp_path):

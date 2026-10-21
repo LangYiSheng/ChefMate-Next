@@ -15,10 +15,37 @@ REPLIES = [
 ]
 
 
-def make_agent(responses, enabled=True):
+def make_agent(responses, enabled=True, count=3):
     model = ScriptedModel(responses)
-    return ChefMateAgent(Service(), AgentConfig(model="test", reply_suggestions=enabled),
+    return ChefMateAgent(Service(), AgentConfig(model="test", reply_suggestions=enabled, reply_suggestion_count=count),
                          model=model, request_models=REQUESTS), model
+
+
+@pytest.mark.parametrize("count", [1, 3, 6])
+def test_selected_count_controls_tool_schema_model_prompt_and_fallback(count):
+    from chefmate_agent.suggestions import make_reply_suggestions_tool
+
+    replies = [{"title": f"建议{index}", "text": f"我想聊聊做饭的第{index}个话题。"} for index in range(count)]
+    spec = make_reply_suggestions_tool(count)
+    limits = spec.args_schema.model_json_schema()["properties"]["suggested_replies"]
+    assert limits["minItems"] == limits["maxItems"] == count
+    core, model = make_agent([tool("suggest_replies", {"suggested_replies": replies}), answer("继续聊。")], count=count)
+    result = asyncio.run(core.run_turn([{"role": "user", "content": "继续"}]))
+    assert result.status == "completed"
+    assert [item.model_dump() for item in result.suggested_replies] == replies
+    assert f"提供{count}个" in model.histories[0][0].content
+    fallback = finalize_reply_suggestions(None, count=count)
+    assert len(fallback) == count and len({item["text"] for item in fallback}) == count
+    context = {"stage": "prep", "components": [{"kind": "prep_checklist", "data": {"items": [{"status": "pending"}]}}]}
+    prep = finalize_reply_suggestions(replies, context, count=count)
+    assert len(prep) == count and prep[0] == PANTRY_REPLY
+    assert finalize_reply_suggestions(prep, context, count=count) == prep
+
+
+@pytest.mark.parametrize("count", [0, 7, True, "3", 1.5])
+def test_invalid_reply_count_is_rejected(count):
+    with pytest.raises(ValueError):
+        AgentConfig(model="test", reply_suggestion_count=count)
 
 
 def test_model_suggestions_are_typed_complete_and_use_only_the_normal_run():

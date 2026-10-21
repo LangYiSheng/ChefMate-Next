@@ -232,7 +232,7 @@ function renderWelcomeTemplates(force=false) {
 }
 function renderReplySuggestions() {
   const replies=suggestedReplies(currentSession()?.messages,state.status?.reply_suggestions!==false,
-    workspace.entries.get(state.currentId)?.snapshot);
+    workspace.entries.get(state.currentId)?.snapshot,state.status?.reply_suggestion_count);
   const host=ui['reply-suggestions'];host.hidden=!replies.length || busy() || Boolean(pendingQuestion() || savedAnswer() || state.confirmationQueue.get(state.currentId));
   host.replaceChildren();
   for(const reply of replies) {
@@ -761,7 +761,9 @@ function recipeButton(recipe, snapshot) {
   button.setAttribute('aria-label', `查看${recipe.name || '菜谱'}详情`);
   const copy = element('span', 'recipe-result-copy');
   const title = element('span', 'recipe-result-name', recipe.name || '未命名菜谱');
-  if (recipe.nutrition_status === 'estimated' || recipe.nutrition?.estimated || recipe.nutrition_estimated) title.append(element('span', 'tag', '营养估算'));
+  if (recipe.nutrition_status === 'estimated' || recipe.nutrition?.estimated || recipe.nutrition_estimated) {
+    const marker=element('span','tag','营养估算');marker.dataset.estimateMarker='';title.append(marker);
+  }
   copy.append(title);
   const names = matchedNames(recipe);
   const meta = [timeLabel(recipe.total_time_min), labels[recipe.difficulty] || recipe.difficulty, names.length ? `匹配 ${names.join('、')}` : ''].filter(Boolean);

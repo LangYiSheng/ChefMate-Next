@@ -1,5 +1,7 @@
 """Closed recommendation tool and conservative, fact-free completion fallback."""
 
+from functools import lru_cache
+
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
 from .extensions import InjectedToolSpec
@@ -18,22 +20,33 @@ class ReplySuggestionsRequest(BaseModel):
 
     @model_validator(mode="after")
     def distinct_replies(self):
-        if (len({item.title for item in self.suggested_replies}) != 3
-                or len({item.text for item in self.suggested_replies}) != 3):
+        if (len({item.title for item in self.suggested_replies}) != len(self.suggested_replies)
+                or len({item.text for item in self.suggested_replies}) != len(self.suggested_replies)):
             raise ValueError("Reply suggestions must be distinct")
         return self
 
 
-def make_reply_suggestions_tool() -> InjectedToolSpec:
+@lru_cache(maxsize=6, typed=True)
+def reply_suggestions_schema(count: int = 3):
+    if type(count) is not int or not 1 <= count <= 6:
+        raise ValueError("推荐回复数量必须为1到6之间的整数")
+
+    class ConfiguredReplySuggestions(ReplySuggestionsRequest):
+        suggested_replies: list[ReplySuggestion] = Field(min_length=count, max_length=count)
+
+    return ConfiguredReplySuggestions
+
+
+def make_reply_suggestions_tool(count: int = 3) -> InjectedToolSpec:
     def save(request, _context):
         return {"status": "ok", "suggested_replies": request["suggested_replies"]}
 
     return InjectedToolSpec(
         name=REPLY_SUGGESTIONS_TOOL,
-        description=("为本轮最终回答提供恰好3条可编辑的后续提问。title为20字以内的短标题，text为500字以内、"
+        description=(f"为本轮最终回答提供恰好{count}条可编辑的后续提问。title为20字以内的短标题，text为500字以内、"
                      "可替换到输入框的用户口吻草稿；点击不会发送。应结合本轮结果和真实任务状态，方向各异，"
                      "不编造菜谱事实、不声称操作已经完成、不替用户确认食材或步骤。只保存建议，不执行任何业务操作。"),
-        args_schema=ReplySuggestionsRequest,
+        args_schema=reply_suggestions_schema(count),
         handler=save,
     )
 
@@ -72,27 +85,34 @@ _FALLBACKS = {
 }
 
 
-def finalize_reply_suggestions(value, ui_context: dict | None = None) -> list[dict[str, str]]:
+_EXTRA_FALLBACKS = (
+    ("聊聊口味", "我想聊聊自己喜欢的口味，看看可以怎样安排。"),
+    ("看看营养", "我想了解最近的营养情况，请根据已有记录帮我看看。"),
+    ("整理厨房习惯", "我想整理一下平时做饭的习惯，先和我聊聊。"),
+)
+
+
+def finalize_reply_suggestions(value, ui_context: dict | None = None, *, count: int = 3) -> list[dict[str, str]]:
     """Reject an invalid batch in full; defaults request help without inventing facts."""
+    schema = reply_suggestions_schema(count)
+    context = ui_context or {}
+    fallbacks = (*_FALLBACKS.get(context.get("stage"), _FALLBACKS["idea"]), *_EXTRA_FALLBACKS)
     try:
-        batch = ReplySuggestionsRequest.model_validate({"suggested_replies": value})
+        batch = schema.model_validate({"suggested_replies": value})
         replies = [item.model_dump(mode="json") for item in batch.suggested_replies]
     except (ValidationError, TypeError):
-        stage = (ui_context or {}).get("stage", "idea")
-        replies = [{"title": title, "text": text} for title, text in _FALLBACKS.get(stage, _FALLBACKS["idea"])]
-    if ui_context is None:
-        return replies
+        replies = [{"title": title, "text": text} for title, text in fallbacks[:count]]
     replies = [item for item in replies if item["title"] != PANTRY_REPLY["title"] and item["text"] != PANTRY_REPLY["text"]]
-    pending_prep = ui_context.get("stage") == "prep" and any(
+    pending_prep = context.get("stage") == "prep" and any(
         view.get("kind") == "prep_checklist"
         and any(item.get("status") == "pending" for item in (view.get("data") or {}).get("items", []))
-        for view in ui_context.get("components", [])
+        for view in context.get("components", [])
     )
     if pending_prep:
         replies.insert(0, dict(PANTRY_REPLY))
-    for title, text in _FALLBACKS.get(ui_context.get("stage"), _FALLBACKS["idea"]):
-        if len(replies) >= 3:
+    for title, text in fallbacks:
+        if len(replies) >= count:
             break
         if all(item["title"] != title and item["text"] != text for item in replies):
             replies.append({"title": title, "text": text})
-    return replies[:3]
+    return replies[:count]

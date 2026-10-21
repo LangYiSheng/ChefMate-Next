@@ -1,4 +1,4 @@
-import {node} from './ui-components.js';
+import {node,estimateMarker} from './ui-components.js';
 import {intakeMetric} from './nutrition-dashboard.js';
 const foodTools=new Set(['create_food_log_draft','revise_food_log_draft','get_food_log','confirm_food_log','get_cooked_meal_intake','record_cooked_meal_intake']);
 const macros=[['calories_kcal','热量','kcal'],['protein_g','蛋白质','g'],['fat_g','脂肪','g'],['carbohydrate_g','碳水','g']];
@@ -32,7 +32,7 @@ export class ChatFood {
     host.replaceChildren();host.dataset.viewKind='food_log';const document=record.document,heading=node('header','chat-food-heading'),identity=node('div');identity.append(node('p','chat-food-kicker',`${record.date || ''} · ${meals[document?.meal_type] || '饮食记录'}`),node('h3','',document?.title || record.title || '这顿饭'));heading.append(identity,node('span',`chat-food-state ${record.status==='saved'?'saved':''}`,record.status==='saved'?'已记录':'待确认'));host.append(heading);
     if(document){const foods=node('ul','chat-food-items');for(const item of document.items){const row=node('li'),copy=node('span');copy.append(node('strong','',item.name),node('small','',item.portion || '份量待补充'));row.append(copy,node('span','chat-food-item-energy',Number.isFinite(item.nutrition?.calories_kcal)?`${value(item.nutrition.calories_kcal)} kcal`:'营养待补充'));foods.append(row);}host.append(foods);}
     else host.append(node('p','chat-food-note',loading?'正在读取食物与份量…':`${record.food_count || 0} 项食物`));
-    host.append(metrics(record.nutrition));host.append(node('p','chat-food-note',record.status==='saved'?(record.nutrition?.estimated?'营养含估算；已计入个人饮食。':'已计入个人饮食。'):'尚未计入营养统计。可以直接告诉我哪里要改。'));
+    host.append(metrics(record.nutrition));const note=node('p','chat-food-note');if(record.status==='saved' && record.nutrition?.estimated)note.append(estimateMarker('营养含估算；'));note.append(node('span','',record.status==='saved'?'已计入个人饮食。':'尚未计入营养统计。可以直接告诉我哪里要改。'));host.append(note);
     if(document){const details=node('details','chat-food-source');details.append(node('summary','','来源与估算依据'));for(const item of document.items){if(!item.evidence && !item.assumptions?.length)continue;details.append(node('h4','',item.name));if(item.evidence)details.append(node('p','',item.evidence));for(const assumption of item.assumptions || [])details.append(node('p','',assumption));}if(document.notes)details.append(node('p','',document.notes));host.append(details);}
     const actions=node('div','chat-food-actions'),locked=!canAct || this.saving.has(record.id) || loading;
     if(record.status==='draft')actions.append(action(this.saving.has(record.id)?'正在确认…':'确认记录',()=>this.publish(host,record,{sessionId,canAct}),locked),action('修改这顿饭',()=>this.ask(`我想调整${record.date}的“${document?.title || record.title || '这顿饭'}”：`,'edit'),locked));
@@ -47,7 +47,7 @@ export class ChatFood {
   }
   summary(result,{sessionId,canAct}){
     const summary=result.summary || {},host=node('section','chat-food-block chat-food-summary');host.dataset.viewKind='nutrition_summary';host.setAttribute('aria-label','个人营养统计');const period=summary.period || {},heading=node('header','chat-food-heading'),identity=node('div');identity.append(node('p','chat-food-kicker',[period.from,period.to].filter(Boolean).join(' — ') || '已确认的个人饮食'),node('h3','','最近的营养'));heading.append(identity,node('span','chat-food-state',`${summary.record_count || 0} 餐`));host.append(heading,metrics(summary));
-    host.append(node('p','chat-food-note',`${summary.estimated?'含估算。':''}未知营养未填零，未记录不代表没有吃。`));
+    const note=node('p','chat-food-note');if(summary.estimated)note.append(estimateMarker('含估算。'));note.append(node('span','','未知营养未填零，未记录不代表没有吃。'));host.append(note);
     const rows=node('div','chat-food-search');for(const item of result.items || []){const row=action(`${item.date} · ${item.title}`,()=>this.ask(`请查看${item.date}的“${item.title}”这份饮食记录的详情。`,'send'),!canAct);row.classList.add('chat-food-record-link');rows.append(row);}host.append(rows);return host;
   }
 }

@@ -1,4 +1,4 @@
-import {node} from './ui-components.js';
+import {node,estimateMarker} from './ui-components.js';
 const valid=data=>data && Number.isInteger(data.round) && data.round>0 && Number.isFinite(data.chars) && data.chars>=0 && Array.isArray(data.categories);
 const categoryKeys=['system','conversation','tools','tool_schemas','ui_state','memory','guidance'];
 export function contextBreakdown(data) {
@@ -22,16 +22,19 @@ export class ContextMeter {
   }
   render(session,enabled) {
     this.host.hidden=enabled!==true;if(enabled!==true)return;const data=currentContextUsage(session),key=JSON.stringify([session?.id,data]);if(this.key===key)return;this.key=key;
-    this.total.textContent=data?`≈ ${Number(data.estimated_tokens || 0).toLocaleString()} tokens`:'等待请求';this.body.replaceChildren();
+    this.total.replaceChildren();
+    if(data)this.total.append(estimateMarker('≈ '),node('span','',`${Number(data.estimated_tokens || 0).toLocaleString()} tokens`));else this.total.textContent='等待请求';
+    this.body.replaceChildren();
     if(!data){this.body.append(node('p','','下一次模型请求后显示分类占用。'));return;}
     this.body.append(node('p','context-meter-caption',`第 ${data.round} 次请求 · ${Number(data.chars).toLocaleString()} 字符`));
     const bar=node('div','context-meter-bar');bar.setAttribute('aria-hidden','true');const list=node('dl');
     contextBreakdown(data).forEach(item=>{
       const segment=node('span',`context-color-${item.color}`);segment.style.flexGrow=String(item.percent);segment.hidden=item.percent===0;bar.append(segment);
       const row=node('div'),label=node('dt'),dot=node('i',`context-meter-dot context-color-${item.color}`);dot.setAttribute('aria-hidden','true');label.append(dot,node('span','',item.label));
-      const amount=node('dd'),quantity=node('span','context-meter-quantity',item.tokens===null?'—':`≈ ${item.tokens.toLocaleString()}`);quantity.title=`${item.chars.toLocaleString()} 字符`;amount.append(quantity,node('span','context-meter-percent',`${Math.round(item.percent)}%`));row.append(label,amount);list.append(row);
+      const amount=node('dd'),quantity=node('span','context-meter-quantity');if(item.tokens===null)quantity.textContent='—';else quantity.append(estimateMarker('≈ '),node('span','',item.tokens.toLocaleString()));quantity.title=`${item.chars.toLocaleString()} 字符`;amount.append(quantity,node('span','context-meter-percent',`${Math.round(item.percent)}%`));row.append(label,amount);list.append(row);
     });
     const inspect=node('button','context-meter-inspect','查看请求轨迹');inspect.type='button';inspect.addEventListener('click',()=>window.dispatchEvent(new CustomEvent('chefmate:inspect-context')));
-    this.body.append(bar,list,node('p','context-meter-caption','分类数值为估算 Token，不含图片与服务端封装。'),inspect);if(data.images)this.body.append(node('p','context-meter-caption',`${data.images} 张图片，另行计量`));
+    const caption=node('p','context-meter-caption');caption.append(estimateMarker('分类数值为估算 Token。'),'不含图片与服务端封装。');
+    this.body.append(bar,list,caption,inspect);if(data.images)this.body.append(node('p','context-meter-caption',`${data.images} 张图片，另行计量`));
   }
 }

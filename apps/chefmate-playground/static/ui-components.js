@@ -19,8 +19,15 @@ function button(text, callback, disabled = false, className = 'ui-button') {
     console.warn('界面操作未完成：', error?.message || '请重试。');
   })); return item;
 }
-function badge(text, className = '') { return node('span', `ui-badge ${className}`, text); }
-function hint(text) { return node('p', 'ui-hint', text); }
+export function estimateMarker(text = '估算', className = '') {
+  const marker=node('span',className,text);marker.dataset.estimateMarker='';return marker;
+}
+function badge(text, className = '') {
+  return text.includes('估算')?estimateMarker(text,`ui-badge ${className}`):node('span', `ui-badge ${className}`, text);
+}
+function hint(text, estimatedText = '') {
+  const line=node('p','ui-hint',text);if(estimatedText)line.append(estimateMarker(estimatedText));return line;
+}
 function pagedList(items,ctx,key,render,size=4) {
   // The full-screen deck measures the available space itself, including long rows.
   // Keep its complete list available; an inline fixed-size page would hide later items.
@@ -212,8 +219,8 @@ function recipeDetail(view, ctx) {
   if (!recipe) { root.append(hint('菜谱详情尚未读取。')); return root; }
   root.append(node('h4', 'ui-recipe-name', recipe.name), hint(recipeMeta(recipe)));
   if (recipe.description) root.append(disclosure('关于这道菜',[recipe.description]));
-  if (recipe.target_servings != null) root.append(hint(`这盘用量 ${recipe.target_servings} 配方等效份${recipe.original_servings == null ? ' · 原配方份数未知，食材保留原量' : recipe.estimated_servings ? '（原配方份数含估算）' : ''}`));
-  else if (recipe.servings != null) root.append(hint(`原配方 ${recipe.servings} 份${recipe.estimated_servings ? '（份数估算）' : ''}`));
+  if (recipe.target_servings != null) root.append(hint(`这盘用量 ${recipe.target_servings} 配方等效份${recipe.original_servings == null ? ' · 原配方份数未知，食材保留原量' : ''}`,recipe.original_servings != null && recipe.estimated_servings?'（原配方份数含估算）':''));
+  else if (recipe.servings != null) root.append(hint(`原配方 ${recipe.servings} 份`,recipe.estimated_servings?'（份数估算）':''));
   const tab=sectionTabs(root,ctx,'detailSection',[['ingredients','食材'],['steps','做法'],['nutrition','营养'],['notes','说明']]);
   if(tab==='ingredients') root.append(pagedList(recipe.ingredients || [],ctx,'ingredientsPage',(item)=>{
     const row = node('div', 'ui-ingredient'); row.append(node('span', '', item.canonical_name), node('span', '', amount(item)));
@@ -253,7 +260,7 @@ function mealPlan(view, ctx) {
     input.dataset.controlKey = `servings:${recipe.recipe_id}`;
     input.addEventListener('input',()=>ctx.onServings?.(view,recipe.recipe_id,input.value===''?null:Number(input.value)));
     form.addEventListener('submit',event=>event.preventDefault());card.append(form);
-    if (recipe.original_servings != null) card.append(hint(`原配方 ${recipe.original_servings} 份，食材按这盘用量换算${recipe.estimated_servings ? '；原配方份数含估算' : ''}。`));
+    if (recipe.original_servings != null) card.append(hint(`原配方 ${recipe.original_servings} 份，食材按这盘用量换算。`,recipe.estimated_servings?'原配方份数含估算。':''));
     else card.append(hint(`原配方份数未知，食材暂保留原量${recipe.target_servings == null ? '。' : `；已记录 ${recipe.target_servings} 配方等效份。`}`));
     const actions = node('div', 'ui-actions');
     actions.append(button('查看详情', () => ctx.action('open_recipe_detail', { recipe_id: recipe.recipe_id }), ctx.locked, 'ui-text-button'),
@@ -309,9 +316,10 @@ function prepRow(item, ctx, locked) {
   input.setAttribute('aria-label', `${item.canonical_name}已备齐`);
   input.addEventListener('change', () => ctx.action('check_prep_item', { item_id: item.id, status: input.checked ? 'ready' : 'pending' })
     .catch(() => { input.checked = item.status === 'ready'; }));
-  const copy = node('span'); copy.append(node('strong', '', item.canonical_name), node('small', '', amount(item)));
+  const copy = node('span'),quantity=node('small','prep-amount',amount(item));
+  if (item.estimated) quantity.append(badge('估算'));
+  copy.append(node('strong', '', item.canonical_name),quantity);
   if (item.raw_text) copy.title = `原文：${item.raw_text}`;
-  if (item.estimated) copy.append(badge('估算'));
   label.append(input, copy); row.append(label);
   if (item.status !== 'ready') row.append(button(item.status === 'skipped' ? '恢复' : '跳过', () => ctx.action('check_prep_item', {
     item_id: item.id, status: item.status === 'skipped' ? 'pending' : 'skipped' }), locked, 'ui-text-button'));

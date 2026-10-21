@@ -23,14 +23,15 @@ export const FONT_PAIRINGS=Object.freeze([
   Object.freeze({id:'serif',name:'书卷宋体',note:'宋体标题与正文，黑体数值',title:serif,titleWeight:600,reading:serif,numeric:sans,ui:sans}),
   Object.freeze({id:'wenkai',name:'温柔文楷',note:'文楷标题与正文，黑体数值',title:wenkai,titleWeight:400,reading:wenkai,numeric:sans,ui:sans}),
 ]);
-export const DEFAULT_APPEARANCE=Object.freeze({theme:'light',light_palette:'ink',dark_palette:'graphite',font_pairing:'mixed'});
+export const DEFAULT_APPEARANCE=Object.freeze({theme:'light',light_palette:'ink',dark_palette:'graphite',font_pairing:'mixed',show_estimates:true});
 export const THEME_MODES=Object.freeze(['system','light','dark']);
 export function normalizeAppearance(value) {
   const saved=value && typeof value==='object' && !Array.isArray(value)?value:{};
   return {...saved,theme:THEME_MODES.includes(saved.theme)?saved.theme:DEFAULT_APPEARANCE.theme,
     light_palette:PALETTES.some(p=>p.id===saved.light_palette && p.mode==='light')?saved.light_palette:DEFAULT_APPEARANCE.light_palette,
     dark_palette:PALETTES.some(p=>p.id===saved.dark_palette && p.mode==='dark')?saved.dark_palette:DEFAULT_APPEARANCE.dark_palette,
-    font_pairing:FONT_PAIRINGS.some(f=>f.id===saved.font_pairing)?saved.font_pairing:DEFAULT_APPEARANCE.font_pairing};
+    font_pairing:FONT_PAIRINGS.some(f=>f.id===saved.font_pairing)?saved.font_pairing:DEFAULT_APPEARANCE.font_pairing,
+    show_estimates:typeof saved.show_estimates==='boolean'?saved.show_estimates:true};
 }
 export function resolveTheme(mode,darkSystem=false) { return mode==='dark' || mode==='system' && darkSystem?'dark':'light'; }
 export function resolveAppearance(value,darkSystem=false) {

@@ -173,7 +173,7 @@ class ChefMateAgent:
             "load_skill": "按已启用名称渐进读取Skill正文；遵循目录allowlist和读取预算，不执行脚本。",
         }
         self._requests.update(list_skills=SkillListRequest, load_skill=SkillLoadRequest)
-        suggestion_tools = (make_reply_suggestions_tool(),) if config.reply_suggestions else ()
+        suggestion_tools = (make_reply_suggestions_tool(config.reply_suggestion_count),) if config.reply_suggestions else ()
         for spec in (*extra_tools, *suggestion_tools):
             if not re.fullmatch(r"[a-z][a-z0-9_]{0,63}", spec.name) or spec.name in self._requests:
                 raise ValueError("Injected tool name is invalid or duplicated")
@@ -407,7 +407,7 @@ class ChefMateAgent:
     def _context_prompt(self, context: TurnRuntimeContext, messages) -> str:
         prompt = SYSTEM_PROMPT
         if self.config.reply_suggestions:
-            prompt += ("\n可选择调用suggest_replies提供3个不同方向的用户口吻草稿，最多尝试一次；"
+            prompt += (f"\n可选择调用suggest_replies提供{self.config.reply_suggestion_count}个不同方向的用户口吻草稿，最多尝试一次；"
                        "缺少建议或调用失败会由系统提供默认草稿，直接完成主回答，不为此重复调用。"
                        "需要ask_user等待回答时不生成推荐。不要在最终正文重复列出建议。")
         metadata = self.skills.list_metadata()
@@ -621,7 +621,7 @@ class ChefMateAgent:
                 suggested_replies=finalize_reply_suggestions(next((
                     record.result.get("suggested_replies") for record in reversed(context.records)
                     if record.name == REPLY_SUGGESTIONS_TOOL and record.result.get("status") == "ok"
-                ), None), context.ui_context) if self.config.reply_suggestions and not pending_question else [],
+                ), None), context.ui_context, count=self.config.reply_suggestion_count) if self.config.reply_suggestions and not pending_question else [],
             )
         except _UserCancelled:
             await self._emit(on_event, {"type": "status", "status": "cancelled", "message": "已停止本轮查询"})

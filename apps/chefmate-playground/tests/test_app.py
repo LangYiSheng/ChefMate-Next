@@ -97,6 +97,20 @@ def test_empty_sessions_stay_out_of_navigation_until_first_message(tmp_path):
         assert [item["id"] for item in client.get("/api/sessions").json()["items"]] == [session["id"]]
 
 
+def test_selected_reply_count_survives_http_persistence_and_replay(tmp_path):
+    for count in (1, 6):
+        config = PlaygroundConfig(sessions_database=tmp_path / str(count) / "sessions.db", reply_suggestion_count=count)
+        with TestClient(create_app(config, service=Service(), agent=Agent())) as client:
+            session = client.post("/api/sessions").json()
+            uri = f"/api/sessions/{session['id']}"
+            request = {"message": "你好", "request_id": "reply-count"}
+            result = events(client.post(uri + "/turn", json=request))
+            assert len(next(event for event in result if event["type"] == "result")["suggested_replies"]) == count
+            assert len(client.get(uri).json()["messages"][-1]["suggested_replies"]) == count
+            replay = events(client.post(uri + "/turn", json=request))
+            assert len(next(event for event in replay if event["type"] == "result")["suggested_replies"]) == count
+
+
 def test_suggestions_are_final_only_persist_replay_and_hide_when_disabled(tmp_path):
     replies = [{"title": "核对用量", "text": "请帮我核对当前用量。"},
                {"title": "调整人数", "text": "我想调整用餐人数，请先问我具体人数。"},

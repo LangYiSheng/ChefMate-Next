@@ -31,6 +31,18 @@ function context(t,extra={}){
 }
 const timerView=()=>({id:'timer-view',kind:'timers',revision:1,editable:true,data:{timers:[]}});
 
+test('prep estimates follow the quantity unit and expose a shared display marker',t=>{
+  const ctx=context(t,{stage:'prep'}),view={id:'prep',kind:'prep_checklist',editable:true,data:{items:[
+    {id:'egg',canonical_name:'鸡蛋',amount_text:'2 个',status:'pending',estimated:true},
+    {id:'salt',canonical_name:'盐',amount_text:'1 g',status:'pending',estimated:false},
+  ]}};
+  const root=renderView(view,ctx),quantities=descendants(root).filter(e=>e.classList.contains('prep-amount'));
+  assert.equal(quantities[0].textContent,'2 个估算');
+  assert.equal(quantities[0].children[0].dataset.estimateMarker,'');
+  assert.equal(quantities[1].textContent,'1 g');assert.equal(quantities[1].children.length,0);
+  assert.equal(view.data.items[0].estimated,true);
+});
+
 for(const detached of [false,true])test(`manual timer submits exact seconds with its button ${detached?'moved outside':'inside'} the form`,async t=>{
   const starts=[],drafts=[];
   const ctx=context(t,{onStartTimer:async(view,payload)=>starts.push({id:view.id,...payload}),onTimer:(...args)=>drafts.push(args)});

@@ -1,4 +1,4 @@
-import {node} from './ui-components.js';
+import {node,estimateMarker} from './ui-components.js';
 const macros=[['calories_kcal','热量','kcal'],['protein_g','蛋白质','g'],['fat_g','脂肪','g'],['carbohydrate_g','碳水','g']];
 const mealLabels={breakfast:'早餐',lunch:'午餐',dinner:'晚餐',snack:'加餐',unspecified:'一餐'};
 const number=value=>Number.isFinite(value)?Math.round(value*10)/10:null;
@@ -8,10 +8,10 @@ export function intakeMetric(summary,key) {
   return {value:full??known,partial:full===null && known!==null,coverage:summary?.coverage?.[key]};
 }
 export function nutritionHero(summary,{title='今天的营养',className=''}={}) {
-  const section=node('section',`intake-hero ${className}`),header=node('div','intake-hero-heading');header.append(node('h2','',title),node('span','center-muted',`已记录 ${summary?.record_count || 0} 餐${summary?.estimated?' · 含估算':''}`));section.append(header);
+  const section=node('section',`intake-hero ${className}`),header=node('div','intake-hero-heading'),count=node('span','center-muted',`已记录 ${summary?.record_count || 0} 餐`);if(summary?.estimated)count.append(estimateMarker(' · 含估算'));header.append(node('h2','',title),count);section.append(header);
   const metrics=node('dl','intake-metrics');
   for(const [key,label,unit] of macros){const item=intakeMetric(summary,key),cell=node('div',key==='calories_kcal'?'intake-energy':'');cell.append(node('dt','',label));const amount=node('dd','',item.value===null?'—':String(item.value));if(item.value!==null)amount.append(node('small','',unit));cell.append(amount);
-    cell.append(node('span','intake-coverage',item.partial?'已知部分':item.value===null?summary?.record_count?'待补充营养':'记录一餐后显示':summary.estimated?'含估算':'已记录'));metrics.append(cell);}
+    const coverage=node('span','intake-coverage',item.partial?'已知部分':item.value===null?summary?.record_count?'待补充营养':'记录一餐后显示':'已记录');if(item.value!==null && !item.partial && summary.estimated)coverage.replaceChildren(estimateMarker('含估算'));cell.append(coverage);metrics.append(cell);}
   section.append(metrics,node('p','center-footnote','只统计已确认的个人饮食。未记录不代表没有吃，未知营养不会填成零。'));return section;
 }
 export function foodLogRows(centers,records,{deleted=false}={}) {
@@ -19,7 +19,7 @@ export function foodLogRows(centers,records,{deleted=false}={}) {
   for(const record of records){const row=node('article','food-log-row'),copy=node('div'),title=record.document.title;copy.append(node('time','center-eyebrow',`${record.date} · ${mealLabels[record.document.meal_type] || '一餐'}`),node('h3','',title),node('p','center-muted',record.document.items.map(item=>item.name).join('、')));
     const actions=node('div','center-row-actions');
     if(deleted)actions.append(button('恢复记录',()=>centers.restoreFoodLog(record)));
-    else{const energy=intakeMetric(record.nutrition,'calories_kcal');const metric=node('strong','food-log-energy',energy.value===null?'热量待补充':`${energy.value} kcal${energy.partial?' · 部分':''}`);copy.append(metric,node('span','food-log-basis',record.status==='draft'?'待核对 · 未计入统计':record.nutrition.estimated?'含估算':'已确认'));actions.append(button(record.status==='draft'?'核对记录':'查看记录',()=>centers.openFoodLog(record)));}
+    else{const energy=intakeMetric(record.nutrition,'calories_kcal');const metric=node('strong','food-log-energy',energy.value===null?'热量待补充':`${energy.value} kcal${energy.partial?' · 部分':''}`),basis=node('span','food-log-basis',record.status==='draft'?'待核对 · 未计入统计':'已确认');if(record.status!=='draft' && record.nutrition.estimated)basis.append(estimateMarker(' · 含估算'));copy.append(metric,basis);actions.append(button(record.status==='draft'?'核对记录':'查看记录',()=>centers.openFoodLog(record)));}
     row.append(copy,actions);list.append(row);
   }
   if(!records.length){const empty=node('div','center-empty');empty.append(node('h2','',deleted?'没有已移除的记录':'从记录今天的一餐开始'),node('p','center-muted',deleted?'移除的个人饮食记录可以在这里恢复。':'拍张饭菜照片，或告诉小锅搭子吃了什么。核对后就能看到这一份的营养。'));list.append(empty);}return list;

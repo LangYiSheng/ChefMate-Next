@@ -15,6 +15,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 from chefmate_workflow import CookingSettings, UISnapshot, UserActionRequest, WorkspaceState
 
 from .config import APP_ROOT, PlaygroundConfig
+from .versioning import current_commit
 from .interactions import WorkspaceBinding
 from .images import ImageError, MAX_UPLOAD_BYTES, SessionImages
 from .debug import redact_debug
@@ -89,6 +90,7 @@ def create_app(config: PlaygroundConfig | None = None, *, service=None, agent=No
         setup_error = "模型或系统组件配置无效，请打开设置检查。"
     images = SessionImages(settings.sessions_database.parent / "images", repo)
     manager = TurnManager(repo, agent, workspace_binding, images, reply_suggestions=settings.reply_suggestions,
+                          reply_suggestion_count=settings.reply_suggestion_count,
                           debug_secrets=(settings.api_key, settings.database_url), memory=memory,
                           memory_enabled=lambda: "personal-memory" in settings.enabled_components)
 
@@ -186,6 +188,7 @@ def create_app(config: PlaygroundConfig | None = None, *, service=None, agent=No
             settings, agent, component_registry = candidate, replacement, registry
             manager.agent = agent
             manager.reply_suggestions = settings.reply_suggestions
+            manager.reply_suggestion_count = settings.reply_suggestion_count
             manager.debug_secrets = (settings.api_key, settings.database_url)
             app.state.config, app.state.components = settings, component_registry
             if body.section != "cooking":
@@ -215,6 +218,7 @@ def create_app(config: PlaygroundConfig | None = None, *, service=None, agent=No
             "supports_images": settings.supports_images,
             "max_images": settings.max_images,
             "reply_suggestions": settings.reply_suggestions,
+            "reply_suggestion_count": settings.reply_suggestion_count,
             "active_sessions": len(manager.active), "error": setup_error,
             "enabled_components": list(settings.enabled_components),
         }
@@ -305,6 +309,7 @@ def create_app(config: PlaygroundConfig | None = None, *, service=None, agent=No
         version = tomllib.loads((APP_ROOT / "pyproject.toml").read_text(encoding="utf-8"))["project"]["version"]
         current_status = await status()
         return {"name": "ChefMate", "subtitle": "您的个性化烹饪助手", "version": version,
+                "commit": await asyncio.to_thread(current_commit, APP_ROOT),
                 "runtime": "本地工作台", "recipe_count": current_status["database"]["recipe_count"],
                 "component_count": len(component_registry.metadata()) if component_registry else 0}
 

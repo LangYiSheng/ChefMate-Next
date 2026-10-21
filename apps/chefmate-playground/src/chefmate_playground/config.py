@@ -31,6 +31,7 @@ class PlaygroundConfig:
     supports_images: bool = False
     max_images: int = 3
     reply_suggestions: bool = True
+    reply_suggestion_count: int = 3
     timer_limit: int = 3
     clear_timer_on_step_change: bool = False
     api_format: str = "chat_completions"
@@ -47,6 +48,8 @@ class PlaygroundConfig:
             raise ValueError("模型图片上限必须是 1 到 12 之间的整数")
         if type(self.reply_suggestions) is not bool:
             raise ValueError("推荐回复开关必须是布尔值")
+        if type(self.reply_suggestion_count) is not int or not 1 <= self.reply_suggestion_count <= 6:
+            raise ValueError("推荐回复数量必须为1到6之间的整数")
         if type(self.timer_limit) is not int or self.timer_limit not in {1, 3}:
             raise ValueError("同时计时上限必须为1或3")
         if type(self.clear_timer_on_step_change) is not bool:

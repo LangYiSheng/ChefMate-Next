@@ -1,4 +1,7 @@
 /* Shared visual language for chat, settings and cooking mode. */
+:root[data-show-estimates="false"] [data-estimate-marker]{display:none!important}
+.ui-check-row .prep-amount{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.ui-check-row .prep-amount>.ui-badge{margin:0;font-weight:400;text-decoration:none}
 :root{--text:var(--color-text);--muted:var(--color-muted);--accent:var(--color-accent);--line:var(--color-border);--border:var(--color-border);--surface:var(--color-surface);--soft:var(--color-surface);--sidebar-bg:var(--color-background);--selection:var(--color-accent-soft)}
 body{font-family:Inter,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;background:var(--color-canvas);color:var(--text);font-size:14px}
 button,input,select,textarea{font-family:inherit}

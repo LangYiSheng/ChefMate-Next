@@ -70,6 +70,16 @@ test('the pantry shortcut uses live preparation state and stays an editable user
   assert.equal(suggestedReplies([answer],true,context).some(item=>item.title===PANTRY_REPLY.title),false);
 });
 
+test('reply settings preserve up to six choices and default to three',()=>{
+  const messages=[{role:'assistant',suggested_replies:Array.from({length:6},(_,i)=>({title:`建议${i}`,text:`话题${i}`}))}];
+  for(const count of [1,3,6])assert.equal(suggestedReplies(messages,true,undefined,count).length,count);
+  assert.equal(suggestedReplies(messages).length,3);
+  assert.equal(suggestedReplies(messages,true,undefined,'6').length,3);
+  assert.equal(suggestedReplies(messages,false,undefined,6).length,0);
+  const prep={stage:'prep',components:[{kind:'prep_checklist',data:{items:[{status:'pending'}]}}]};
+  assert.deepEqual(suggestedReplies(messages,true,prep,1),[PANTRY_REPLY]);
+});
+
 test('random welcome templates are unique and never offer images to a text-only model',()=>{
   for(const random of [()=>0,()=>.4,()=>.99]){
     const templates=drawStarters(false,random);

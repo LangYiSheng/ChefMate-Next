@@ -1,4 +1,4 @@
-import {node} from './ui-components.js';
+import {node,estimateMarker} from './ui-components.js';
 import {enhanceControl} from './form-controls.js';
 
 const macros=[['calories_kcal','热量','kcal',20000],['protein_g','蛋白质','g',3000],['fat_g','脂肪','g',3000],['carbohydrate_g','碳水','g',3000]];
@@ -26,10 +26,13 @@ function macroValues(values) {
   const grid=node('dl','center-nutrition');
   for(const [key,label,unit] of macros){const cell=node('div');cell.append(node('dt','',label),node('dd','',Number.isFinite(values?.[key])?`${rounded(values[key])} ${unit}`:'未知'));grid.append(cell);}return grid;
 }
-function basisText(item) {
-  const nutrition=item.nutrition_basis==='estimated'?'营养含估算':item.nutrition_basis==='user_provided'?'营养由用户提供':'营养待补充';
-  return `${nutrition}${item.portion_basis==='estimated'?' · 份量为估算':''}`;
+function setBasis(note,item) {
+  note.replaceChildren();
+  note.append(item.nutrition_basis==='estimated'?estimateMarker('营养含估算'):node('span','',item.nutrition_basis==='user_provided'?'营养由用户提供':'营养待补充'));
+  if(item.portion_basis==='estimated')note.append(estimateMarker(' · 份量为估算'));
+  return note;
 }
+function basisNote(item,className='center-muted') {return setBasis(node('p',className),item);}
 function sourceImages(record,source) {
   if(record.document.source_kind!=='image')return;
   source.append(node('h3','','来源照片'));const images=node('div','food-log-source-images');
@@ -55,9 +58,9 @@ export function renderFoodLogEditor(centers,editor,initial) {
     basic.append(node('p','center-muted',`${record.date} · ${mealNames[doc.meal_type] || '未分类'} · 已确认的个人摄入`),node('h3','',doc.title));
     if(doc.notes)basic.append(node('p','center-source-text',doc.notes));
     foods.append(node('p','center-muted','以下营养是你记录的这一份总量；估算与未知项分别保留。'));
-    for(const item of doc.items){const section=node('section','food-log-item food-log-readonly');section.append(node('h3','',item.name),node('p','center-muted',`${item.portion || '份量未知'}${Number.isFinite(item.amount_g)?` · ${item.amount_g} 克`:''}`),node('p','food-log-item-note',basisText(item)),macroValues(item.nutrition));foods.append(section);}
+    for(const item of doc.items){const section=node('section','food-log-item food-log-readonly');section.append(node('h3','',item.name),node('p','center-muted',`${item.portion || '份量未知'}${Number.isFinite(item.amount_g)?` · ${item.amount_g} 克`:''}`),basisNote(item,'food-log-item-note'),macroValues(item.nutrition));foods.append(section);}
     if(doc.source_text)source.append(node('h3','','原始描述'),node('p','center-source-text',doc.source_text));
-    for(const item of doc.items){const section=node('section','food-log-item');section.append(node('h3','',item.name),node('p','center-muted',basisText(item)));if(item.evidence)section.append(node('p','center-source-text',item.evidence));for(const assumption of item.assumptions || [])section.append(node('p','center-warning',assumption));source.append(section);}
+    for(const item of doc.items){const section=node('section','food-log-item');section.append(node('h3','',item.name),basisNote(item));if(item.evidence)section.append(node('p','center-source-text',item.evidence));for(const assumption of item.assumptions || [])section.append(node('p','center-warning',assumption));source.append(section);}
     centers.inspectorTabs(editor,[['basic','这次饮食'],['foods','食物与营养'],['source','来源与依据']],panels);
     const actions=node('div','center-footer-actions');actions.append(button('移到回收站',()=>centers.deleteFoodLog(record),'danger quiet'));editor.footer.replaceChildren(actions);return;
   }
@@ -83,7 +86,7 @@ export function renderFoodLogEditor(centers,editor,initial) {
     const grid=node('div','food-log-item-grid');grid.append(field('食物名称',name),field('我吃的份量',portion,{hint:'例如半碗、一小盘，或实际称量的克重。'}),field('克重（可留空）',grams,{stepper:false}));section.append(grid);
     const nutrition=node('div','food-log-macros'),macroInputs={};
     for(const [key,label,unit,max] of macros){const control=input(initialItem.nutrition[key],'number',key);control.min='0';control.max=String(max);control.step='any';macroInputs[key]=control;nutrition.append(field(`${label}（${unit}）`,control,{stepper:false}));}
-    const itemNote=node('p','food-log-item-note',basisText(initialItem));itemNote.setAttribute('role','status');section.append(nutrition,itemNote);itemList.append(section);
+    const itemNote=basisNote(initialItem,'food-log-item-note');itemNote.setAttribute('role','status');section.append(nutrition,itemNote);itemList.append(section);
     const sourceSection=node('section','food-log-item'),sourceHeading=node('h3','',initialItem.name || `食物 ${items.length+1}`),evidence=input(initialItem.evidence,'textarea','evidence'),assumptions=input((initialItem.assumptions || []).join('\n'),'textarea','assumptions');evidence.maxLength=1000;evidence.rows=3;assumptions.rows=4;assumptions.maxLength=4812;
     sourceSection.append(sourceHeading,field('营养依据',evidence),field('估算假设（每行一条）',assumptions,{hint:'保留碗盘大小、食材组成、用油等估算依据；最多12条。'}));itemSources.append(sourceSection);
     const controlPairs=[[name,'foods'],[portion,'foods'],[grams,'foods'],...Object.values(macroInputs).map(control=>[control,'foods']),[evidence,'source'],[assumptions,'source']];controls.push(...controlPairs);
@@ -115,7 +118,7 @@ export function renderFoodLogEditor(centers,editor,initial) {
       state.item.nutrition_basis=known.length?(state.allProvided || known.every(key=>state.manual.has(key))?'user_provided':'estimated'):'unknown';
       if(state.item.nutrition_basis==='user_provided')evidence.value='用户在核对页手动填写';
       else if(state.item.nutrition_basis==='estimated'){evidence.value='部分营养由用户在核对页修正，其余数值沿用原估算。';if(!lines(assumptions).length)assumptions.value='未手动修改的营养仍按原食物组成和份量估算。';}
-      else evidence.value='';reference=numeric(grams)>0?{grams:numeric(grams),nutrition:clone(state.item.nutrition)}:null;itemNote.textContent=basisText(state.item);
+      else evidence.value='';reference=numeric(grams)>0?{grams:numeric(grams),nutrition:clone(state.item.nutrition)}:null;setBasis(itemNote,state.item);
     });
     items.push(state);return state;
   };

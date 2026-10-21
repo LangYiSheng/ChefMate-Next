@@ -28,7 +28,7 @@ function hasPendingPrep(context) {
     && (view.data?.items || []).some(item=>item.status==='pending'));
 }
 
-export function suggestedReplies(messages,enabled=true,context) {
+export function suggestedReplies(messages,enabled=true,context,count=3) {
   if(!enabled)return [];
   const latest=messages?.at(-1);
   if(!latest || latest.role!=='assistant' || latest.streaming || latest.error || latest.cancelled)return [];
@@ -44,5 +44,5 @@ export function suggestedReplies(messages,enabled=true,context) {
   return replies.filter(item=>{
     if(titles.has(item.title) || texts.has(item.text))return false;
     titles.add(item.title);texts.add(item.text);return true;
-  }).slice(0,3);
+  }).slice(0,Number.isInteger(count)?Math.max(1,Math.min(6,count)):3);
 }

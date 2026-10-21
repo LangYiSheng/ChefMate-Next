@@ -1,4 +1,4 @@
-import {node} from './ui-components.js';
+import {node,estimateMarker} from './ui-components.js';
 import {icon} from './icons.js';
 import {enhanceControl} from './form-controls.js';
 import {CenterEditorState,draftIngredient} from './center-state.js';
@@ -10,6 +10,9 @@ import {resizeRightPane,panelBounds} from './pane-resize.js';
 const nutrients=[['calories_kcal','热量','kcal'],['protein_g','蛋白质','g'],['fat_g','脂肪','g'],['carbohydrate_g','碳水','g']];
 const value=(number,unit='')=>Number.isFinite(number)?`${Math.round(number*10)/10}${unit?` ${unit}`:''}`:'暂无数据';
 let tabSequence=0;
+function nutritionNote(estimated,text) {
+  const note=node('p','center-muted');if(estimated)note.append(estimateMarker('含估算。'));note.append(node('span','',text));return note;
+}
 function button(text,action,style='') {
   const el=node('button',`center-button ${style}`,text);el.type='button';el.onclick=action;return el;
 }
@@ -189,7 +192,7 @@ export class KitchenCenters {
     editor.title.textContent=recipe.name;editor.eyebrow.textContent=item.origin==='user'?'我的菜谱':'精选菜谱';this.adaptInspector();const steps=node('section','center-tab-panel'),ingredients=node('section','center-tab-panel'),nutrition=node('section','center-tab-panel'),source=node('section','center-tab-panel');
     const ordered=node('ol','center-recipe-steps');for(const step of recipe.steps || [])ordered.append(node('li','',typeof step==='string'?step:step.instruction || step.description));steps.append(ordered);if(!ordered.children.length)steps.append(node('p','center-muted','暂时没有做法记录。'));
     const foods=node('ul','center-ingredients');for(const food of recipe.ingredients || []){const row=node('li');row.append(node('span','',food.canonical_name || food.raw_text),node('span','center-muted',food.raw_amount?`${food.raw_amount}${food.raw_unit || ''}`:food.raw_text || '适量'));foods.append(row);}ingredients.append(foods);
-    nutrition.append(node('h3','','原配方每份营养'),metricGrid(recipe.nutrition?.per_serving),node('p','center-muted',recipe.nutrition?.estimated?'含估算，仅供参考。未知项保留空缺。':'按原配方计算。未知项保留空缺。'));
+    nutrition.append(node('h3','','原配方每份营养'),metricGrid(recipe.nutrition?.per_serving),nutritionNote(recipe.nutrition?.estimated,'按原配方计算。未知项保留空缺。'));
     const record=editor.record;source.append(node('h3','',item.origin==='user'?'你的个人菜谱':'菜谱库原配方'),node('p','center-muted',[Number.isFinite(recipe.servings)?`原配方 ${recipe.servings} 份`:'原份量待确认',Number.isFinite(recipe.total_time_min)?`总耗时 ${recipe.total_time_min} 分钟`:'总耗时待确认'].join(' · ')));
     if(record?.source_text)source.append(node('h3','','来源原文'),node('p','center-source-text',record.source_text));for(const warning of recipe.warnings || [])source.append(node('p','center-warning',warning));
     this.inspectorTabs(editor,[['steps','做法'],['ingredients','食材'],['nutrition','营养'],['source','来源']],{steps,ingredients,nutrition,source});const actions=node('div','center-footer-actions');
@@ -270,7 +273,7 @@ export class KitchenCenters {
     return this.leave(()=>{
       this.disposeInspector(false);const editor=this.createInspector(entry.id,'这顿饭');editor.eyebrow.textContent=entry.date;editor.title.textContent=entry.status==='completed'?'好好吃饭的一天':'这次厨房尝试';this.adaptInspector();const dishes=node('section','center-tab-panel'),nutrition=node('section','center-tab-panel'),feedback=node('section','center-tab-panel');
       dishes.append(node('p','center-muted',`${entry.diners?`${entry.diners} 人共享`:'人数待确认'} · ${entry.recipes.length} 道菜`));const list=node('ul','center-meal-recipes');for(const recipe of entry.recipes)list.append(node('li','',recipe.name));dishes.append(list);
-      if(entry.status==='completed'){const panels={meal_total:node('div'),per_diner_reference:node('div')};panels.meal_total.append(metricGrid(entry.nutrition?.meal_total));panels.per_diner_reference.append(metricGrid(entry.nutrition?.per_diner_reference));const basis=tabs([['meal_total','整餐制作量'],['per_diner_reference','均分参考']],'meal_total',null,{label:'营养计算口径',panels});nutrition.append(basis.bar,...Object.values(panels),node('p','center-muted',`${entry.nutrition?.estimated?'含估算。':''}${entry.nutrition?.notice || ''}`));}else nutrition.append(node('p','center-muted','这餐还没有确认完成，暂不计入已完成餐食的营养汇总。'));
+      if(entry.status==='completed'){const panels={meal_total:node('div'),per_diner_reference:node('div')};panels.meal_total.append(metricGrid(entry.nutrition?.meal_total));panels.per_diner_reference.append(metricGrid(entry.nutrition?.per_diner_reference));const basis=tabs([['meal_total','整餐制作量'],['per_diner_reference','均分参考']],'meal_total',null,{label:'营养计算口径',panels});nutrition.append(basis.bar,...Object.values(panels),nutritionNote(entry.nutrition?.estimated,entry.nutrition?.notice || ''));}else nutrition.append(node('p','center-muted','这餐还没有确认完成，暂不计入已完成餐食的营养汇总。'));
       const rating=node('select','center-input');for(const [score,label] of [['','暂不评分'],['5','很满意'],['4','挺好吃'],['3','还可以'],['2','待改进'],['1','没成功']]){const option=node('option','',label);option.value=score;option.selected=String(entry.rating || '')===score;rating.append(option);}const notes=node('textarea','center-input');notes.rows=6;notes.maxLength=2000;notes.value=entry.notes || '';notes.placeholder='记点下次想调整的口味、火候…';feedback.append(field('这次做菜的感受',rating),field('留给下次的笔记',notes));
       for(const input of [rating,notes]){input.addEventListener('input',()=>{editor.state.change();this.status(editor,'有未保存的感受');});input.addEventListener('change',()=>editor.state.change());}
       this.inspectorTabs(editor,[['dishes','这顿饭'],['nutrition','营养'],['feedback','做菜感受']],{dishes,nutrition,feedback});

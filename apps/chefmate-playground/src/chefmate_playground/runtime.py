@@ -47,13 +47,14 @@ class ActiveTurn:
 
 
 class TurnManager:
-    def __init__(self, repository: SessionRepository, agent, workspace_binding=None, images=None, *, reply_suggestions=True,
+    def __init__(self, repository: SessionRepository, agent, workspace_binding=None, images=None, *, reply_suggestions=True, reply_suggestion_count=3,
                  debug_secrets=(), memory=None, memory_enabled=None, usage=None):
         self.repository = repository
         self.agent = agent
         self.workspace_binding = workspace_binding
         self.images = images
         self.reply_suggestions = reply_suggestions
+        self.reply_suggestion_count = reply_suggestion_count
         self.debug_secrets = debug_secrets
         self.memory = memory
         self.memory_enabled = memory_enabled or (lambda: False)
@@ -255,7 +256,8 @@ class TurnManager:
                 if status == "completed":
                     if self.reply_suggestions and not visible["awaiting_user"]:
                         visible["suggested_replies"] = finalize_reply_suggestions(
-                            data.get("suggested_replies"), visible.get("workspace") or turn.ui_context)
+                            data.get("suggested_replies"), visible.get("workspace") or turn.ui_context,
+                            count=self.reply_suggestion_count)
                     state["history"] = data["messages"]
                     state["messages"].append({
                         "id": str(uuid4()), "turn_id": turn.id, "role": "assistant", "content": visible["text"],

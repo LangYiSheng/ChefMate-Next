@@ -12,8 +12,9 @@ let listening = false;
 export function applyAppearance(preferences = readAppearance()) {
   if (typeof document === 'undefined') return;
   const darkSystem = globalThis.matchMedia?.('(prefers-color-scheme: dark)').matches || false;
-  const {theme,palette,fonts}=resolveAppearance(preferences,darkSystem),root=document.documentElement;
+  const {theme,palette,fonts,preferences:normalized}=resolveAppearance(preferences,darkSystem),root=document.documentElement;
   root.dataset.theme=theme;root.dataset.palette=palette.id;root.dataset.fontPairing=fonts.id;
+  root.dataset.showEstimates=String(normalized.show_estimates);
   root.style.colorScheme=theme;
   for(const [token,value]of Object.entries(appearanceTokens(palette,fonts)))root.style.setProperty(token,value);
   const color = document.querySelector('meta[name="theme-color"]');

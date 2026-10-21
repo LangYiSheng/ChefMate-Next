@@ -16,7 +16,7 @@ from .config import APP_ROOT
 from .components import ComponentRegistry, DEFAULT_COMPONENTS, RETRIEVAL_TOOLS, component_metadata
 PERSISTED = {"model", "base_url", "api_key", "api_format", "stream_tool_calls", "supports_images", "max_images", "enabled_components",
              "turn_timeout_s", "model_timeout_s", "model_max_retries", "max_model_rounds", "max_tool_calls",
-             "max_history_chars", "max_tool_result_chars", "reply_suggestions", "timer_limit", "clear_timer_on_step_change"}
+             "max_history_chars", "max_tool_result_chars", "reply_suggestions", "reply_suggestion_count", "timer_limit", "clear_timer_on_step_change"}
 
 
 class ModelSettings(BaseModel):
@@ -73,6 +73,7 @@ class ContextSettings(BaseModel):
 class InteractionSettings(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
     reply_suggestions: bool
+    reply_suggestion_count: int = Field(default=3, ge=1, le=6)
 
 
 def settings_path(config):
@@ -171,6 +172,7 @@ def build_agent(config, service, *, memory=None, cookbook=None, journal=None):
         use_responses_api=config.api_format == "responses", stream_tool_calls=config.stream_tool_calls,
         supports_images=config.supports_images, max_images=config.max_images,
         reply_suggestions=config.reply_suggestions,
+        reply_suggestion_count=config.reply_suggestion_count,
         turn_timeout_s=config.turn_timeout_s, model_timeout_s=config.model_timeout_s,
         max_model_retries=config.model_max_retries, max_model_rounds=config.max_model_rounds,
         max_tool_calls=config.max_tool_calls,
