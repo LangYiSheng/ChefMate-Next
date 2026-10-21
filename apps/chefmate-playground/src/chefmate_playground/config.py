@@ -1,11 +1,12 @@
 """Application-owned config; shared libraries never read the cleaning app's env."""
 
 import os
-import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
 from dotenv import dotenv_values
+
+from .components import DEFAULT_COMPONENTS
 
 
 APP_ROOT = Path(__file__).resolve().parents[2]
@@ -35,9 +36,13 @@ class PlaygroundConfig:
     api_format: str = "chat_completions"
     port: int = 18765
     sessions_database: Path = APP_ROOT / ".runtime" / "sessions.db"
-    enabled_skills: tuple[str, ...] = ("meal-planning", "pantry-preparation", "cooking-guide", "recipe-authoring", "personal-memory")
+    enabled_components: tuple[str, ...] = DEFAULT_COMPONENTS
 
     def __post_init__(self):
+        if (not isinstance(self.enabled_components, tuple)
+                or any(not isinstance(name, str) or name not in DEFAULT_COMPONENTS for name in self.enabled_components)
+                or len(self.enabled_components) != len(set(self.enabled_components))):
+            raise ValueError("系统组件配置无效")
         if type(self.max_images) is not int or not 1 <= self.max_images <= 12:
             raise ValueError("模型图片上限必须是 1 到 12 之间的整数")
         if type(self.reply_suggestions) is not bool:
@@ -59,11 +64,11 @@ class PlaygroundConfig:
         database = Path(usda).expanduser() if usda else None
         if database is not None and not database.is_absolute():
             database = (source.parent / database).resolve()
-        skill_names = tuple(name.strip() for name in (values.get("CHEFMATE_ENABLED_SKILLS")
-                            if values.get("CHEFMATE_ENABLED_SKILLS") is not None
-                            else "meal-planning,pantry-preparation,cooking-guide,recipe-authoring,personal-memory").split(",") if name.strip())
-        if len(skill_names) > 16 or any(not re.fullmatch(r"[a-z][a-z0-9_-]{0,63}", name) for name in skill_names):
-            raise ValueError("Enabled kitchen skill names are invalid")
+        component_names = tuple(name.strip() for name in values.get(
+            "CHEFMATE_ENABLED_COMPONENTS", ",".join(DEFAULT_COMPONENTS)).split(",") if name.strip())
+        if (len(component_names) != len(set(component_names))
+                or any(name not in DEFAULT_COMPONENTS for name in component_names)):
+            raise ValueError("系统组件配置无效")
         config = cls(
             database_url=values.get("CHEFMATE_DATABASE_URL", "") or "",
             database_schema=values.get("CHEFMATE_DATABASE_SCHEMA", "chefmate") or "chefmate",
@@ -84,7 +89,7 @@ class PlaygroundConfig:
             timer_limit=int(values.get("CHEFMATE_TIMER_LIMIT", "3")),
             clear_timer_on_step_change=(values.get("CHEFMATE_CLEAR_TIMER_ON_STEP_CHANGE", "false") or "false").lower() == "true",
             port=int(values.get("CHEFMATE_PLAYGROUND_PORT", "18765")),
-            enabled_skills=skill_names,
+            enabled_components=component_names,
         )
         from .settings import load_overrides
         return load_overrides(config)

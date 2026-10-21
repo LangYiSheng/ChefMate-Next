@@ -13,9 +13,8 @@ from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator
 from chefmate_workflow import CookingSettings
 
 from .config import APP_ROOT
-
-SKILLS = ("meal-planning", "pantry-preparation", "cooking-guide", "recipe-authoring", "personal-memory")
-PERSISTED = {"model", "base_url", "api_key", "api_format", "stream_tool_calls", "supports_images", "max_images", "enabled_skills",
+from .components import ComponentRegistry, DEFAULT_COMPONENTS, RETRIEVAL_TOOLS, component_metadata
+PERSISTED = {"model", "base_url", "api_key", "api_format", "stream_tool_calls", "supports_images", "max_images", "enabled_components",
              "turn_timeout_s", "model_timeout_s", "model_max_retries", "max_model_rounds", "max_tool_calls",
              "max_history_chars", "max_tool_result_chars", "reply_suggestions", "timer_limit", "clear_timer_on_step_change"}
 
@@ -95,10 +94,12 @@ def load_overrides(config):
     updated = model.model_dump(exclude={"api_key"})
     updated["model"] = model_name
     updated["api_key"] = model.api_key.get_secret_value() if model.api_key else ""
-    if "enabled_skills" in values:
-        if not isinstance(values["enabled_skills"], list) or any(name not in SKILLS for name in values["enabled_skills"]):
-            raise ValueError("厨房技能配置无效")
-        updated["enabled_skills"] = tuple(dict.fromkeys(values["enabled_skills"]))
+    if "enabled_components" in values:
+        if (not isinstance(values["enabled_components"], list)
+                or any(not isinstance(name, str) or name not in DEFAULT_COMPONENTS for name in values["enabled_components"])
+                or len(values["enabled_components"]) != len(set(values["enabled_components"]))):
+            raise ValueError("系统组件配置无效")
+        updated["enabled_components"] = tuple(values["enabled_components"])
     runtime = RuntimeSettings.model_validate({key: values.get(key, int(getattr(config, key)))
                                              for key in RuntimeSettings.model_fields})
     context = ContextSettings.model_validate({key: values.get(key, getattr(config, key))
@@ -122,15 +123,16 @@ def resolve_model(config, value):
     return replace(config, **model.model_dump(exclude={"api_key"}), api_key=key)
 
 
-def public_settings(config):
+def public_settings(config, *, components=None):
     payload = {name: getattr(config, name) for name in PERSISTED}
     revision = hashlib.sha256(json.dumps(payload, sort_keys=True, default=list).encode()).hexdigest()
     payload.pop("api_key")
     return {"revision": revision,
             "model": {key: payload[key] for key in
                       ("model", "base_url", "api_format", "stream_tool_calls", "supports_images", "max_images")},
-            "api_key_set": bool(config.api_key), "enabled_skills": list(config.enabled_skills),
-            "available_skills": list(SKILLS),
+            "api_key_set": bool(config.api_key), "enabled_components": list(config.enabled_components),
+            "available_components": list(DEFAULT_COMPONENTS),
+            "components": components.metadata() if components else component_metadata(config.enabled_components),
             "runtime": {key: payload[key] for key in RuntimeSettings.model_fields},
             "context": {key: payload[key] for key in ContextSettings.model_fields},
             "interaction": {key: payload[key] for key in InteractionSettings.model_fields},
@@ -154,27 +156,16 @@ def persist_settings(config):
             temporary.unlink(missing_ok=True)
 
 
-def build_agent(config, service, *, memory=None, cookbook=None):
-    from chefmate_agent import AgentConfig, ChefMateAgent, SkillRegistry, KITCHEN_TOOL_SKILLS
+def build_agent(config, service, *, memory=None, cookbook=None, journal=None):
+    from chefmate_agent import AgentConfig, ChefMateAgent
     from chefmate_workflow import UIAction, UISnapshot
-    from .interactions import make_tool_specs
 
-    root = (APP_ROOT / "skills").resolve(strict=True)
-    if any(name not in SKILLS for name in config.enabled_skills):
-        raise ValueError("无效技能目录")
-    directories = [(root / name).resolve(strict=True) for name in config.enabled_skills]
-    if any(path.parent != root for path in directories):
-        raise ValueError("技能目录超出应用范围")
-    skills = SkillRegistry(directories)
+    components = ComponentRegistry(config.enabled_components, instruction_root=APP_ROOT / "skills",
+                                   resources={"retrieval": service, "memory": memory, "cookbook": cookbook, "journal": journal})
     if not config.model_configured or service is None:
-        return None, skills
-    extra_tools = make_tool_specs()
-    if memory is not None:
-        from .memory import make_memory_tools
-        extra_tools.extend(make_memory_tools(memory))
-    if cookbook is not None:
-        from .cookbook import make_recipe_tools
-        extra_tools.extend(make_recipe_tools(cookbook))
+        return None, components
+    extra_tools = components.build_tools()
+    registered = [*RETRIEVAL_TOOLS, *(tool.name for tool in extra_tools)]
     agent = ChefMateAgent(service, AgentConfig(
         model=config.model, api_key=config.api_key, base_url=config.base_url,
         use_responses_api=config.api_format == "responses", stream_tool_calls=config.stream_tool_calls,
@@ -184,9 +175,9 @@ def build_agent(config, service, *, memory=None, cookbook=None):
         max_model_retries=config.model_max_retries, max_model_rounds=config.max_model_rounds,
         max_tool_calls=config.max_tool_calls,
         max_history_chars=config.max_history_chars, max_tool_result_chars=config.max_tool_result_chars,
-    ), extra_tools=extra_tools, ui_context_model=UISnapshot, action_model=UIAction, skills=skills,
-       tool_skill_bindings=KITCHEN_TOOL_SKILLS)
-    return agent, skills
+    ), extra_tools=extra_tools, ui_context_model=UISnapshot, action_model=UIAction,
+       skills=components.instructions, tool_skill_bindings=components.tool_bindings(registered))
+    return agent, components
 
 
 async def probe_model(config):

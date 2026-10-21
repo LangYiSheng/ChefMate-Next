@@ -136,7 +136,7 @@ def test_invalid_skill_and_runtime_reject_before_writing(tmp_path):
     app = create_app(config(tmp_path), service=Service(), agent=Agent())
     with TestClient(app) as client:
         before = client.get("/api/settings").json()
-        for section, values in [("skills", {"enabled_skills": ["../outside"]}),
+        for section, values in [("components", {"enabled_components": ["../outside"]}),
                                 ("runtime", {**before["runtime"], "max_tool_calls": 1000})]:
             assert client.patch("/api/settings", json={"revision": before["revision"], "section": section,
                                                        "values": values}).status_code == 422

@@ -114,13 +114,13 @@ def test_personal_features_enabled_by_default_and_settings_skill_cas(tmp_path):
     app = create_app(PlaygroundConfig(sessions_database=tmp_path / "skills.db"), service=Source(), agent=Agent())
     with TestClient(app) as client:
         settings = client.get("/api/settings").json()
-        assert {"recipe-authoring", "personal-memory"} <= set(settings["enabled_skills"])
-        metadata = client.get("/api/skills").json()["items"]
-        assert {"recipe-authoring", "personal-memory"} <= {item["name"] for item in metadata}
+        assert {"recipe-authoring", "personal-memory"} <= set(settings["enabled_components"])
+        metadata = client.get("/api/components").json()["items"]
+        assert {"recipe-authoring", "personal-memory"} <= {item["id"] for item in metadata}
         # Revision conflicts must leave the currently active skill set untouched.
-        response = client.patch("/api/settings", json={"revision": "stale", "section": "skills", "values": {"enabled_skills": []}})
+        response = client.patch("/api/settings", json={"revision": "stale", "section": "components", "values": {"enabled_components": []}})
         assert response.status_code == 409
-        assert client.get("/api/settings").json()["enabled_skills"] == settings["enabled_skills"]
+        assert client.get("/api/settings").json()["enabled_components"] == settings["enabled_components"]
 
 
 def test_journal_io_failure_cannot_hide_persisted_answer_or_done_event(tmp_path, monkeypatch):

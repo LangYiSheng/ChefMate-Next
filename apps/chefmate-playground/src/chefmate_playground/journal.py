@@ -10,6 +10,8 @@ from pathlib import Path
 from chefmate_storage.queries import NUTRIENTS
 from chefmate_workflow import WorkflowService
 
+from .meal_logging import FoodLogRepository
+
 LOCAL_ZONE = timezone(timedelta(hours=8))
 NUTRITION_NOTICE = "营养为整餐制作量；均分参考按实际用餐人数计算，不代表个人实际摄入。未知值不补零，估算保留标记。"
 
@@ -57,6 +59,7 @@ class JournalRepository:
         self.path = Path(path)
         self.path.parent.mkdir(parents=True, exist_ok=True)
         self._now = now or (lambda: datetime.now(timezone.utc))
+        self.food_logs = FoodLogRepository(self.path, now=self._now)
         with self._connect() as connection:
             connection.execute("CREATE TABLE IF NOT EXISTS food_journal ("
                                "id TEXT PRIMARY KEY, session_id TEXT NOT NULL, meal_id TEXT NOT NULL, "
@@ -100,7 +103,7 @@ class JournalRepository:
 
     @staticmethod
     def _entry(row):
-        return {"id": row["id"], "session_id": row["session_id"], "date": row["day"],
+        return {"id": row["id"], "session_id": row["session_id"], "date": row["day"], "record_kind": "cooking_production",
                 **json.loads(row["snapshot"]), "rating": row["rating"], "notes": row["notes"]}
 
     def get(self, entry_id: str) -> dict | None:
@@ -159,6 +162,8 @@ class JournalRepository:
             rows = [self._entry(row) for row in connection.execute(
                 "SELECT * FROM food_journal WHERE day>=? AND day<=? ORDER BY day", (start.isoformat(), today.isoformat()))]
         completed = [entry for entry in rows if entry["status"] == "completed"]
+        intake = self.food_logs.summary(days)
+        intake_by_day = {day["date"]: day for day in intake["days"]}
         daily = []
         for offset in range(days):
             day = (start + timedelta(days=offset)).isoformat()
@@ -166,12 +171,13 @@ class JournalRepository:
             cooked = [entry for entry in entries if entry["status"] == "completed"]
             daily.append({"date": day, "completed_meals": len(cooked), "attempted_meals": len(entries),
                           "dish_count": sum(len(entry["recipes"]) for entry in cooked),
-                          "nutrition": self._aggregate_nutrition(cooked)})
+                          "nutrition": self._aggregate_nutrition(cooked), "intake": intake_by_day[day]})
         return {"period": {"from": start.isoformat(), "to": today.isoformat(), "days": days},
                 "completed_meals": len(completed), "attempted_meals": len(rows),
                 "completed_dishes": sum(len(entry["recipes"]) for entry in completed),
                 "unique_recipes": len({recipe["recipe_id"] for entry in rows for recipe in entry["recipes"]}),
-                "days": daily, "nutrition": self._aggregate_nutrition(completed), "notice": NUTRITION_NOTICE}
+                "days": daily, "nutrition": self._aggregate_nutrition(completed), "production": self._aggregate_nutrition(completed),
+                "intake": intake, "today": daily[-1], "notice": NUTRITION_NOTICE}
 
     @staticmethod
     def _aggregate_nutrition(entries):

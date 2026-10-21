@@ -7,8 +7,9 @@ from uuid import uuid4
 from fastapi.testclient import TestClient
 import pytest
 
-from chefmate_agent import SkillRegistry
 from chefmate_playground import PlaygroundConfig
+from chefmate_playground.components import ComponentRegistry
+from chefmate_playground.config import APP_ROOT
 from chefmate_playground.sessions import SessionRepository
 from chefmate_playground.settings import load_overrides
 from test_cooking_timers import CookingSource, SNAPSHOT, timers
@@ -17,7 +18,8 @@ from test_cooking_timers import CookingSource, SNAPSHOT, timers
 @pytest.fixture
 def kitchen(tmp_path, monkeypatch):
     app_module = importlib.import_module("chefmate_playground.app")
-    monkeypatch.setattr(app_module, "build_agent", lambda config, source, **kwargs: (SimpleNamespace(), SkillRegistry()))
+    monkeypatch.setattr(app_module, "build_agent", lambda config, source, **kwargs: (
+        SimpleNamespace(), ComponentRegistry(config.enabled_components, instruction_root=APP_ROOT / "skills")))
     config = PlaygroundConfig(sessions_database=tmp_path / "timer-policy.db")
     repository = SessionRepository(config.sessions_database)
     app = app_module.create_app(config, service=CookingSource(), repository=repository)

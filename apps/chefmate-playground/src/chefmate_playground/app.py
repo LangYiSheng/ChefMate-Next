@@ -23,7 +23,8 @@ from .sessions import SessionRepository, public_session
 from .cookbook import CookbookRepository, PersonalRecipeRetrieval, RecipeDraftRequest
 from .journal import JournalRepository
 from .memory import MemoryRepository, MemoryConflict
-from .settings import (SKILLS, ContextSettings, InteractionSettings, RuntimeSettings, build_agent, persist_settings, probe_model,
+from .components import DEFAULT_COMPONENTS
+from .settings import (ContextSettings, InteractionSettings, RuntimeSettings, build_agent, persist_settings, probe_model,
                        public_settings, resolve_model)
 
 
@@ -79,16 +80,16 @@ def create_app(config: PlaygroundConfig | None = None, *, service=None, agent=No
         service = PersonalRecipeRetrieval(service, cookbook)
     workspace_binding = WorkspaceBinding(repo, service, cooking_settings=lambda: {
         key: getattr(settings, key) for key in CookingSettings.model_fields}, journal=journal) if service is not None else None
-    skill_registry = None
+    component_registry = None
     try:
-        configured_agent, skill_registry = build_agent(settings, service, memory=memory, cookbook=cookbook)
+        configured_agent, component_registry = build_agent(settings, service, memory=memory, cookbook=cookbook, journal=journal)
         agent = agent if agent is not None else configured_agent
     except (ValueError, OSError):
-        setup_error = "模型或厨房技能配置无效，请打开设置检查。"
+        setup_error = "模型或系统组件配置无效，请打开设置检查。"
     images = SessionImages(settings.sessions_database.parent / "images", repo)
     manager = TurnManager(repo, agent, workspace_binding, images, reply_suggestions=settings.reply_suggestions,
                           debug_secrets=(settings.api_key, settings.database_url), memory=memory,
-                          memory_enabled=lambda: "personal-memory" in settings.enabled_skills)
+                          memory_enabled=lambda: "personal-memory" in settings.enabled_components)
 
     @asynccontextmanager
     async def lifespan(_app):
@@ -98,9 +99,10 @@ def create_app(config: PlaygroundConfig | None = None, *, service=None, agent=No
     app = FastAPI(title="ChefMate Playground", lifespan=lifespan)
     app.state.config = settings
     app.state.manager = manager
+    app.state.usage = manager.usage
     app.state.service = service
     app.state.workspace = workspace_binding
-    app.state.skills = skill_registry
+    app.state.components = component_registry
     app.state.cookbook, app.state.journal, app.state.memory = cookbook, journal, memory
 
     @app.exception_handler(RequestValidationError)
@@ -136,7 +138,7 @@ def create_app(config: PlaygroundConfig | None = None, *, service=None, agent=No
 
     @app.get("/api/settings")
     async def get_settings():
-        return public_settings(settings)
+        return public_settings(settings, components=component_registry)
 
     @app.post("/api/settings/test-model")
     async def test_model(values: dict):
@@ -148,11 +150,11 @@ def create_app(config: PlaygroundConfig | None = None, *, service=None, agent=No
 
     @app.patch("/api/settings")
     async def update_settings(body: SettingsRequest):
-        nonlocal settings, agent, skill_registry, setup_error
+        nonlocal settings, agent, component_registry, setup_error
         async with manager._lock:
             if manager.active and body.section != "cooking":
                 raise HTTPException(409, "还有对话正在运行，请等它完成后再保存设置。")
-            if body.revision != public_settings(settings)["revision"]:
+            if body.revision != public_settings(settings, components=component_registry)["revision"]:
                 raise HTTPException(409, "设置已在另一页面更新；当前草稿保留，请重新读取后复核。")
             try:
                 if body.section == "model":
@@ -165,28 +167,29 @@ def create_app(config: PlaygroundConfig | None = None, *, service=None, agent=No
                     candidate = replace(settings, **InteractionSettings.model_validate(body.values).model_dump())
                 elif body.section == "cooking":
                     candidate = replace(settings, **CookingSettings.model_validate(body.values).model_dump())
-                elif body.section == "skills":
-                    names = body.values.get("enabled_skills")
-                    if (set(body.values) != {"enabled_skills"} or not isinstance(names, list)
-                            or any(name not in SKILLS for name in names)):
-                        raise ValueError("无效技能")
-                    candidate = replace(settings, enabled_skills=tuple(dict.fromkeys(names)))
+                elif body.section == "components":
+                    names = body.values.get("enabled_components")
+                    if (set(body.values) != {"enabled_components"} or not isinstance(names, list)
+                            or any(not isinstance(name, str) or name not in DEFAULT_COMPONENTS for name in names)
+                            or len(names) != len(set(names))):
+                        raise ValueError("无效系统组件")
+                    candidate = replace(settings, enabled_components=tuple(names))
                 else:
                     raise ValueError("无效设置分类")
-                replacement, registry = (agent, skill_registry) if body.section == "cooking" else build_agent(candidate, service, memory=memory, cookbook=cookbook)
+                replacement, registry = (agent, component_registry) if body.section == "cooking" else build_agent(candidate, service, memory=memory, cookbook=cookbook, journal=journal)
                 persist_settings(candidate)
             except ValueError:
                 raise HTTPException(422, "设置值无效；更换供应商时必须填写专用密钥。") from None
             except OSError:
                 raise HTTPException(503, "设置未保存，请检查本地配置目录。") from None
-            settings, agent, skill_registry = candidate, replacement, registry
+            settings, agent, component_registry = candidate, replacement, registry
             manager.agent = agent
             manager.reply_suggestions = settings.reply_suggestions
             manager.debug_secrets = (settings.api_key, settings.database_url)
-            app.state.config, app.state.skills = settings, skill_registry
+            app.state.config, app.state.components = settings, component_registry
             if body.section != "cooking":
                 setup_error = None
-            return public_settings(settings)
+            return public_settings(settings, components=component_registry)
 
     @app.get("/api/status")
     async def status():
@@ -212,6 +215,7 @@ def create_app(config: PlaygroundConfig | None = None, *, service=None, agent=No
             "max_images": settings.max_images,
             "reply_suggestions": settings.reply_suggestions,
             "active_sessions": len(manager.active), "error": setup_error,
+            "enabled_components": list(settings.enabled_components),
         }
 
     @app.get("/api/sessions")
@@ -278,9 +282,87 @@ def create_app(config: PlaygroundConfig | None = None, *, service=None, agent=No
                 for state in repo.list():
                     if (state.get("workspace") or {}).get("meal_id"):
                         await asyncio.to_thread(workspace_binding.record_journal, state["id"])
-            return {"summary": journal.summary(days=days), "entries": journal.entries(date, days=days)}
+            return {"summary": journal.summary(days=days), "entries": journal.entries(date, days=days),
+                    "food_logs": journal.food_logs.list(status="saved", days=days),
+                    "drafts": journal.food_logs.list(status="draft", days=days),
+                    "deleted_food_logs": journal.food_logs.list(status="deleted", days=days)}
         except ValueError:
             raise HTTPException(422, "请选择有效日期。") from None
+
+    @app.get("/api/usage")
+    async def usage_statistics(days: str = "30"):
+        try:
+            if days != "all" and (not days.isdigit() or not 1 <= int(days) <= 366):
+                raise ValueError("无效统计范围")
+            return manager.usage.summary(days=None if days == "all" else int(days))
+        except ValueError:
+            raise HTTPException(422, "请选择有效统计范围。") from None
+
+    @app.get("/api/about")
+    async def about():
+        import tomllib
+        version = tomllib.loads((APP_ROOT / "pyproject.toml").read_text(encoding="utf-8"))["project"]["version"]
+        current_status = await status()
+        return {"name": "ChefMate", "subtitle": "您的个性化烹饪助手", "version": version,
+                "runtime": "本地工作台", "recipe_count": current_status["database"]["recipe_count"],
+                "component_count": len(component_registry.metadata()) if component_registry else 0}
+
+    @app.get("/api/food-logs")
+    async def food_logs(status: str = Query(default="saved", pattern="^(draft|saved|all|deleted)$"),
+                        days: int = Query(default=30, ge=1, le=366), offset: int = Query(default=0, ge=0, le=100000),
+                        limit: int = Query(default=100, ge=1, le=100), query: str = Query(default="", max_length=200)):
+        return journal.food_logs.list(status=status, days=days, limit=limit, offset=offset, query=query)
+
+    @app.get("/api/food-logs/{identity}")
+    async def food_log(identity: str):
+        record = journal.food_logs.get(identity)
+        if record is None:
+            raise HTTPException(404, "饮食记录不存在。")
+        return record
+
+    @app.put("/api/food-logs/{identity}")
+    async def edit_food_log(identity: str, values: dict):
+        if set(values) != {"revision", "record"} or type(values["revision"]) is not int or not isinstance(values["record"], dict):
+            raise HTTPException(422, "饮食草稿字段无效。")
+        try:
+            return journal.food_logs.update_draft(identity, values["revision"], values["record"])
+        except KeyError:
+            raise HTTPException(404, "饮食草稿不存在。") from None
+        except ValueError as error:
+            if "版本" in str(error) or "已更新" in str(error):
+                raise HTTPException(409, "草稿已更新，请重新读取后核对。") from None
+            raise HTTPException(422, "请核对份量、营养依据与记录日期。") from None
+
+    @app.post("/api/food-logs/{identity}/publish")
+    async def publish_food_log(identity: str, values: dict):
+        if set(values) != {"revision"} or type(values["revision"]) is not int or values["revision"] < 1:
+            raise HTTPException(422, "请核对记录版本。")
+        try:
+            return journal.food_logs.publish(identity, values["revision"])
+        except KeyError:
+            raise HTTPException(404, "饮食草稿不存在。") from None
+        except ValueError:
+            raise HTTPException(409, "记录已更新，请刷新后核对。") from None
+
+    @app.delete("/api/food-logs/{identity}")
+    async def delete_food_log(identity: str, revision: int = Query(ge=1)):
+        try:
+            return journal.food_logs.delete(identity, revision)
+        except KeyError:
+            raise HTTPException(404, "饮食记录不存在。") from None
+        except ValueError:
+            raise HTTPException(409, "记录已更新，请刷新后核对。") from None
+
+    @app.post("/api/food-logs/{identity}/restore")
+    async def restore_food_log(identity: str, values: dict):
+        if set(values) != {"revision"} or type(values["revision"]) is not int or values["revision"] < 1:
+            raise HTTPException(422, "请核对记录版本。")
+        try:
+            return journal.food_logs.restore(identity, values["revision"])
+        except KeyError:
+            raise HTTPException(404, "饮食记录不存在。") from None
+        except ValueError:
+            raise HTTPException(409, "记录已更新，请刷新后核对。") from None
 
     @app.patch("/api/journal/{entry_id}")
     async def journal_feedback(entry_id: str, values: dict):
@@ -410,9 +492,9 @@ def create_app(config: PlaygroundConfig | None = None, *, service=None, agent=No
     async def get_session(session_id: str):
         return public_session(require_session(session_id), reply_suggestions=settings.reply_suggestions)
 
-    @app.get("/api/skills")
-    async def skills():
-        return {"items": skill_registry.list_metadata() if skill_registry is not None else []}
+    @app.get("/api/components")
+    async def components():
+        return {"items": component_registry.metadata() if component_registry is not None else []}
 
     def require_developer(request: Request):
         # An explicit local opt-in, not an authentication boundary.
@@ -421,7 +503,7 @@ def create_app(config: PlaygroundConfig | None = None, *, service=None, agent=No
 
     def catalog(snapshot=None):
         tools = agent.tool_catalog(snapshot or {}) if agent is not None and hasattr(agent, "tool_catalog") else []
-        return redact_debug({"tools": tools, "skills": skill_registry.list_metadata() if skill_registry else [],
+        return redact_debug({"tools": tools, "components": component_registry.metadata() if component_registry else [],
                              "stage": (snapshot or {}).get("stage", "idea")}, (settings.api_key, settings.database_url))
 
     @app.get("/api/debug/catalog")
