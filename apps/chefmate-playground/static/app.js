@@ -1417,8 +1417,8 @@ const shell=initShell({onSettingsClose:()=>{
   refreshDisplayPreferences();loadStatus();
   if(state.currentId)workspace.load(state.currentId).catch(()=>{});
 }});
-const centers=new KitchenCenters({api,onReturn:()=>shell.setPage('chat'),onChat:text=>{
-  shell.setPage('chat');return sendMessage(text,false,null,{fromComposer:false});
+const centers=new KitchenCenters({api,onReturn:()=>shell.setPage('chat'),onNavigate:page=>shell.setPage(page),onChat:text=>{
+  if(shell.setPage('chat'))return sendMessage(text,false,null,{fromComposer:false});
 }});
 window.addEventListener('chefmate:page-change',event=>{centers.show(event.detail.page);setDetails(false);renderConversation();});
 const finishingMeals=new Set();

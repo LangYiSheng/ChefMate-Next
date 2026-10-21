@@ -4,6 +4,7 @@ import { readAppearance, applyAppearance } from './appearance.js';
 import { TimerSound, readKitchenPreferences, saveKitchenPreferences } from './timer-sound.js';
 import { icon } from './icons.js';
 import {navigationIndex, navigationEdges, revealNavigationItem} from './settings-navigation.js';
+import {enhanceControl} from './form-controls.js';
 const reminderSound = new TimerSound();
 applyBranding();
 const embedded = window.parent !== window && new URLSearchParams(location.search).get('embedded') === '1';
@@ -38,11 +39,19 @@ let current = "model",
   loaded = null,
   status = null,
   busy = false,
+  busyMessage = '正在处理设置…',
   testing = false;
 const drafts = new Map(),
   draftRevisions = new Map(),
   dirty = new Set();
+const selectedTabs = new Map();
 let memoryHost = null;
+let memorySaving = false;
+let closeWaitMessage = '';
+window.addEventListener('chefmate:memory-busy', event => {
+  memorySaving = event.detail?.busy === true;
+  updateFooter();
+});
 window.addEventListener('chefmate:memory-dirty', event => {
   if (event.detail?.dirty === true) dirty.add('memory');
   else if (event.detail?.dirty === false) dirty.delete('memory');
@@ -97,7 +106,12 @@ function changed() {
   message("");
 }
 function updateFooter() {
+  if (closeWaitMessage && !busy && !testing && !memorySaving) {
+    if ($("settings-message").textContent === closeWaitMessage) message('');
+    closeWaitMessage = '';
+  }
   const readOnly = ['data','memory'].includes(current);
+  document.querySelector('.settings-footer').hidden = current === 'memory';
   $("save-settings").hidden = readOnly;
   $("reload-settings").hidden = current === 'memory';
   $("reload-settings").disabled = busy || testing;
@@ -106,11 +120,16 @@ function updateFooter() {
   $("save-state").textContent = testing
     ? "正在验证原生工具调用…"
     : busy
-      ? "正在保存…"
+      ? busyMessage
       : dirty.has(current)
         ? "当前页有未保存修改"
         : "设置已同步";
   if ($("test-model")) $("test-model").disabled = busy || testing;
+  const fieldsLocked = busy || testing || current === 'memory' && memorySaving;
+  for (const input of $("settings-form").querySelectorAll('input, select, textarea')) {
+    input.disabled = fieldsLocked;
+    input._syncControl?.();
+  }
   document.querySelectorAll("[data-section]").forEach((button) => {
     button.setAttribute(
       "aria-current",
@@ -121,6 +140,52 @@ function updateFooter() {
 }
 function heading(text) {
   $("settings-form").append(node("h2", "", text));
+}
+function selectSettingsTab(index, focus = false) {
+  const buttons = [...$("settings-tabs").querySelectorAll('[role="tab"]')];
+  if (!buttons[index]) return;
+  selectedTabs.set(current, index);
+  buttons.forEach((button, item) => {
+    const selected = item === index;
+    button.setAttribute('aria-selected', String(selected));
+    button.tabIndex = selected ? 0 : -1;
+    $(button.getAttribute('aria-controls')).hidden = !selected;
+  });
+  if (focus) buttons[index].focus();
+}
+function organizeSections() {
+  const form = $("settings-form"), tabs = $("settings-tabs");
+  tabs.replaceChildren(); tabs.hidden = true;
+  const children = [...form.children];
+  if (children.filter(child => child.tagName === 'H2').length < 2) return;
+  let panel;
+  for (const child of children) {
+    if (child.tagName === 'H2') {
+      const index = tabs.children.length;
+      panel = node('section', 'settings-pane'); panel.id = `settings-pane-${index}`;
+      panel.setAttribute('role', 'tabpanel'); panel.setAttribute('aria-labelledby', `settings-tab-${index}`);
+      const button = node('button', 'settings-tab', child.textContent); button.type = 'button';
+      button.id = `settings-tab-${index}`; button.setAttribute('role', 'tab');
+      button.setAttribute('aria-controls', panel.id);
+      button.addEventListener('click', () => selectSettingsTab(index));
+      button.addEventListener('keydown', event => {
+        const next = navigationIndex(event.key, index, tabs.children.length);
+        if (next === null) return;
+        event.preventDefault(); selectSettingsTab(next, true);
+      });
+      tabs.append(button); form.append(panel); child.hidden = true;
+    }
+    panel?.append(child);
+  }
+  tabs.hidden = false;
+  selectSettingsTab(Math.min(selectedTabs.get(current) || 0, tabs.children.length - 1));
+}
+function reportSettingsValidity() {
+  const form = $("settings-form");
+  const invalid = [...form.elements].find(input => input.willValidate && !input.validity.valid);
+  const panel = invalid?.closest('.settings-pane');
+  if (panel) selectSettingsTab([...form.querySelectorAll('.settings-pane')].indexOf(panel));
+  return form.reportValidity();
 }
 function field(
   label,
@@ -135,13 +200,18 @@ function field(
   } = {},
 ) {
   const value = drafts.get(current);
-  const row = node("label", "setting-field"),
-    copy = node("span", "setting-label", label),
+  const row = node("div", `setting-field${type === 'checkbox' ? ' setting-switch-field' : ''}`),
+    copy = node("label", "setting-label", label),
     control = node("span", "setting-control");
-  if (note) copy.append(node("small", "", note));
   const input = node(options ? "select" : "input");
   input.name = key;
   input.id = `setting-${key}`;
+  copy.htmlFor = input.id;
+  const descriptions = [];
+  if (note) {
+    const description = node('small', '', note); description.id = `${input.id}-note`;
+    copy.append(description); descriptions.push(description.id);
+  }
   if (options) {
     for (const [id, text] of options) {
       const option = node("option", "", text);
@@ -163,6 +233,7 @@ function field(
       : "填写这个供应商的专用 API Key";
   }
   if (["model", "base_url"].includes(key)) input.required = true;
+  if (type === 'number' && !options) input.required = true;
   input.addEventListener(
     options || type === "checkbox" ? "change" : "input",
     () => {
@@ -170,13 +241,17 @@ function field(
         type === "checkbox"
           ? input.checked
           : type === "number"
-            ? Number(input.value)
+            ? input.value === '' ? '' : Number(input.value)
             : input.value;
       changed();
     },
   );
-  control.append(input);
-  if (hint) control.append(node("small", "", hint));
+  control.append(enhanceControl(input, {label}));
+  if (hint) {
+    const description = node('small', '', hint); description.id = `${input.id}-hint`;
+    (type === 'checkbox' ? copy : control).append(description); descriptions.push(description.id);
+  }
+  if (descriptions.length) input.setAttribute('aria-describedby', descriptions.join(' '));
   row.append(copy, control);
   $("settings-form").append(row);
   return input;
@@ -186,6 +261,7 @@ function render() {
   $("section-title").textContent = names[current][0];
   $("section-description").textContent = names[current][1];
   $("settings-form").replaceChildren();
+  $("settings-tabs").replaceChildren(); $("settings-tabs").hidden = true;
   message("");
   if (!loaded) {
     $("settings-form").append(node("p", "settings-note", "正在读取配置…"));
@@ -368,9 +444,11 @@ function render() {
       ),
     );
   }
+  organizeSections();
   updateFooter();
 }
 async function load() {
+  busyMessage = '正在读取设置…';
   busy = true;
   updateFooter();
   try {
@@ -414,11 +492,12 @@ async function load() {
   }
 }
 async function save() {
-  if (busy || testing || !$("settings-form").reportValidity()) return;
+  if (busy || testing || !reportSettingsValidity()) return;
   const section = current,
     values = { ...drafts.get(section) };
   const timerSound = values.timer_sound;
   if(section==='cooking') { values.timer_limit=Number(values.timer_limit); delete values.timer_sound; }
+  busyMessage = '正在保存修改…';
   busy = true;
   updateFooter();
   message("");
@@ -471,7 +550,7 @@ async function save() {
   }
 }
 async function testConnection() {
-  if (testing || !$("settings-form").reportValidity()) return;
+  if (testing || !reportSettingsValidity()) return;
   const payload = JSON.stringify(drafts.get("model"));
   testing = true;
   render();
@@ -557,6 +636,12 @@ $("reload-settings").addEventListener("click", () => {
   else reload();
 });
 function requestClose() {
+  if (busy || testing || memorySaving) {
+    closeWaitMessage = memorySaving ? '正在保存记忆，完成后就可以返回。' : testing ? '正在测试连接，完成后就可以返回。' : '正在处理设置，完成后就可以返回。';
+    message(closeWaitMessage);
+    notifyParent('chefmate:close-cancelled');
+    return;
+  }
   const leave = () => embedded ? notifyParent('chefmate:close-settings') : location.assign('/');
   if (dirty.size) confirmInPage("返回对话会放弃尚未保存的设置。可以先保存，或者继续返回。", () => {
     dirty.clear(); drafts.clear(); draftRevisions.clear(); loaded=null; memoryHost=null;

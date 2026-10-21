@@ -19,6 +19,7 @@ export const TOOL_NAMES = Object.freeze({find_ingredients:'识别食材',search_
   show_recipe_details:'展示菜品详情',set_meal_plan:'安排餐单',show_meal_plan:'核对餐单',show_shopping_list:'整理备菜清单',
   show_prep_checklist:'整理备菜清单',show_cooking_guide:'整理烹饪步骤',set_cooking_timer:'设置计时',show_timers:'查看计时',
   get_cooking_workspace:'核对当前进度',advance_cooking_stage:'更新会话阶段',update_cooking_guidance:'调整当前做法',
+  request_recipe_deletion:'确认删除个人菜谱',confirm_recipe_deletion:'处理菜谱删除确认',
   update_preferences:'保存用餐条件',select_recipes:'更新菜品选择',update_prep_items:'确认备菜状态',ask_user:'向你确认细节',load_skill:'加载厨房技能',list_skills:'查看厨房技能'});
 export function viewChoices(views, stage) {
   const preferred = {idea:'preference_form',planning:'meal_plan',shopping:'prep_checklist',prep:'prep_checklist',cooking:'cooking_guide',completed:'meal_plan'}[stage];
