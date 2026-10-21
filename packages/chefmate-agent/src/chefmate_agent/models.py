@@ -1,6 +1,7 @@
 """Serializable configuration, history and results; no framework objects escape the API."""
 
 from typing import Any, Literal
+import re
 from urllib.parse import urlsplit
 
 from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator
@@ -21,6 +22,7 @@ class AgentConfig(BaseModel):
     use_responses_api: bool = False
     supports_images: bool = False
     max_images: int = Field(default=3, ge=1, le=12, strict=True)
+    reply_suggestions: bool = Field(default=True, strict=True)
     max_output_tokens: int = Field(default=4096, ge=128, le=16384)
     model_timeout_s: float = Field(default=120, gt=0, le=300)
     max_model_retries: int = Field(default=0, ge=0, le=2)
@@ -95,6 +97,24 @@ class ToolCallRecord(BaseModel):
     result: dict[str, Any]
 
 
+class ReplySuggestion(BaseModel):
+    """A draft the user may edit; it never represents an already executed action."""
+
+    model_config = ConfigDict(extra="forbid", strict=True)
+    title: str = Field(min_length=1, max_length=20)
+    text: str = Field(min_length=1, max_length=500)
+
+    @field_validator("title", "text")
+    @classmethod
+    def plain_text(cls, value: str, info) -> str:
+        value = value.strip()
+        if (not value or "<" in value or ">" in value
+                or re.search(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]", value)
+                or info.field_name == "title" and any(char in value for char in "\r\n\t")):
+            raise ValueError("Reply suggestions must contain plain text")
+        return value
+
+
 class AgentTurnResult(BaseModel):
     status: Literal["completed", "cancelled", "error"]
     assistant_text: str = ""
@@ -105,4 +125,5 @@ class AgentTurnResult(BaseModel):
     snapshot: dict[str, Any] | None = None
     actions: list[dict[str, Any]] = Field(default_factory=list)
     usage: dict[str, Any] = Field(default_factory=dict)
+    suggested_replies: list[ReplySuggestion] = Field(default_factory=list, max_length=3)
     error: AgentError | None = None

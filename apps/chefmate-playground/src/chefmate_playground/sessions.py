@@ -89,14 +89,22 @@ class SessionRepository:
             return json.loads(row[0]) if row else None
 
 
-def public_session(state: dict) -> dict:
+def public_session(state: dict, *, reply_suggestions: bool = True) -> dict:
     workspace = state.get("workspace") or {}
     recipes = workspace.get("meal_plan", [])
     active = next((recipe for recipe in recipes if recipe.get("recipe_id") == workspace.get("active_recipe_id")),
                   recipes[0] if recipes else {})
-    return {**{key: value for key, value in state.items() if key not in {"history", "workspace", "image_uploads"}},
+    result = {**{key: value for key, value in state.items() if key not in {"history", "workspace", "image_uploads"}},
             "conversation_state": {"stage": workspace.get("stage", "idea"), "recipe_count": len(recipes),
                 "recipe_names": [recipe.get("recipe", {}).get("name", "菜品") for recipe in recipes],
                 "active_recipe_name": active.get("recipe", {}).get("name"),
                 "choosing": bool(workspace.get("candidates")) or any(
                     view.get("kind") == "preference_form" for view in workspace.get("components", []))}}
+    if not reply_suggestions:
+        result["messages"] = [{**message, "suggested_replies": []} if message.get("role") == "assistant" else message
+                              for message in result.get("messages", [])]
+        if result.get("last_run"):
+            result["last_run"] = {**result["last_run"], "result": {
+                **result["last_run"].get("result", {}), "suggested_replies": [],
+            }}
+    return result

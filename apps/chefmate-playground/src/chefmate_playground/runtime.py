@@ -7,6 +7,8 @@ import time
 from dataclasses import dataclass, field
 from uuid import uuid4
 
+from chefmate_agent.suggestions import REPLY_SUGGESTIONS_TOOL, finalize_reply_suggestions
+
 from .sessions import SessionRepository, now
 
 
@@ -40,11 +42,12 @@ class ActiveTurn:
 
 
 class TurnManager:
-    def __init__(self, repository: SessionRepository, agent, workspace_binding=None, images=None):
+    def __init__(self, repository: SessionRepository, agent, workspace_binding=None, images=None, *, reply_suggestions=True):
         self.repository = repository
         self.agent = agent
         self.workspace_binding = workspace_binding
         self.images = images
+        self.reply_suggestions = reply_suggestions
         self.active: dict[str, ActiveTurn] = {}
         self._lock = asyncio.Lock()
 
@@ -65,7 +68,10 @@ class TurnManager:
                     previous_message = state["messages"][-2].get("content")
                 if previous_message != message or last.get("image_ids", []) != image_ids:
                     raise TurnConflict("请求标识已经用于另一条消息，请重新发送。")
-                return None, last["result"]
+                replay = copy.deepcopy(last["result"])
+                if not self.reply_suggestions:
+                    replay["suggested_replies"] = []
+                return None, replay
             turn = ActiveTurn(str(uuid4()), session_id, request_id or str(uuid4()), message)
             def prepare(current):
                 references = self.images.references(current, image_ids) if self.images else []
@@ -112,6 +118,9 @@ class TurnManager:
         turn.started = True
         async def on_event(event):
             payload = copy.deepcopy(event)
+            if payload.get("type") in {"tool_start", "tool_end"} and payload.get("name") == REPLY_SUGGESTIONS_TOOL:
+                # Draft suggestions belong to the finished answer, never to intermediate UI/log events.
+                return
             turn.emit(payload)
             progress = turn.progress
             kind = payload.get("type")
@@ -164,9 +173,10 @@ class TurnManager:
         visible = {
             "type": "result", "status": status, "text": data.get("assistant_text", ""),
             "recipes": data.get("recipes", []), "selected_recipe": data.get("selected_recipe"),
-            "tool_calls": data.get("tool_calls", []), "snapshot": data.get("snapshot"),
+            "tool_calls": [item for item in data.get("tool_calls", []) if item.get("name") != REPLY_SUGGESTIONS_TOOL],
+            "snapshot": data.get("snapshot"),
             "actions": data.get("actions", []), "process": turn.progress.get("process", []),
-            "usage": data.get("usage", {}),
+            "usage": data.get("usage", {}), "suggested_replies": [],
         }
         async with self._lock:
             def finish(state):
@@ -175,13 +185,16 @@ class TurnManager:
                 if self.workspace_binding:
                     visible["workspace"] = self.workspace_binding.service(turn.session_id).model_snapshot()
                 if status == "completed":
+                    if self.reply_suggestions:
+                        visible["suggested_replies"] = finalize_reply_suggestions(
+                            data.get("suggested_replies"), visible.get("workspace") or turn.ui_context)
                     state["history"] = data["messages"]
                     state["messages"].append({
                         "id": str(uuid4()), "turn_id": turn.id, "role": "assistant", "content": visible["text"],
                         "created_at": now(), "actions": visible["actions"], "process": visible["process"],
                         "recipes": visible["recipes"], "selected_recipe": visible["selected_recipe"],
                         "tool_calls": visible["tool_calls"], "snapshot": visible["snapshot"],
-                        "usage": visible["usage"],
+                        "usage": visible["usage"], "suggested_replies": visible["suggested_replies"],
                     })
                 state.update(running=False, active_turn=None, updated_at=now(), last_status=status,
                              last_error=data.get("error"),

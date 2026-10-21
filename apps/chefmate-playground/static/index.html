@@ -14,6 +14,8 @@
   <link rel="stylesheet" href="/static/theme.css">
   <link rel="stylesheet" href="/static/shell.css">
   <link rel="stylesheet" href="/static/focus.css">
+  <link rel="stylesheet" href="/static/activity.css">
+  <link rel="stylesheet" href="/static/conversation.css">
   <script type="module" src="/static/app.js"></script>
 </head>
 <body class="app-page">
@@ -55,17 +57,16 @@
           <img class="welcome-icon" data-chefmate-icon src="/static/brand/pot-c.svg" alt="">
           <h1>今天想吃什么？</h1>
           <p>说说食材、时间和人数，<br class="welcome-break">一起选菜、备菜，把这顿饭做好。</p>
-          <div class="suggestions">
-            <button type="button" data-prompt="我想吃虾，半小时以内，有哪些做法？"><span>我想吃虾</span><small>半小时以内，有哪些做法？</small><span class="suggestion-arrow" data-icon="arrow-up-right" aria-hidden="true"></span></button>
-            <button type="button" data-prompt="我有炒锅和炉灶，推荐几道新手能做的菜。"><span>做一点简单的</span><small>用炒锅，新手也能做</small><span class="suggestion-arrow" data-icon="arrow-up-right" aria-hidden="true"></span></button>
-            <button type="button" data-prompt="找几道高蛋白菜谱，说明每份蛋白质和数据是否估算。"><span>看看高蛋白选择</span><small>每份营养，附上数据依据</small><span class="suggestion-arrow" data-icon="arrow-up-right" aria-hidden="true"></span></button>
-          </div>
+          <div id="welcome-templates" class="starter-templates" aria-label="试试这些开场"></div>
+          <button class="starter-shuffle" id="shuffle-templates" type="button"><span data-icon="refresh-cw" aria-hidden="true"></span>换一组灵感</button>
         </section>
         <div class="messages" id="messages"></div>
       </div>
 
       <div class="composer-area">
+        <button id="resume-draft" class="resume-draft" type="button" hidden><span data-icon="undo-2" aria-hidden="true"></span>继续未发送的消息</button>
         <div id="composer-choices" class="composer-choices" aria-label="当前表单操作" hidden></div>
+        <div id="reply-suggestions" class="reply-suggestions" aria-label="接下来可以聊" hidden></div>
         <div id="image-drafts" class="image-drafts" aria-label="待发送图片" hidden></div>
         <span id="image-status" class="image-status" role="status" hidden></span>
         <button type="button" class="workspace-context" id="workspace-context" hidden></button>
@@ -81,7 +82,6 @@
             <button class="send-button stop-button" id="stop-button" type="button" aria-label="停止本次执行" hidden data-icon="square"></button>
           </div>
         </form>
-        <p class="composer-note" id="composer-note">依据当前菜谱库回答，营养估算会明确标注。</p>
       </div>
       <section id="settings-host" class="settings-host" aria-label="工作台设置" hidden><iframe id="settings-frame" title="ChefMate 设置"></iframe></section>
     </main>
@@ -107,18 +107,30 @@
   <section class="kitchen-focus" id="kitchen-focus" role="dialog" aria-modal="true" aria-labelledby="focus-title" hidden>
     <header class="focus-header">
       <div class="focus-heading"><span id="focus-stage" class="focus-stage">厨房工作台</span><h2 id="focus-title">这一餐，慢慢来</h2><p id="focus-subtitle">一次专心做好一件事。</p></div>
-      <div class="focus-header-actions"><button class="focus-button" id="focus-talk-toggle" type="button" aria-controls="focus-assistant" aria-expanded="false"><span data-icon="message-circle" aria-hidden="true"></span>问问助手</button><button class="focus-button" id="exit-focus" type="button"><span data-icon="minimize" aria-hidden="true"></span>返回聊天</button></div>
+      <div class="focus-header-actions"><button class="focus-button" id="exit-focus" type="button"><span data-icon="arrow-left" aria-hidden="true"></span>返回聊天</button></div>
     </header>
+    <nav class="focus-modes" aria-label="厨房工作区">
+      <button id="focus-work-toggle" type="button" aria-controls="focus-workspace" aria-pressed="true"><span data-icon="list-checks" aria-hidden="true"></span><span id="focus-work-label">专心准备</span></button>
+      <button id="focus-talk-toggle" type="button" aria-controls="focus-assistant" aria-pressed="false"><span data-icon="message-circle" aria-hidden="true"></span><span>问问助手</span></button>
+      <button id="focus-suggestions-toggle" class="focus-suggestions-toggle" type="button" aria-controls="reply-suggestions" aria-expanded="false" hidden><span data-icon="ellipsis" aria-hidden="true"></span>接着聊</button>
+      <span class="focus-mode-note">左右轻扫，逐张查看</span>
+    </nav>
     <div id="focus-body" class="focus-body">
-      <div class="focus-content" id="focus-content"></div>
-      <aside class="focus-assistant" id="focus-assistant" aria-label="与厨房助手交流" hidden>
-        <div class="focus-assistant-heading"><span data-icon="message-circle" aria-hidden="true"></span><strong>一起想想</strong><span>清单和进度会为你保留</span></div>
-        <div id="focus-reply" class="focus-reply" role="log" aria-label="全屏模式中的对话" aria-live="polite" aria-relevant="additions text"></div>
-        <div id="focus-activity" class="focus-activity" role="status" hidden></div>
-        <div class="focus-quick-prompts" id="focus-prompts"></div>
-        <div id="focus-composer-slot" class="focus-composer-slot"></div>
-      </aside>
+      <div class="focus-deck" id="focus-workspace">
+        <div id="focus-tools" class="focus-tools"></div>
+        <div class="focus-content" id="focus-content" tabindex="0"></div>
+        <nav class="focus-pagination" id="focus-content-pages" aria-label="工作内容分页"></nav>
+      </div>
+      <section class="focus-assistant focus-deck" id="focus-assistant" aria-label="与厨房助手交流" hidden>
+        <div id="focus-reply" class="focus-reply" tabindex="0" aria-label="全屏模式中的对话"></div>
+        <nav class="focus-pagination" id="focus-reply-pages" aria-label="助手回复分页"></nav>
+      </section>
     </div>
+    <footer class="focus-footer">
+      <div id="focus-activity" class="focus-activity" role="status" hidden></div>
+      <div class="focus-quick-prompts" id="focus-prompts"></div>
+      <div id="focus-composer-slot" class="focus-composer-slot"></div>
+    </footer>
   </section>
   <div class="visually-hidden" id="announcer" role="status" aria-live="polite"></div>
 </body>

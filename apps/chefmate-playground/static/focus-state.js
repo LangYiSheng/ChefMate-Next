@@ -26,10 +26,10 @@ export function focusConversation(session, startIndex, activity = {}) {
       (assistant.retryMessage || assistant.retryImages?.length) ? assistant : null };
 }
 
-export function focusTransform(source, target) {
-  if (!source || source.width <= 0 || source.height <= 0 || target.width <= 0 || target.height <= 0) return null;
-  if (source.right <= target.left || source.left >= target.right || source.bottom <= target.top || source.top >= target.bottom) return null;
-  return `translate(${source.left - target.left}px, ${source.top - target.top}px) scale(${source.width / target.width}, ${source.height / target.height})`;
+export function focusSceneFrames(distance, closing = false) {
+  const focus = [{ transform: `translateX(${distance}px)` }, { transform: 'translateX(0)' }];
+  const main = [{ transform: 'translateX(0)' }, { transform: `translateX(${-distance}px)` }];
+  return { focus: closing ? [...focus].reverse() : focus, main: closing ? [...main].reverse() : main };
 }
 
 // Cancel old transitions so a late close cannot hide a reopened view.

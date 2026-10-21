@@ -21,6 +21,7 @@ from .prompt import SYSTEM_PROMPT
 from .extensions import InjectedToolSpec, ToolExecutionContext
 from .runner import ChefMateMiddleware, TurnRuntimeContext
 from .skills import SkillListRequest, SkillLoadRequest, SkillRegistry
+from .suggestions import REPLY_SUGGESTIONS_TOOL, finalize_reply_suggestions, make_reply_suggestions_tool
 
 EventCallback = Callable[[dict[str, Any]], Awaitable[None] | None]
 
@@ -166,7 +167,8 @@ class ChefMateAgent:
             "load_skill": "按已启用名称渐进读取Skill正文；遵循目录allowlist和读取预算，不执行脚本。",
         }
         self._requests.update(list_skills=SkillListRequest, load_skill=SkillLoadRequest)
-        for spec in extra_tools:
+        suggestion_tools = (make_reply_suggestions_tool(),) if config.reply_suggestions else ()
+        for spec in (*extra_tools, *suggestion_tools):
             if not re.fullmatch(r"[a-z][a-z0-9_]{0,63}", spec.name) or spec.name in self._requests:
                 raise ValueError("Injected tool name is invalid or duplicated")
             self._requests[spec.name] = spec.args_schema
@@ -295,6 +297,10 @@ class ChefMateAgent:
 
     def _context_prompt(self, context: TurnRuntimeContext, messages) -> str:
         prompt = SYSTEM_PROMPT
+        if self.config.reply_suggestions:
+            prompt += ("\n本轮提供后续回复建议：完成必要查询后，调用suggest_replies保存3个不同方向的简短提问草稿，"
+                       "再给出完整最终回答。建议贴合本轮实际结果，采用用户口吻，不能编造事实或替用户确认操作；"
+                       "无需为建议额外查询，适合时可与本轮其他工具放在同一批。不要在最终正文重复列出建议。")
         metadata = self.skills.list_metadata()
         if metadata:
             prompt += "\n已启用Skills仅列元数据，需要细节时调用load_skill；Skill不授予额外工具权限：\n" + _dump(metadata)
@@ -493,6 +499,10 @@ class ChefMateAgent:
             return AgentTurnResult(
                 status="completed", assistant_text=answer, messages=complete, tool_calls=context.records,
                 actions=context.actions, usage=self._usage_summary(context), **context.view_state,
+                suggested_replies=finalize_reply_suggestions(next((
+                    record.result.get("suggested_replies") for record in reversed(context.records)
+                    if record.name == REPLY_SUGGESTIONS_TOOL and record.result.get("status") == "ok"
+                ), None), context.ui_context) if self.config.reply_suggestions else [],
             )
         except _UserCancelled:
             await self._emit(on_event, {"type": "status", "status": "cancelled", "message": "已停止本轮查询"})
@@ -776,7 +786,8 @@ class ChefMateAgent:
                         parsed = json.loads(arguments)
                     except (KeyError, TypeError, ValueError):
                         raise _AgentFailure("invalid_history", "历史工具参数无效。") from None
-                    if (name not in self._requests or not isinstance(call_id, str) or not call_id
+                    if (name not in self._requests and name != REPLY_SUGGESTIONS_TOOL
+                            or not isinstance(call_id, str) or not call_id
                             or call_id in pending or not isinstance(parsed, dict)):
                         raise _AgentFailure("invalid_history", "历史工具名称或标识无效。")
                     pending[call_id] = name

@@ -18,7 +18,7 @@ from .interactions import WorkspaceBinding
 from .images import ImageError, MAX_UPLOAD_BYTES, SessionImages
 from .runtime import TurnConflict, TurnManager, encode_event
 from .sessions import SessionRepository, public_session
-from .settings import (SKILLS, ContextSettings, RuntimeSettings, build_agent, persist_settings, probe_model,
+from .settings import (SKILLS, ContextSettings, InteractionSettings, RuntimeSettings, build_agent, persist_settings, probe_model,
                        public_settings, resolve_model)
 
 
@@ -75,7 +75,7 @@ def create_app(config: PlaygroundConfig | None = None, *, service=None, agent=No
     except (ValueError, OSError):
         setup_error = "模型或厨房技能配置无效，请打开设置检查。"
     images = SessionImages(settings.sessions_database.parent / "images", repo)
-    manager = TurnManager(repo, agent, workspace_binding, images)
+    manager = TurnManager(repo, agent, workspace_binding, images, reply_suggestions=settings.reply_suggestions)
 
     @asynccontextmanager
     async def lifespan(_app):
@@ -147,6 +147,8 @@ def create_app(config: PlaygroundConfig | None = None, *, service=None, agent=No
                     candidate = replace(settings, **RuntimeSettings.model_validate(body.values).model_dump())
                 elif body.section == "context":
                     candidate = replace(settings, **ContextSettings.model_validate(body.values).model_dump())
+                elif body.section == "interaction":
+                    candidate = replace(settings, **InteractionSettings.model_validate(body.values).model_dump())
                 elif body.section == "skills":
                     names = body.values.get("enabled_skills")
                     if (set(body.values) != {"enabled_skills"} or not isinstance(names, list)
@@ -163,6 +165,7 @@ def create_app(config: PlaygroundConfig | None = None, *, service=None, agent=No
                 raise HTTPException(503, "设置未保存，请检查本地配置目录。") from None
             settings, agent, skill_registry = candidate, replacement, registry
             manager.agent = agent
+            manager.reply_suggestions = settings.reply_suggestions
             app.state.config, app.state.skills = settings, skill_registry
             setup_error = None
             return public_settings(settings)
@@ -189,6 +192,7 @@ def create_app(config: PlaygroundConfig | None = None, *, service=None, agent=No
             "model": settings.model or None, "database": database,
             "supports_images": settings.supports_images,
             "max_images": settings.max_images,
+            "reply_suggestions": settings.reply_suggestions,
             "active_sessions": len(manager.active), "error": setup_error,
         }
 
@@ -196,15 +200,15 @@ def create_app(config: PlaygroundConfig | None = None, *, service=None, agent=No
     async def sessions():
         return {"items": [{key: value for key, value in public_session(state).items()
                            if key in {"id", "title", "updated_at", "running", "last_status", "conversation_state"}}
-                          for state in repo.list()]}
+                          for state in repo.list() if state.get("messages")]}
 
     @app.post("/api/sessions")
     async def new_session():
-        return public_session(repo.create())
+        return public_session(repo.create(), reply_suggestions=settings.reply_suggestions)
 
     @app.get("/api/sessions/{session_id}")
     async def get_session(session_id: str):
-        return public_session(require_session(session_id))
+        return public_session(require_session(session_id), reply_suggestions=settings.reply_suggestions)
 
     @app.get("/api/skills")
     async def skills():

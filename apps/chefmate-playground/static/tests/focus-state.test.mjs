@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { focusConversation, focusStartIndex, focusTransform, FocusMotion } from '../focus-state.js';
+import { focusConversation, focusStartIndex, focusSceneFrames, FocusMotion } from '../focus-state.js';
 
 test('reopening during a reply retains its question and skips unrelated earlier turns', () => {
   const question = { role:'user', content:'刚才那份清单怎么替换？' };
@@ -31,12 +31,12 @@ test('focus conversation follows actual tools, streaming text and retryable term
   assert.equal(focusConversation(session, 1, { running: true, cancelling: true }).status, '正在停止本次回复…');
 });
 
-test('source transition uses the original card bounds and skips offscreen or missing sources', () => {
-  const target = { left: 12, top: 12, right: 1012, bottom: 812, width: 1000, height: 800 };
-  const source = { left: 212, top: 212, right: 712, bottom: 612, width: 500, height: 400 };
-  assert.equal(focusTransform(source, target), 'translate(200px, 200px) scale(0.5, 0.5)');
-  assert.equal(focusTransform(null, target), null);
-  assert.equal(focusTransform({ ...source, top: 900, bottom: 1300 }, target), null);
+test('workspace and chat move as neighboring scenes, and return reverses both tracks', () => {
+  const open = focusSceneFrames(1024), close = focusSceneFrames(1024, true);
+  assert.equal(open.focus[0].transform, 'translateX(1024px)');
+  assert.equal(open.main[1].transform, 'translateX(-1024px)');
+  assert.deepEqual(close.focus, [...open.focus].reverse());
+  assert.deepEqual(close.main, [...open.main].reverse());
 });
 
 test('a late close completion cannot hide a reopened workspace, including reduced motion', async () => {

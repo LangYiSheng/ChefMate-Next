@@ -1,6 +1,6 @@
 export const MAX_IMAGES=3;
-export function imageURL(sessionId,image) { return `/api/sessions/${encodeURIComponent(sessionId)}/images/${encodeURIComponent(image.id)}`; }
-export async function compressImage(file) {
+export function imageURL(sessionId,image) { return image.previewUrl || `/api/sessions/${encodeURIComponent(sessionId)}/images/${encodeURIComponent(image.id)}`; }
+async function encodeImage(file) {
   if(!['image/jpeg','image/png','image/webp'].includes(file.type))throw new Error('请选择 JPG、PNG 或 WebP 图片。');
   if(file.size>20_000_000)throw new Error('原图超过20MB，请先裁剪或缩小。');
   const bitmap=await createImageBitmap(file,{imageOrientation:'from-image'});
@@ -16,6 +16,12 @@ export async function compressImage(file) {
       if(blob?.size<=1_500_000)break;
     }
     if(!blob || blob.size>1_500_000)throw new Error('图片细节过多，请裁剪后再上传。');
-    return blob;
+    return {blob,width:canvas.width,height:canvas.height};
   } finally {bitmap.close();}
+}
+export async function compressImage(file) { return (await encodeImage(file)).blob; }
+export async function prepareImage(file) {
+  const {blob,width,height}=await encodeImage(file);
+  return {id:`local:${crypto.randomUUID()}`,name:file.name || '粘贴的图片',mime_type:'image/jpeg',width,height,
+    byte_size:blob.size,blob,previewUrl:URL.createObjectURL(blob),local:true};
 }

@@ -21,6 +21,13 @@ function button(text, callback, disabled = false, className = 'ui-button') {
 function badge(text, className = '') { return node('span', `ui-badge ${className}`, text); }
 function hint(text) { return node('p', 'ui-hint', text); }
 function pagedList(items,ctx,key,render,size=4) {
+  // The full-screen deck measures the available space itself, including long rows.
+  // Keep its complete list available; an inline fixed-size page would hide later items.
+  if (ctx.focused) {
+    const root = node('div', 'paged-content');
+    items.forEach((item, index) => { const row = render(item); row.dataset.focusKey = `${key}:${item.id || item.recipe_id || index}`; root.append(row); });
+    return root;
+  }
   const root=node('div','paged-content'); const page=pageWindow(items,ctx.viewState?.[key] || 0,size);
   for(const item of page.items) root.append(render(item));
   if(page.pages>1) {

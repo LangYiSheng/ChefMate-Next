@@ -71,6 +71,7 @@ def test_real_http_flow_persists_history_and_request_replay(tmp_path):
         assert "history" not in saved
         assert len(saved["messages"]) == 2
         assert saved["messages"][-1]["recipes"][0]["recipe_id"] == "r1"
+        assert len(saved["messages"][-1]["suggested_replies"]) == 3
         assert client.get("/api/recipes/r1").json()["recipe"]["steps"] == ["测试步骤"]
         assert client.get("/api/recipes/missing").status_code == 404
         assert client.post("/api/tools/find_ingredients", json={"queries": ["虾"]}).status_code == 200
@@ -82,6 +83,56 @@ def test_real_http_flow_persists_history_and_request_replay(tmp_path):
         assert "recipe" not in stale
     with TestClient(build(tmp_path)) as client:
         assert len(client.get(uri).json()["messages"]) == 2
+
+
+def test_empty_sessions_stay_out_of_navigation_until_first_message(tmp_path):
+    with TestClient(build(tmp_path)) as client:
+        session = client.post("/api/sessions").json()
+        uri = f"/api/sessions/{session['id']}"
+        assert client.get("/api/sessions").json()["items"] == []
+        assert client.post(uri + "/turn", json={"message": ""}).status_code == 422
+        assert client.post(uri + "/turn", json={"message": "看图", "images": ["missing"]}).status_code == 422
+        assert client.get("/api/sessions").json()["items"] == []
+        assert client.post(uri + "/turn", json={"message": "你好"}).status_code == 200
+        assert [item["id"] for item in client.get("/api/sessions").json()["items"]] == [session["id"]]
+
+
+def test_suggestions_are_final_only_persist_replay_and_hide_when_disabled(tmp_path):
+    replies = [{"title": "核对用量", "text": "请帮我核对当前用量。"},
+               {"title": "调整人数", "text": "我想调整用餐人数，请先问我具体人数。"},
+               {"title": "解释做法", "text": "请解释当前做法的要点。"}]
+
+    class SuggestionAgent(Agent):
+        async def run_turn(self, messages, on_event=None, **kwargs):
+            await on_event({"type": "tool_start", "name": "suggest_replies", "call_id": "drafts"})
+            await on_event({"type": "tool_end", "name": "suggest_replies", "call_id": "drafts",
+                            "result": {"status": "ok", "suggested_replies": replies}})
+            result = await super().run_turn(messages, on_event, **kwargs)
+            return {**result, "suggested_replies": replies}
+
+    agent = SuggestionAgent()
+    with TestClient(build(tmp_path, agent)) as client:
+        uri = "/api/sessions/" + client.post("/api/sessions").json()["id"]
+        body = {"message": "继续", "request_id": "suggested"}
+        first = events(client.post(uri + "/turn", json=body))
+        result = next(item for item in first if item["type"] == "result")
+        assert result["suggested_replies"] == replies
+        assert all("suggested_replies" not in event for event in first if event["type"] != "result")
+        assert not any(event.get("name") == "suggest_replies" for event in first)
+        assert client.get(uri).json()["messages"][-1]["suggested_replies"] == replies
+        assert events(client.post(uri + "/turn", json=body))[0]["suggested_replies"] == replies
+        assert agent.calls == 1
+    disabled = create_app(PlaygroundConfig(sessions_database=tmp_path / "sessions.db", reply_suggestions=False),
+                          service=Service(), agent=agent)
+    with TestClient(disabled) as client:
+        saved = client.get(uri).json()
+        assert saved["messages"][-1]["suggested_replies"] == []
+        assert saved["last_run"]["result"]["suggested_replies"] == []
+        assert events(client.post(uri + "/turn", json=body))[0]["suggested_replies"] == []
+        assert agent.calls == 1
+        latest = events(client.post(uri + "/turn", json={"message": "再继续"}))
+        assert next(item for item in latest if item["type"] == "result")["suggested_replies"] == []
+        assert client.get(uri).json()["messages"][-1]["suggested_replies"] == []
 
 
 def test_input_validation_and_same_origin_boundary(tmp_path):
@@ -118,6 +169,7 @@ def test_cancel_before_task_starts_and_same_session_conflict(tmp_path):
         assert saved["last_status"] == "cancelled"
         assert saved["history"] == []
         assert len(saved["messages"]) == 1
+        assert saved["last_run"]["result"]["suggested_replies"] == []
         await manager.close()
 
     asyncio.run(exercise())
@@ -139,6 +191,7 @@ def test_failed_retry_does_not_duplicate_user_and_recovery_is_durable(tmp_path):
         assert "provider token" not in failed.text
         assert any(event["type"] == "error" for event in events(failed))
         assert len(client.get(uri).json()["messages"]) == 1
+        assert client.get(uri).json()["last_run"]["result"]["suggested_replies"] == []
         success = client.post(uri + "/turn", json={"message": "我想吃虾", "retry": True})
         assert events(success)[-1]["status"] == "completed"
         assert len(client.get(uri).json()["messages"]) == 2

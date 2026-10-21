@@ -375,6 +375,7 @@ def test_real_tool_schemas_are_available():
     assert core._requests["get_recipe"] is RecipeDetailRequest
     assert {item["function"]["name"] for item in core._tool_definitions} == {
         "find_ingredients", "search_recipes", "get_recipe", "get_search_options", "list_skills", "load_skill",
+        "suggest_replies",
     }
 
 

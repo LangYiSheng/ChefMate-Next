@@ -29,6 +29,7 @@ class PlaygroundConfig:
     stream_tool_calls: bool = False
     supports_images: bool = False
     max_images: int = 3
+    reply_suggestions: bool = True
     api_format: str = "chat_completions"
     port: int = 18765
     sessions_database: Path = APP_ROOT / ".runtime" / "sessions.db"
@@ -37,6 +38,8 @@ class PlaygroundConfig:
     def __post_init__(self):
         if type(self.max_images) is not int or not 1 <= self.max_images <= 12:
             raise ValueError("模型图片上限必须是 1 到 12 之间的整数")
+        if type(self.reply_suggestions) is not bool:
+            raise ValueError("推荐回复开关必须是布尔值")
 
     @property
     def model_configured(self) -> bool:

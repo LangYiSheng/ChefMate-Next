@@ -16,7 +16,7 @@ from .config import APP_ROOT
 SKILLS = ("meal-planning", "pantry-preparation", "cooking-guide")
 PERSISTED = {"model", "base_url", "api_key", "api_format", "stream_tool_calls", "supports_images", "max_images", "enabled_skills",
              "turn_timeout_s", "model_timeout_s", "model_max_retries", "max_model_rounds", "max_tool_calls",
-             "max_history_chars", "max_tool_result_chars"}
+             "max_history_chars", "max_tool_result_chars", "reply_suggestions"}
 
 
 class ModelSettings(BaseModel):
@@ -70,6 +70,11 @@ class ContextSettings(BaseModel):
     max_tool_result_chars: int = Field(ge=2000, le=200000)
 
 
+class InteractionSettings(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+    reply_suggestions: bool
+
+
 def settings_path(config):
     return config.sessions_database.parent / "settings.json"
 
@@ -97,7 +102,9 @@ def load_overrides(config):
                                              for key in RuntimeSettings.model_fields})
     context = ContextSettings.model_validate({key: values.get(key, getattr(config, key))
                                              for key in ContextSettings.model_fields})
-    return replace(config, **updated, **runtime.model_dump(), **context.model_dump())
+    interaction = InteractionSettings.model_validate({key: values.get(key, getattr(config, key))
+                                                      for key in InteractionSettings.model_fields})
+    return replace(config, **updated, **runtime.model_dump(), **context.model_dump(), **interaction.model_dump())
 
 
 def resolve_model(config, value):
@@ -123,7 +130,8 @@ def public_settings(config):
             "api_key_set": bool(config.api_key), "enabled_skills": list(config.enabled_skills),
             "available_skills": list(SKILLS),
             "runtime": {key: payload[key] for key in RuntimeSettings.model_fields},
-            "context": {key: payload[key] for key in ContextSettings.model_fields}}
+            "context": {key: payload[key] for key in ContextSettings.model_fields},
+            "interaction": {key: payload[key] for key in InteractionSettings.model_fields}}
 
 
 def persist_settings(config):
@@ -161,6 +169,7 @@ def build_agent(config, service):
         model=config.model, api_key=config.api_key, base_url=config.base_url,
         use_responses_api=config.api_format == "responses", stream_tool_calls=config.stream_tool_calls,
         supports_images=config.supports_images, max_images=config.max_images,
+        reply_suggestions=config.reply_suggestions,
         turn_timeout_s=config.turn_timeout_s, model_timeout_s=config.model_timeout_s,
         max_model_retries=config.model_max_retries, max_model_rounds=config.max_model_rounds,
         max_tool_calls=config.max_tool_calls,

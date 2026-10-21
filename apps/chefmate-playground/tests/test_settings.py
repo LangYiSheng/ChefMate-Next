@@ -76,6 +76,27 @@ def test_context_budget_saves_applies_and_survives_reload(tmp_path):
         assert load_overrides(initial).max_history_chars == 450000
 
 
+def test_reply_suggestions_toggle_is_strict_applies_and_survives_reload(tmp_path):
+    initial = config(tmp_path)
+    app = create_app(initial, service=Service(), agent=Agent())
+    with TestClient(app) as client:
+        before = client.get("/api/settings").json()
+        assert before["interaction"] == {"reply_suggestions": True}
+        saved = client.patch("/api/settings", json={"revision": before["revision"], "section": "interaction",
+                                                   "values": {"reply_suggestions": False}})
+        assert saved.status_code == 200
+        assert saved.json()["interaction"] == {"reply_suggestions": False}
+        assert client.get("/api/status").json()["reply_suggestions"] is False
+        assert app.state.manager.reply_suggestions is False
+        assert app.state.manager.agent.config.reply_suggestions is False
+        assert load_overrides(initial).reply_suggestions is False
+        for invalid in ("false", 0, None):
+            response = client.patch("/api/settings", json={"revision": saved.json()["revision"],
+                "section": "interaction", "values": {"reply_suggestions": invalid}})
+            assert response.status_code == 422
+        assert load_overrides(initial).reply_suggestions is False
+
+
 def test_persisted_model_applies_atomically_survives_reload_and_rejects_stale_tab(tmp_path):
     initial = config(tmp_path)
     app = create_app(initial, service=Service(), agent=Agent())

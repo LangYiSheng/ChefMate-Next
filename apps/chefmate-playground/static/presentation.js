@@ -51,7 +51,6 @@ export function activityRows(message) {
     rows.push({id:call.call_id || `${name}:${rows.length}`,kind:'tool',text:TOOL_NAMES[name] || '使用厨房工具',
       state:interrupted ? 'interrupted' : running ? 'running' : failed ? 'failed' : 'done',call});
   }
-  if (message.streaming && message.content) rows.push({id:'latest',kind:'note',text:message.content});
   return rows;
 }
 export function latestActivity(message) {
@@ -61,6 +60,6 @@ export function latestActivity(message) {
   const running = rows.filter(r=>r.state==='running');
   if (running.length) return `${running[0].text}${running.length>1 ? ` · 另有 ${running.length-1} 项` : ''}…`;
   const last = rows.at(-1);
-  if (message.streaming) return last?.kind==='note' ? last.text : last ? `${last.text} · 正在整理结果…` : '正在理解你的需求…';
+  if (message.streaming) return last ? last.text : message.content ? '正在回复…' : '正在理解你的需求…';
   return rows.length ? `已完成 ${rows.filter(r=>r.kind==='tool').length} 项操作` : '';
 }

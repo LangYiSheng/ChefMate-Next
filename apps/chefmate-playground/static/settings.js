@@ -11,6 +11,7 @@ const $ = (id) => document.getElementById(id);
 const names = {
   model: ["模型连接", "选择模型、端点和连接方式。保存后用于接下来的对话。"],
   display: ["界面显示", "把注意力留给菜谱和下一步。"],
+  interaction: ["对话建议", "让下一步更好开口，也保留你自己的表达。"],
   developer: ["开发者", "按需查看公开执行记录、工具参数和模型实际用量。"],
   skills: ["厨房技能", "让助手按需使用你启用的厨房知识。"],
   runtime: ["执行设置", "设置一次任务的等待时间和操作上限。"],
@@ -195,6 +196,11 @@ function render() {
     button.disabled = testing || busy;
     button.addEventListener("click", testConnection);
     $("settings-form").append(button);
+  } else if (current === "interaction") {
+    heading("推荐回复");
+    field("显示推荐回复", "reply_suggestions", {type:"checkbox",
+      note:"每次回复结束后，提供三条左右的接话思路。",
+      hint:"点击只替换输入框里的文字，你可以修改后再发送。关闭后也会隐藏历史回复中的建议。"});
   } else if (current === "developer") {
     heading("调试信息");
     field("保留已完成的执行记录", "enabled", { type: "checkbox", note: "默认关闭。只影响当前浏览器的展示。" });
@@ -329,7 +335,7 @@ async function load() {
     ]);
     loaded = result[0];
     status = result[1];
-    for (const section of ["model", "skills", "runtime", "context", "display", "developer"])
+    for (const section of ["model", "skills", "runtime", "context", "interaction", "display", "developer"])
       if (!dirty.has(section)) {
         draftRevisions.set(section,loaded.revision);
         drafts.set(
@@ -347,6 +353,7 @@ async function load() {
                 ? { ...loaded.runtime }
                 : section === "context"
                   ? { ...loaded.context }
+                : section === "interaction" ? {reply_suggestions:loaded.interaction?.reply_suggestions !== false}
                 : section === "developer" ? readDeveloper() : readDisplay(),
         );
       }
