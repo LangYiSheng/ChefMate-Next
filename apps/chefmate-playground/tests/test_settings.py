@@ -161,7 +161,7 @@ def test_native_probe_rejects_text_tool_markup_and_keeps_errors_redacted(monkeyp
             return self
         async def ainvoke(self, messages):
             return AIMessage(content='<tool_call>connection_echo chefmate</tool_call>')
-    monkeypatch.setattr("langchain_openai.ChatOpenAI", FakeModel)
+    monkeypatch.setattr("chefmate_agent.provider.IntegrityChatOpenAI", FakeModel)
     assert asyncio.run(probe_model(replace(config(tmp_path), stream_tool_calls=False)))["ok"] is False
 
 
@@ -187,7 +187,7 @@ def test_probe_checks_native_roundtrip_for_the_selected_protocol(monkeypatch, tm
             assert isinstance(messages[-1], ToolMessage)
             assert messages[-1].tool_call_id == "probe-call"
             return AIMessage(content="OK")
-    monkeypatch.setattr("langchain_openai.ChatOpenAI", FakeModel)
+    monkeypatch.setattr("chefmate_agent.provider.IntegrityChatOpenAI", FakeModel)
     result = asyncio.run(probe_model(replace(config(tmp_path), api_format=protocol, stream_tool_calls=stream)))
     assert result["ok"] is True
     assert seen["use_responses_api"] is (protocol == "responses")

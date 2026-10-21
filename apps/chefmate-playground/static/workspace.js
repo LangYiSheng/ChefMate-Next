@@ -4,6 +4,8 @@ import { node, renderView } from './ui-components.js';
 import { icon } from './icons.js';
 
 const keyFor = (id) => `chefmate:workspace-drafts:${id}`;
+const compareSnapshots = (left, right) => (left?.revision ?? -1) - (right?.revision ?? -1)
+  || (left?.presentation_revision ?? 0) - (right?.presentation_revision ?? 0);
 function readDrafts(id) { try { return JSON.parse(localStorage.getItem(keyFor(id)) || '{}'); } catch { return {}; } }
 function writeDrafts(id, value) { try { localStorage.setItem(keyFor(id), JSON.stringify(value)); } catch { /* 无存储权限时仍保留内存草稿。 */ } }
 
@@ -86,13 +88,13 @@ export class WorkspaceController {
   receive(id, response, { immediate = false, userViewKind = null } = {}) {
     const entry = this.entry(id); const snapshot = response?.workspace || response?.ui_snapshot;
     if (!snapshot || !Number.isInteger(snapshot.revision)) return false;
-    if (entry.snapshot && snapshot.revision < entry.snapshot.revision) return false;
+    if (entry.snapshot && compareSnapshots(snapshot, entry.snapshot) < 0) return false;
     // Model tools save their work before the final answer. Keep those new views
     // out of the UI until the turn ends, including workspace reads on reconnect.
     // Direct user actions still receive their own confirmed state immediately.
     if (entry.presentationPending) {
-      const pendingRevision = (entry.pendingResponse?.workspace || entry.pendingResponse?.ui_snapshot)?.revision ?? -1;
-      if (snapshot.revision >= pendingRevision) entry.pendingResponse = clone(response);
+      const pendingSnapshot = entry.pendingResponse?.workspace || entry.pendingResponse?.ui_snapshot;
+      if (!pendingSnapshot || compareSnapshots(snapshot, pendingSnapshot) >= 0) entry.pendingResponse = clone(response);
       if(!immediate)return false;
       // An action response also includes every model-created view. Only expose
       // updates to views already on screen and a detail explicitly opened by
@@ -113,7 +115,10 @@ export class WorkspaceController {
     for (const [oldId, draft] of Object.entries(entry.drafts)) {
       if (!entry.views.some((view) => view.id === oldId)) {
         const replacement = entry.views.find((view) => view.kind === draft.kind);
-        if (replacement) { entry.drafts[replacement.id] = { ...draft, conflict: true }; delete entry.drafts[oldId]; }
+        if (replacement) {
+          entry.drafts[replacement.id] = { ...draft, conflict: Boolean(draft.conflict || draft.baseRevision !== snapshot.revision) };
+          delete entry.drafts[oldId];
+        }
       }
       if (draft.baseRevision !== snapshot.revision) draft.conflict = true;
     }

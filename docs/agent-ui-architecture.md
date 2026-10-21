@@ -19,13 +19,13 @@
 | 层 | 职责 |
 |---|---|
 | 检索 | `find_ingredients/search_recipes/get_recipe/get_search_options` 只读真实源库，保留营养估算、未知值与数据快照 |
-| 工作流 | 独立任务菜谱原件、餐单、份量、购物/备菜、步骤和计时；存储由应用注入 |
+| 工作流 | 独立任务菜谱原件、餐单、份量、备菜、步骤和计时；存储由应用注入 |
 | Agent | 标准框架执行，按阶段绑定业务工具和 Skills，提供完整 JSON 历史及事件 |
 | Web 应用 | 单会话运行、SQLite 原子聚合、HTTP/SSE、界面动作和组件 registry |
 
 界面工具有明确参数，如 `show_preference_form`、`show_recipe_choices`、`show_recipe_details`、`show_prep_checklist`、`show_cooking_guide`。菜谱 ID 和源快照必须来自真实工具结果或已保存任务，模型不能生成任意 HTML、JS、配方或数据库查询。
 
-支持的组件为 `preference_form`、`recipe_choices`、`recipe_detail`、`meal_plan`、`shopping_list`、`prep_checklist`、`cooking_guide`、`timers` 和 `task_progress`。工具输出完整的已验证展示动作给界面，模型历史只接收组件回执和短任务快照。
+支持的组件为 `preference_form`、`recipe_choices`、`recipe_detail`、`meal_plan`、`prep_checklist`、`cooking_guide`、`timers` 和 `task_progress`。工具输出完整的已验证展示动作给界面，模型历史只接收组件回执和短任务快照。
 
 ## 修改表单后模型如何知道
 
@@ -67,3 +67,12 @@ LanCher Code / WebUI 提供过程与结果分离、工具调用配对、历史�
 界面工具通过闭合枚举 `display` 决定聊天内展示、工作区展示或仅更新状态。UIAction携带 `placement`；工作区读取返回的 `views` 不作为聊天展示动作。前端限制单轮展开数量并绑定当前组件ID，避免一轮查询把整个厨房工作区堆进消息。
 
 设置是独立页面。服务端设置以完整配置版本校验，构造新Agent成功并原子写入后才整体替换；运行中对话阻止切换。密钥不可回读，不允许换端点时默认沿用旧密钥。配置页面的各分类保留独立草稿与读取版本，其他分类的重新读取不自动解除冲突。
+
+
+## 工具契约与参数边界
+
+工作流的TOOL_CONTRACTS统一定义schema关联、阶段、可见性、副作用与自动展示。动态快照从执行策略计算current_actions、allowed_transitions及blockers；模型按最新状态绑定可执行子集，执行器独立校验。select_recipes支持真实检索引用，不再把先展示候选当作选菜前提；模型偏好修改使用changed_fields显式掩码。
+
+业务revision与presentation_revision分开。展示可能登记候选或切换活动步骤，只有真实业务字段发生变化才增加业务版本；纯视图替换只增加展示版本，用户动作仍校验业务版本和当前view_id。
+
+原始供应商参数在项目适配层验证完整JSON、身份与成功终态后才发布调用，不依赖部分JSON容错。相同失败有界恢复，第三次后无工具收尾；推荐属于非阻塞辅助能力。调试保存脱敏完整性摘要，不保存原始SSE参数片段。

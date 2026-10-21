@@ -109,13 +109,15 @@ def test_real_injected_preference_patch_preserves_unsupplied_domain_values():
                                    user_text="改成两人份，半小时以内。")
 
     model = ScriptedModel([tool("update_preferences", {"expected_revision": before["revision"],
+                            "changed_fields": ["servings", "max_total_time_min"],
                             "values": {"servings": 2, "max_total_time_min": 30}}), answer("已更新人数和时间。")])
     core = ChefMateAgent(Service(), AgentConfig(model="test"), model=model, request_models=REQUESTS,
                         extra_tools=[InjectedToolSpec("update_preferences", "填写条件", UpdatePreferencesInput, update)],
                         ui_context_model=UISnapshot, action_model=UIAction)
     result = asyncio.run(core.run_turn([{"role": "user", "content": "改成两人份，半小时以内。"}], ui_context=before))
     assert result.status == "completed" and result.tool_calls[0].result["status"] == "ok"
-    assert seen == [{"expected_revision": before["revision"], "values": {"servings": 2.0, "max_total_time_min": 30.0}}]
+    assert seen == [{"expected_revision": before["revision"], "changed_fields": ["servings", "max_total_time_min"],
+                     "values": {"servings": 2.0, "max_total_time_min": 30.0}}]
     after = domain.model_snapshot()["preferences"]
     assert after["servings"] == 2 and after["max_total_time_min"] == 30
     assert after["taste_tags"] == ["light"] and after["allow_estimated"] is False

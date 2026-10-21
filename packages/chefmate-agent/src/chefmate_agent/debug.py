@@ -42,15 +42,22 @@ def redact_debug(value, *, secrets=()):
 
 def tool_catalog(tools, extra_tools, ui_context=None):
     stage = (ui_context or {}).get("stage", "idea")
+    actions = (ui_context or {}).get("current_actions", {})
     result = []
     for tool in tools:
         definition = convert_to_openai_tool(tool)["function"]
         name = definition["name"]
         spec = extra_tools.get(name)
         stages = list(spec.allowed_stages) if spec and spec.allowed_stages is not None else None
+        permitted = actions.get(name, {})
+        available = (stages is None or stage in stages) and permitted.get("available", True) and (not spec or spec.model_visible)
         result.append({"name": name, "description": definition.get("description", ""),
                        "parameters": copy.deepcopy(definition.get("parameters", {})),
-                       "allowed_stages": stages, "available": stages is None or stage in stages})
+                       "allowed_stages": stages, "available": available,
+                       "effect": spec.effect if spec else "read", "auto_display": bool(spec and spec.auto_display),
+                       "preconditions": list(spec.preconditions) if spec else [],
+                       "side_effects": list(spec.side_effects) if spec else [],
+                       "blockers": copy.deepcopy(permitted.get("blockers", []))})
     return result
 
 

@@ -333,3 +333,29 @@ test('unknown recovery keeps model components hidden until a confirmed terminal 
   assert.equal(visibleMessageViews(completed)[0].id,'new-form');
   assert.equal(item.entry('session').views[0].id,'new-form');
 });
+
+test('presentation refreshes preserve business drafts and reject older display responses', t => {
+  const item=controller(t);
+  const first={...response(4,'first'),workspace:{revision:4,presentation_revision:1,stage:'idea'}};
+  item.receive('session',first);
+  item.setDraft(first.views[0],{...first.views[0].data.values,servings:3});
+  const latest={...response(4,'latest'),workspace:{revision:4,presentation_revision:3,stage:'idea'}};
+  assert.equal(item.receive('session',latest),true);
+  assert.equal(item.entry('session').drafts.latest.values.servings,3);
+  assert.equal(item.entry('session').drafts.latest.conflict,false);
+  assert.equal(item.receive('session',{...response(4,'older'),workspace:{revision:4,presentation_revision:2,stage:'idea'}}),false);
+  assert.equal(item.entry('session').views[0].id,'latest');
+  item.receive('session',{...response(5,'changed'),workspace:{revision:5,presentation_revision:0,stage:'idea'}});
+  assert.equal(item.entry('session').drafts.changed.conflict,true);
+});
+
+test('queued model presentation uses both revisions before revealing the terminal view', t => {
+  const item=controller(t);
+  item.receive('session',{...response(2,'existing'),workspace:{revision:2,presentation_revision:1,stage:'idea'}});
+  item.setRunning('session',true);
+  item.receive('session',{...response(2,'newest'),workspace:{revision:2,presentation_revision:4,stage:'idea'}});
+  item.receive('session',{...response(2,'stale'),workspace:{revision:2,presentation_revision:2,stage:'idea'}});
+  assert.equal(item.entry('session').views[0].id,'existing');
+  item.setRunning('session',false);
+  assert.equal(item.entry('session').views[0].id,'newest');
+});

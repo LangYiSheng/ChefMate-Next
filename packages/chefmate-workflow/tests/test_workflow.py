@@ -4,6 +4,7 @@ import copy
 import json
 from datetime import datetime, timedelta, timezone
 from threading import RLock
+from uuid import uuid4
 
 import pytest
 from pydantic import ValidationError
@@ -80,7 +81,7 @@ def tool(kitchen, name, request=None, **kwargs):
 
 def action(kitchen, kind, payload, *, action_id=None, base_revision=None, view_id=None):
     service, host, _, _ = kitchen
-    return service.apply_action({"type": kind, "payload": payload, "action_id": action_id or f"a-{host.state.get('revision', 0)}",
+    return service.apply_action({"type": kind, "payload": payload, "action_id": action_id or str(uuid4()),
                                  "base_revision": host.state.get("revision", 0) if base_revision is None else base_revision,
                                  "view_id": view_id})
 
@@ -511,14 +512,16 @@ def test_model_controls_presentation_without_dropping_task_state(kitchen, displa
 def test_model_preference_patch_shows_saved_values_and_rejects_stale_revision(kitchen):
     _, host, _, _ = kitchen
     action(kitchen, "update_preferences", {"values": {"servings": 2, "taste_tags": ["light"]}})
-    result = tool(kitchen, "update_preferences", {"expected_revision": 1, "values": {"ingredient_terms": ["虾"]}})
+    result = tool(kitchen, "update_preferences", {"expected_revision": 1, "changed_fields": ["ingredient_terms"],
+                                                 "values": {"ingredient_terms": ["虾"]}})
     assert result["status"] == "ok"
     form = result["actions"][0]["component"]
     assert form["kind"] == "preference_form"
     assert form["data"]["values"]["servings"] == 2 and form["data"]["values"]["taste_tags"] == ["light"]
     assert form["data"]["fields"][0]["value"] == ["虾"]
     before = copy.deepcopy(host.state)
-    assert tool(kitchen, "update_preferences", {"expected_revision": 1, "values": {"servings": 8}})["status"] == "revision_conflict"
+    assert tool(kitchen, "update_preferences", {"expected_revision": 1, "changed_fields": ["servings"],
+                                               "values": {"servings": 8}})["status"] == "revision_conflict"
     assert host.state == before
 
 
@@ -601,8 +604,8 @@ def test_question_answer_checks_current_revision_and_question_rules(kitchen):
 ])
 def test_harness_tools_reject_unbounded_questions_and_implicit_mutations(kitchen, name, tool_request):
     _, host, _, _ = kitchen
-    with pytest.raises(ValidationError):
-        tool(kitchen, name, tool_request)
+    result = tool(kitchen, name, tool_request)
+    assert result["status"] == "invalid_arguments" and result["errors"] and result["recovery"]
     assert host.state == {}
 
 
@@ -628,3 +631,169 @@ def test_legacy_purchases_migrate_to_single_preparation_without_guessing_other_d
     assert historical.stage == "prep" and historical.components == []
     action(kitchen, "check_prep_item", {"item_id": "r2:ingredient:0", "status": "ready"})
     assert host.state["schema_version"] == 2 and "shopping_checked" not in host.state
+
+
+def test_preference_contract_preserves_omitted_and_strict_filler_fields_and_supports_clear(kitchen):
+    from chefmate_workflow import TOOL_REQUEST_MODELS
+    _, host, _, _ = kitchen
+    action(kitchen, "update_preferences", {"values": {"taste_tags": ["light"], "ingredient_terms": ["虾"],
+        "exclude_ingredient_terms": ["香菜"], "dietary_notes": "少盐", "available_tools": ["锅"], "allow_estimated": False}})
+    # A strict gateway may fill every values field: the explicit mask protects unrelated saved values.
+    request = {"expected_revision": 1, "changed_fields": ["servings", "max_total_time_min"], "values": {
+        "servings": 1, "max_total_time_min": 20, "taste_tags": [], "ingredient_terms": [],
+        "exclude_ingredient_terms": [], "dietary_notes": "", "available_tools": None, "allow_estimated": True}}
+    result = tool(kitchen, "update_preferences", request)
+    assert result["status"] == "ok"
+    saved = host.state["preferences"]
+    assert saved["servings"] == 1 and saved["max_total_time_min"] == 20
+    assert saved["taste_tags"] == ["light"] and saved["ingredient_terms"] == ["虾"]
+    assert saved["exclude_ingredient_terms"] == ["香菜"] and saved["dietary_notes"] == "少盐"
+    assert saved["available_tools"] == ["锅"] and saved["allow_estimated"] is False
+    assert {field["name"] for field in result["actions"][0]["component"]["data"]["fields"]} == {"servings", "max_total_time_min"}
+    clear = {"servings": None, "max_total_time_min": None, "available_tools": None,
+             "taste_tags": [], "ingredient_terms": [], "exclude_ingredient_terms": [], "dietary_notes": ""}
+    cleared = tool(kitchen, "update_preferences", {"expected_revision": 2, "changed_fields": list(clear), "values": clear})
+    assert cleared["status"] == "ok" and all(host.state["preferences"][key] == value for key, value in clear.items())
+    for field in ("taste_tags", "ingredient_terms", "exclude_ingredient_terms", "dietary_notes", "allow_estimated"):
+        invalid = {"expected_revision": 3, "changed_fields": [field], "values": {field: None}}
+        before = copy.deepcopy(host.state)
+        with pytest.raises(ValidationError):
+            TOOL_REQUEST_MODELS["update_preferences"].model_validate(invalid)
+        rejected = tool(kitchen, "update_preferences", invalid)
+        assert rejected["status"] == "invalid_arguments" and host.state == before
+        assert rejected["errors"][0]["loc"] == ["values", field] and rejected["errors"][0]["hint"]
+        assert all("input" not in error and "ctx" not in error for error in rejected["errors"])
+    before = copy.deepcopy(host.state)
+    rejected = tool(kitchen, "update_preferences", {"expected_revision": 3, "changed_fields": ["servings"],
+                                                   "values": {"servings": "never-echo-this-private-input"}})
+    assert "never-echo" not in json.dumps(rejected, ensure_ascii=False) and host.state == before
+    assert tool(kitchen, "update_preferences", {"expected_revision": 3, "values": {"servings": 2}})["status"] == "invalid_arguments"
+    before = copy.deepcopy(host.state)
+    ui_rejected = action(kitchen, "update_preferences", {"values": {"taste_tags": None}})
+    assert ui_rejected["status"] == "invalid_action" and ui_rejected["errors"] and host.state == before
+
+
+def test_presentation_revision_does_not_conflict_with_business_write_but_replaced_view_is_stale(kitchen):
+    service, host, _, _ = kitchen
+    first = tool(kitchen, "show_preference_form")
+    first_id = first["actions"][0]["component"]["id"]
+    assert first["ui_snapshot"]["revision"] == 0 and first["ui_snapshot"]["presentation_revision"] == 1
+    second = tool(kitchen, "show_preference_form")
+    assert second["ui_snapshot"]["revision"] == 0 and second["ui_snapshot"]["presentation_revision"] == 2
+    assert action(kitchen, "update_preferences", {"values": {"servings": 2}}, view_id=first_id)["status"] == "stale_view"
+    saved = tool(kitchen, "update_preferences", {"expected_revision": 0, "changed_fields": ["servings"], "values": {"servings": 2}})
+    assert saved["status"] == "ok" and saved["ui_snapshot"]["revision"] == 1
+    before_read = copy.deepcopy(host.state)
+    assert service.model_snapshot()["presentation_revision"] == 3 and host.state == before_read
+    action(kitchen, "update_preferences", {"values": {"servings": 4}})
+    stale = tool(kitchen, "update_preferences", {"expected_revision": 1, "changed_fields": ["servings"], "values": {"servings": 1}})
+    assert stale["status"] == "revision_conflict" and host.state["preferences"]["servings"] == 4
+
+
+def test_select_direct_approved_reference_matches_display_then_select_and_legacy_entry(kitchen):
+    service, host, retrieval, clock = kitchen
+    direct = tool(kitchen, "select_recipes", {"recipe_ids": ["r1"], "data_snapshot": SNAPSHOT,
+                                            "expected_revision": 0, "servings": {"r1": 3}})
+    assert direct["status"] == "ok" and direct["ui_snapshot"]["stage"] == "planning"
+    direct_plan = copy.deepcopy(host.state["meal_plan"])
+    for use_display, legacy in ((True, False), (False, True)):
+        other_host = Host()
+        other_service = WorkflowService(retrieval, other_host.get, other_host.mutate, now=lambda: clock[0])
+        other = other_service, other_host, retrieval, clock
+        if use_display:
+            tool(other, "show_recipe_choices", {"recipe_ids": ["r1"], "data_snapshot": SNAPSHOT})
+        request = {"recipe_ids": ["r1"], "data_snapshot": SNAPSHOT, "servings": {"r1": 3}}
+        if not legacy:
+            request["expected_revision"] = other_host.state.get("revision", 0)
+        assert tool(other, "set_meal_plan" if legacy else "select_recipes", request)["status"] == "ok"
+        assert other_host.state["meal_plan"] == direct_plan
+    action(kitchen, "check_prep_item", {"item_id": "r1:ingredient:1", "status": "ready"})
+    host.state["step_status"]["r1:step:0"] = "done"
+    before = copy.deepcopy(host.state)
+    selected = tool(kitchen, "select_recipes", {"recipe_ids": ["r1"], "expected_revision": before["revision"]})
+    assert selected["status"] == "ok" and host.state["revision"] == before["revision"]
+    assert host.state["prep_status"] == before["prep_status"] and host.state["step_status"] == before["step_status"]
+    assert host.state["meal_plan"] == direct_plan
+    # Re-showing an already registered candidate is presentation-only; new candidates are business state.
+    tool(kitchen, "show_recipe_choices", {"recipe_ids": ["r1"], "data_snapshot": SNAPSHOT})
+    revision = host.state["revision"]
+    tool(kitchen, "show_recipe_choices", {"recipe_ids": ["r1"], "data_snapshot": SNAPSHOT})
+    assert host.state["revision"] == revision
+    tool(kitchen, "show_recipe_choices", {"recipe_ids": ["r1", "r2"], "data_snapshot": SNAPSHOT})
+    assert host.state["revision"] == revision + 1
+    assert service.model_snapshot()["current_actions"]["set_meal_plan"]["available"] is False
+
+
+def test_select_requires_unambiguous_approved_reference_and_rejects_concurrent_write(kitchen):
+    service, host, retrieval, _ = kitchen
+    newer = {"data_version": "new", "imported_at": "2026-10-21T00:00:00+00:00"}
+    refs = [{"recipe_id": "r1", "data_snapshot": snapshot} for snapshot in (SNAPSHOT, newer)]
+    assert service.execute_tool("select_recipes", {"recipe_ids": ["r1"], "expected_revision": 0},
+                                approved_recipes=refs)["status"] == "snapshot_required"
+    assert host.state == {} and not retrieval.calls
+    retrieval.after_read = lambda: action(kitchen, "update_preferences", {"values": {"servings": 4}})
+    raced = service.execute_tool("select_recipes", {"recipe_ids": ["r1"], "expected_revision": 0,
+                                                   "data_snapshot": SNAPSHOT}, approved_recipes=refs)
+    assert raced["status"] == "revision_conflict" and not host.state["meal_plan"]
+    assert host.state["preferences"]["servings"] == 4
+
+
+def test_show_existing_views_only_changes_presentation_but_new_source_and_active_step_are_business(kitchen):
+    _, host, _, _ = kitchen
+    choose(kitchen, ids=["r1", "r2"])
+    revision = host.state["revision"]
+    for name, request in (("show_meal_plan", {}), ("show_prep_checklist", {}), ("show_timers", {}),
+                          ("show_recipe_details", {"recipe_id": "r1"}), ("show_cooking_guide", {})):
+        before_presentation = host.state["presentation_revision"]
+        result = tool(kitchen, name, request)
+        assert result["status"] == "ok" and host.state["revision"] == revision
+        assert host.state["presentation_revision"] == before_presentation + 1
+    tool(kitchen, "show_cooking_guide", {"recipe_id": "r2"})
+    assert host.state["revision"] == revision + 1 and host.state["active_recipe_id"] == "r2"
+    tool(kitchen, "show_cooking_guide", {"recipe_id": "r2"})
+    assert host.state["revision"] == revision + 1
+    tool(kitchen, "show_recipe_details", {"recipe_id": "r3", "data_snapshot": SNAPSHOT})
+    assert host.state["revision"] == revision + 2
+    tool(kitchen, "show_recipe_details", {"recipe_id": "r3"})
+    assert host.state["revision"] == revision + 2
+
+
+def test_registry_and_current_capabilities_share_stage_and_transition_guards(kitchen):
+    from chefmate_workflow import TOOL_CONTRACTS, TOOL_REQUEST_MODELS
+    service, host, _, _ = kitchen
+    assert set(TOOL_CONTRACTS) == set(TOOL_REQUEST_MODELS)
+    for model in TOOL_REQUEST_MODELS.values():
+        assert "base_revision" not in model.model_json_schema()["properties"]
+    empty = service.model_snapshot()
+    assert not empty["allowed_transitions"]
+    assert {item["code"] for item in empty["blockers"]["planning"]} == {"plan_required"}
+    assert tool(kitchen, "advance_cooking_stage", {"stage": "planning"})["status"] == "plan_required"
+    choose(kitchen)
+    plan = service.model_snapshot()
+    assert set(plan["allowed_transitions"]) == {"idea", "prep"}
+    assert plan["current_actions"]["update_prep_items"]["available"] is True
+    assert plan["current_actions"]["set_cooking_timer"]["available"] is False
+    action(kitchen, "change_stage", {"stage": "prep"})
+    prep = service.model_snapshot()
+    assert prep["allowed_transitions"] == ["planning"]
+    assert prep["blockers"]["cooking"][0]["code"] == "prep_incomplete"
+    assert tool(kitchen, "advance_cooking_stage", {"stage": "cooking"})["status"] == "prep_incomplete"
+    for item in service._prep_items(WorkspaceState.model_validate(host.state)):
+        action(kitchen, "check_prep_item", {"item_id": item.id, "status": "ready"})
+    assert "cooking" in service.model_snapshot()["allowed_transitions"]
+    tool(kitchen, "advance_cooking_stage", {"stage": "cooking"})
+    cooking = service.model_snapshot()
+    assert cooking["current_actions"]["select_recipes"]["available"] is False
+    assert cooking["current_actions"]["update_prep_items"]["available"] is False
+    assert cooking["current_actions"]["set_cooking_timer"]["available"] is True
+    assert cooking["blockers"]["completed"][0]["code"] == "steps_incomplete"
+    assert tool(kitchen, "advance_cooking_stage", {"stage": "completed"})["status"] == "steps_incomplete"
+    for ordinal in (0, 1):
+        action(kitchen, "complete_step", {"recipe_id": "r1", "step_id": f"r1:step:{ordinal}", "completed": True})
+    assert "completed" in service.model_snapshot()["allowed_transitions"]
+    tool(kitchen, "advance_cooking_stage", {"stage": "completed"})
+    assert service.model_snapshot()["current_actions"]["set_cooking_timer"]["available"] is False
+    question = tool(kitchen, "ask_user", {"question": "要开始下一餐吗？"})
+    pending = question["ui_snapshot"]
+    assert not pending["allowed_transitions"] and pending["current_actions"]["get_cooking_workspace"]["available"]
+    assert all(not item["available"] for name, item in pending["current_actions"].items() if name != "get_cooking_workspace")

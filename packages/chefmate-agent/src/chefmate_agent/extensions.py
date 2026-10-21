@@ -22,3 +22,8 @@ class InjectedToolSpec:
     handler: Callable[[dict[str, Any], ToolExecutionContext], Any]
     response_model: type[BaseModel] | None = None
     allowed_stages: tuple[str, ...] | None = None
+    effect: str = "read"
+    auto_display: bool = False
+    preconditions: tuple[str, ...] = ()
+    side_effects: tuple[str, ...] = ()
+    model_visible: bool = True

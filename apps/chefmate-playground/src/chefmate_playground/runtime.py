@@ -141,7 +141,16 @@ class TurnManager:
         async def on_event(event):
             payload = copy.deepcopy(event)
             if payload.get("type") == "debug_context":
-                turn.debug_trace.append(redact_debug(payload["context"], self.debug_secrets))
+                trace = redact_debug(payload["context"], self.debug_secrets)
+                # Parameter verification enriches the same request after the
+                # provider responds; it is not another model call.
+                round_number = trace.get("round")
+                existing = next((index for index, item in enumerate(turn.debug_trace)
+                                 if type(round_number) is int and item.get("round") == round_number), None)
+                if existing is None:
+                    turn.debug_trace.append(trace)
+                else:
+                    turn.debug_trace[existing] = trace
                 save_debug()
                 return
             if payload.get("type") == "skill_event":

@@ -2,7 +2,7 @@ import {icon} from './icons.js';
 
 const node=(tag,cls,text)=>{const item=document.createElement(tag);if(cls)item.className=cls;if(text!=null)item.textContent=String(text);return item;};
 const labels={system:'系统提示',user:'用户输入',assistant:'助手输出',tool:'工具回调',idea:'交流',planning:'选菜',prep:'备菜',cooking:'烹饪',completed:'完成'};
-const fieldLabels={revision:'任务版本',stage:'当前阶段',preferences:'用餐条件',components:'界面内容',recent_actions:'最近操作',pending_question:'待回答问题',last_answer:'用户答案',recipe_id:'菜谱 ID',recipe_ids:'菜谱 ID',item_id:'食材项目 ID',expected_revision:'预期版本',status:'状态',message:'说明',items:'项目',actions:'界面更新',ui_snapshot:'任务状态',values:'条件',servings:'用餐人数',ingredient_terms:'想吃的食材',exclude_ingredient_terms:'不吃的食材',max_total_time_min:'时间上限',available_tools:'可用厨具',dietary_notes:'饮食说明',question:'问题',option_ids:'选择',text:'文字',title:'标题'};
+const fieldLabels={revision:'任务版本',presentation_revision:'展示版本',current_actions:'可执行操作',allowed_transitions:'可进入阶段',blockers:'阻塞原因',effect:'操作类型',auto_display:'自动展示',parameter_integrity:'参数完整性',stage:'当前阶段',preferences:'用餐条件',components:'界面内容',recent_actions:'最近操作',pending_question:'待回答问题',last_answer:'用户答案',recipe_id:'菜谱 ID',recipe_ids:'菜谱 ID',item_id:'食材项目 ID',expected_revision:'预期版本',status:'状态',message:'说明',items:'项目',actions:'界面更新',ui_snapshot:'任务状态',values:'条件',servings:'用餐人数',ingredient_terms:'想吃的食材',exclude_ingredient_terms:'不吃的食材',max_total_time_min:'时间上限',available_tools:'可用厨具',dietary_notes:'饮食说明',question:'问题',option_ids:'选择',text:'文字',title:'标题'};
 
 function details(title,build,{open=false}={}) {
   const item=node('details','dev-disclosure'),summary=node('summary','',title);item.append(summary);
@@ -120,9 +120,14 @@ export class DeveloperPanel {
     root.append(node('p','dev-note',`${tools.length} 项已注册工具 · ${tools.filter(tool=>tool.available).length} 项当前可执行。展开查看用途与参数。`));
     if(!tools.length)root.append(paragraph('模型连接配置完成后，这里展示实际注册的工具。'));
     for(const tool of tools){
-      const entry=details(`${tool.name}${tool.available?'':' · 阶段受限'}`,()=>{
+      const entry=details(`${tool.name}${tool.available?'':' · 当前不可用'}`,()=>{
         const body=node('div','dev-tool-body');body.append(paragraph(tool.description));
         if(tool.allowed_stages?.length)body.append(node('p','dev-constraint',`可用阶段：${tool.allowed_stages.map(stage=>labels[stage]||stage).join('、')}`));
+        const effects={read:'读取',presentation:'展示',mixed:'展示与任务更新',write:'修改',wait:'等待回答'};
+        body.append(node('p','dev-constraint',`操作类型：${effects[tool.effect]||tool.effect||'读取'}${tool.auto_display?' · 成功后自动展示结果':''}`));
+        if(tool.side_effects?.length)body.append(details('实际影响',()=>valueView(tool.side_effects)));
+        if(tool.preconditions?.length)body.append(details('前置条件',()=>valueView(tool.preconditions)));
+        if(tool.blockers?.length)body.append(details('当前阻塞原因',()=>valueView(tool.blockers),{open:true}));
         body.append(schemaView(tool.parameters||{}));return body;
       });entry.dataset.devKey=`tool:${tool.name}`;root.append(entry);
     }
@@ -164,6 +169,7 @@ export class DeveloperPanel {
       const entry=details(`第 ${request.round||index+1} 次模型请求 · ${request.messages?.length||0} 条消息`,()=>{
         const body=node('div','dev-request');
         body.append(details('系统提示词',()=>paragraph(request.system||'')));
+        if(request.parameter_integrity)body.append(details('工具参数完整性',()=>valueView(request.parameter_integrity)));
         if(request.skills?.length)body.append(details('本次系统提示中的技能目录',()=>valueView(request.skills)));
         if(request.native_images_count)body.append(node('p','dev-constraint',`实际发送 ${request.native_images_count} 张图片 · 不记录图片字节`));
         (request.messages||[]).forEach((message,messageIndex)=>body.append(messageView(message,messageIndex)));

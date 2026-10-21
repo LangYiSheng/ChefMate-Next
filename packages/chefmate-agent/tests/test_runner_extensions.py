@@ -188,7 +188,7 @@ def test_scoped_host_context_actions_and_original_user_snapshot():
     json.dumps(result.model_dump(mode="json"), allow_nan=False)
 
 
-def test_tool_catalog_stays_stable_after_latest_snapshot():
+def test_registered_schemas_stay_stable_while_current_bindings_follow_stage():
     def move(request, context):
         return {"status": "ok", "ui_snapshot": {"revision": 2, "stage": "prep"}, "actions": []}
 
@@ -200,8 +200,12 @@ def test_tool_catalog_stays_stable_after_latest_snapshot():
                                       ui_context={"revision": 1, "stage": "search"}))
     assert result.status == "completed"
     names = [{item["function"]["name"] for item in definitions} for definitions in model.bind_history]
-    assert "show_form" in names[0] and "prep_tool" in names[0]
-    assert model.bind_history[0] == model.bind_history[-1]
+    assert "show_form" in names[0] and "prep_tool" not in names[0]
+    assert "show_form" not in names[-1] and "prep_tool" in names[-1]
+    assert {definition["function"]["name"] for definition in core._tool_definitions} >= {"show_form", "prep_tool"}
+    common = names[0] & names[-1]
+    assert [item for item in model.bind_history[0] if item["function"]["name"] in common] == [
+        item for item in model.bind_history[-1] if item["function"]["name"] in common]
     assert model.histories[0][0].content == model.histories[-1][0].content
     assert model.histories[0][1].content == model.histories[-1][1].content
     assert {"find_ingredients", "search_recipes", "get_recipe", "get_search_options", "list_skills", "load_skill"} <= names[-1]
@@ -241,8 +245,8 @@ def test_latest_prep_quantities_reach_model_without_original_render_data():
     latest_result = next(message.content for message in reversed(model.histories[-1]) if isinstance(message, ToolMessage))
     assert '"original_servings":1,"target_servings":2' in latest_result
     assert '"amount_text":"100 g"' in latest_result and '"amount_text":"40 ml"' in latest_result
-    assert "原始步骤里的数字是原始份量的引用" in latest_system
-    assert "不能用旧get_recipe" in latest_system
+    assert "原始份量引用，不能覆盖当前amount_text" in latest_system
+    assert "当前执行任务使用冻结资料和最新换算用量，不二次换算" in latest_system
     assert "ORIGINAL_RENDER_ONLY" not in result.messages[2]["content"]
 
 

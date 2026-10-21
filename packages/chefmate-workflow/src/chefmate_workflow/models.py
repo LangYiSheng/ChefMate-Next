@@ -31,14 +31,20 @@ class PreferenceValues(StrictModel):
 
 
 class PreferencePatch(StrictModel):
-    servings: Positive | None = None
-    max_total_time_min: Annotated[float, Field(ge=0, allow_inf_nan=False)] | None = None
-    taste_tags: Annotated[list[Text], Field(max_length=30)] | None = None
-    available_tools: Annotated[list[Text], Field(max_length=50)] | None = None
-    ingredient_terms: Annotated[list[Text], Field(max_length=50)] | None = None
-    exclude_ingredient_terms: Annotated[list[Text], Field(max_length=50)] | None = None
-    dietary_notes: Annotated[str, Field(max_length=2000)] | None = None
-    allow_estimated: bool | None = None
+    servings: Positive | None = Field(default=None, description="省略保留原值；null清空人数限制。")
+    max_total_time_min: Annotated[float, Field(ge=0, allow_inf_nan=False)] | None = Field(
+        default=None, description="省略保留原值；null清空耗时限制。")
+    taste_tags: Annotated[list[Text], Field(max_length=30)] = Field(default_factory=list,
+        description="省略保留原值；[]清空；不能为null。")
+    available_tools: Annotated[list[Text], Field(max_length=50)] | None = Field(
+        default=None, description="省略保留；null表示未限制厨具，[]表示没有厨具；按用户明确要求修改。")
+    ingredient_terms: Annotated[list[Text], Field(max_length=50)] = Field(default_factory=list,
+        description="省略保留原值；[]清空；不能为null。")
+    exclude_ingredient_terms: Annotated[list[Text], Field(max_length=50)] = Field(default_factory=list,
+        description="省略保留原值；[]清空；不能为null。")
+    dietary_notes: Annotated[str, Field(max_length=2000)] = Field(default="",
+        description="省略保留原值；空字符串清空；不能为null。")
+    allow_estimated: bool = Field(default=True, description="省略保留原值；修改时只接受true或false，不能为null。")
 
 
 class ApprovedRecipeRef(StrictModel):
@@ -199,6 +205,7 @@ class ComponentBase(StrictModel):
     id: Text
     title: Text
     revision: Annotated[int, Field(ge=0)]
+    presentation_revision: Annotated[int, Field(ge=0)] = 0
     editable: bool = True
 
 
@@ -252,12 +259,14 @@ class CompactComponentSnapshot(StrictModel):
                   "prep_checklist", "cooking_guide", "timers", "task_progress"]
     title: Text
     revision: Annotated[int, Field(ge=0)]
+    presentation_revision: Annotated[int, Field(ge=0)] = 0
     editable: bool
     data: dict[str, Any]
 
 
 class UISnapshot(StrictModel):
     revision: Annotated[int, Field(ge=0)]
+    presentation_revision: Annotated[int, Field(ge=0)] = 0
     stage: Stage
     preferences: PreferenceValues = Field(default_factory=PreferenceValues)
     selected_recipe_ids: list[str] = Field(default_factory=list)
@@ -267,6 +276,9 @@ class UISnapshot(StrictModel):
     recent_actions: list[ActionRecord] = Field(default_factory=list)
     pending_question: PendingQuestion | None = None
     last_answer: QuestionAnswer | None = None
+    current_actions: dict[str, Any] = Field(default_factory=dict)
+    allowed_transitions: list[Stage] = Field(default_factory=list)
+    blockers: dict[str, list[dict[str, str]]] = Field(default_factory=dict)
 
     @model_validator(mode="before")
     @classmethod
@@ -285,6 +297,7 @@ class CookingAdaptation(StrictModel):
 class WorkspaceState(StrictModel):
     schema_version: Literal[2] = 2
     revision: Annotated[int, Field(ge=0)] = 0
+    presentation_revision: Annotated[int, Field(ge=0)] = 0
     stage: Stage = "idea"
     preferences: PreferenceValues = Field(default_factory=PreferenceValues)
     candidates: list[FrozenRecipe] = Field(default_factory=list)
@@ -322,10 +335,11 @@ class WorkflowToolResult(StrictModel):
     message: str | None = None
     pending_question: PendingQuestion | None = None
     last_answer: QuestionAnswer | None = None
+    errors: list[dict[str, Any]] = Field(default_factory=list)
+    recovery: list[str] = Field(default_factory=list)
 
 
 class ToolInput(StrictModel):
-    base_revision: Annotated[int, Field(ge=0)] | None = None
     display: Literal["inline", "workspace", "none"] = Field(
         default="inline", description="仅展示这轮必要的核心内容。inline在聊天内交互，workspace仅在工作区展示，none仅更新状态。")
 
@@ -386,27 +400,30 @@ class AdaptCookingInput(ToolInput):
 
 
 class ExpectedRevisionInput(ToolInput):
-    expected_revision: Annotated[int, Field(ge=0)]
-
-    @model_validator(mode="after")
-    def matching_revisions(self):
-        if self.base_revision is not None and self.base_revision != self.expected_revision:
-            raise ValueError("Revision fields must match")
-        return self
+    expected_revision: Annotated[int, Field(ge=0)] = Field(
+        description="最新成功工具返回ui_snapshot.revision（业务版本）。依赖前次写入的调用必须等结果；不要使用展示版本。")
 
 
 class UpdatePreferencesInput(ExpectedRevisionInput):
     values: PreferencePatch
+    changed_fields: Annotated[list[PreferenceName], Field(min_length=1, max_length=8)] = Field(
+        description="本次用户明确要求修改的字段名。只保存这些字段；即使严格格式补齐values中的其他值，也不会修改未列出的字段。")
 
     @model_validator(mode="after")
     def supplied_values(self):
-        if not self.values.model_fields_set:
-            raise ValueError("Provide at least one preference")
+        if (len(self.changed_fields) != len(set(self.changed_fields))
+                or set(self.changed_fields) - self.values.model_fields_set):
+            raise ValueError("Each changed field must be distinct and supplied in values")
         return self
 
 
 class SelectRecipesInput(ExpectedRevisionInput):
-    recipe_ids: Annotated[list[Text], Field(min_length=1, max_length=4)]
+    recipe_ids: Annotated[list[Text], Field(min_length=1, max_length=4)] = Field(
+        description="来自真实检索或当前工作区的ID；可直接选择检索结果，无需先展示候选。")
+    data_snapshot: DatasetSnapshot | None = Field(default=None,
+        description="新检索候选建议提供对应来源snapshot；省略时只在服务器有唯一可信来源时解析，不猜来源。")
+    servings: dict[str, Positive] = Field(default_factory=dict,
+        description="只为需要覆盖的已选recipe_id指定目标人数；省略沿用已选份量或当前用餐人数。")
 
 
 class PrepItemUpdate(StrictModel):

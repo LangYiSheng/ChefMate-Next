@@ -2,6 +2,7 @@
 
 import asyncio
 import copy
+import json
 from types import SimpleNamespace
 
 import pytest
@@ -94,8 +95,14 @@ def test_action_schema_and_id_collision_cannot_overwrite_values(tmp_path):
 def test_stage_is_agent_owned_and_published_on_conversation(tmp_path):
     class StageAgent(Agent):
         async def run_turn(self, messages, **kwargs):
-            result = kwargs["tool_context"].execute("advance_cooking_stage", {"stage": "planning"},
-                SimpleNamespace(messages=messages, call_id="stage"))
+            snapshot = Service().get_search_options()["snapshot"]
+            snapshot["imported_at"] = "2026-01-01T00:00:00+00:00"
+            evidence = {"role": "tool", "name": "search_recipes", "content": json.dumps({
+                "status": "ok", "snapshot": snapshot, "items": [{"recipe_id": "r1"}]})}
+            result = kwargs["tool_context"].execute("select_recipes", {
+                "recipe_ids": ["r1"], "data_snapshot": snapshot,
+                "expected_revision": kwargs["ui_context"]["revision"]},
+                SimpleNamespace(messages=[*messages, evidence], call_id="stage"))
             assert result["status"] == "ok"
             return {"status": "completed", "assistant_text": "一起选菜吧", "messages": [
                 *messages, {"role": "assistant", "content": "一起选菜吧"}], "actions": result["actions"]}
@@ -109,8 +116,8 @@ def test_stage_is_agent_owned_and_published_on_conversation(tmp_path):
         assert client.get(uri + "/workspace").json()["ui_snapshot"]["revision"] == 0
         assert events(client.post(uri + "/turn", json={"message": "帮我开始选菜"}))[-1]["status"] == "completed"
         state=client.get(uri).json()["conversation_state"]
-        assert state["stage"] == "planning" and state["recipe_count"] == 0
-        assert state["recipe_names"] == []
+        assert state["stage"] == "planning" and state["recipe_count"] == 1
+        assert state["recipe_names"] == ["测试菜"]
         assert client.get("/api/sessions").json()["items"][0]["conversation_state"]["stage"] == "planning"
 
 
@@ -137,12 +144,12 @@ def test_active_model_cannot_overwrite_concurrent_user_edit(tmp_path):
         turn, _ = await manager.begin(session_id, "展示表单")
         await started.wait()
         user = binding.service(session_id).apply_action({"type": "update_preferences", "action_id": "user-edit",
-                                                       "base_revision": 1, "payload": {"values": {"servings": 3}}})
+                                                       "base_revision": 0, "payload": {"values": {"servings": 3}}})
         assert user["status"] == "ok"
         release.set()
         await turn.task
         actual = binding.service(session_id).model_snapshot()
-        assert actual["revision"] == 2 and actual["preferences"]["servings"] == 3
+        assert actual["revision"] == 1 and actual["preferences"]["servings"] == 3
         assert repository.get(session_id)["last_status"] == "completed"
         await manager.close()
     asyncio.run(exercise())

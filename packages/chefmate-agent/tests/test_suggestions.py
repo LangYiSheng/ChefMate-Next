@@ -28,7 +28,8 @@ def test_model_suggestions_are_typed_complete_and_use_only_the_normal_run():
     assert [item.model_dump() for item in result.suggested_replies] == REPLIES
     assert len(model.histories) == 2 and result.usage["model_calls"] == 2
     assert result.actions == []
-    assert "本轮提供后续回复建议" in model.histories[0][0].content
+    assert "最多尝试一次" in model.histories[0][0].content
+    assert "直接完成主回答" in model.histories[0][0].content
 
 
 def test_missing_suggestions_use_trusted_stage_without_another_model_call():

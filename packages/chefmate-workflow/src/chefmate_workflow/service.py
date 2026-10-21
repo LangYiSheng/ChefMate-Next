@@ -11,6 +11,7 @@ from uuid import uuid4
 from pydantic import ValidationError
 from chefmate_storage.queries import NUTRIENTS
 
+from .contracts import TOOL_CONTRACTS
 from .models import (
     TOOL_REQUEST_MODELS, ActionRecord, ApprovedRecipeRef, CompactComponentSnapshot,
     CookingData, CookingGuide, FrozenRecipe, IngredientView, MealPlan, PreferenceField, PreferenceForm,
@@ -20,24 +21,6 @@ from .models import (
     UserActionRequest, WorkspaceState,
 )
 
-TOOL_DESCRIPTIONS = {
-    "show_preference_form": "展示当前真实偏好表单，包含已保存值，便于用户填写或核对模型刚执行的修改。",
-    "show_recipe_choices": "展示真实搜索结果的菜谱候选。recipe_ids 和 data_snapshot 必须来自检索工具。",
-    "show_recipe_details": "展示真实菜谱详情；已选任务使用冻结原件，新菜谱必须提供检索来源快照。",
-    "set_meal_plan": "把用户已选的真实菜谱冻结为本次餐单，最多4道；不修改源菜谱、不凭空生成菜谱。",
-    "show_meal_plan": "展示当前餐单和目标份量，保留来源、未知值和估算标记。",
-    "show_prep_checklist": "展示当前真实备料状态和原文依据，不猜测哪个是主料或可选食材。",
-    "show_cooking_guide": "展示已选任务的烹饪步骤与实际进度，浏览步骤不等于完成步骤。",
-    "set_cooking_timer": "设置持久化计时器；秒数必须由用户指定或原菜谱明确给出，不猜测时长。",
-    "show_timers": "展示当前计时器与剩余时间，刷新和重启后依据截止时间继续。",
-    "get_cooking_workspace": "读取餐单、阶段、用户已确认操作和界面短快照。",
-    "advance_cooking_stage": "显式推进或回退厨房阶段；备料未确认或步骤未完成时拒绝越级。",
-    "update_cooking_guidance": "按用户条件为当前任务追加备菜或步骤建议，保留冻结原步骤及真实进度。",
-    "update_preferences": "按用户明确要求修改提供的偏好字段；expected_revision须来自最新工作区，不覆盖未提供字段，展示保存值供核对。",
-    "select_recipes": "按用户明确要求选择当前真实候选或已选餐单ID；expected_revision来自最新快照，不重置执行中的任务。",
-    "update_prep_items": "按用户明确授权批量标记指定食材的准备状态；item_id须来自本餐清单，不能凭名称猜ID或猜小料分类。expected_revision必须匹配，全部通过才更新。",
-    "ask_user": "在有实质歧义时询问用户；展示最多6个真实选项并允许自填。该工具必须单独调用，随后等待用户回答，不替用户选答案。",
-}
 PREP_NOTE = "源菜谱没有可靠的必选/可选字段；这里逐项展示原文，跳过需由用户明确确认，不代表已证明可省略。"
 FIELD_META = {
     "servings": ("用餐人数", "number"), "max_total_time_min": ("最长耗时（分钟）", "number"),
@@ -56,6 +39,22 @@ class DomainConflict(ValueError):
     def __init__(self, status, message):
         super().__init__(message)
         self.status = status
+
+
+def _validation_details(error):
+    """Do not echo rejected values, private input or Pydantic context into tools."""
+    return [{"loc": list(item["loc"]), "type": item["type"], "hint": _validation_message(item["type"])}
+            for item in error.errors(include_input=False, include_context=False, include_url=False)]
+
+
+def _validation_message(code):
+    if code == "missing":
+        return "缺少必填字段。"
+    if code == "extra_forbidden":
+        return "不支持这个字段，请按工具契约提供参数。"
+    if code in {"list_type", "bool_type", "string_type"}:
+        return "字段类型不符，不能使用null；省略保留，列表用[]、文字用空串清空。"
+    return "字段值或类型不符合工具契约，请修正该字段。"
 
 
 def _dump(value):
@@ -288,7 +287,8 @@ class WorkflowService:
                 continue
             editable = state.stage != "completed" or component.kind in {
                 "preference_form", "recipe_choices", "timers", "task_progress"}
-            views.append(component.model_copy(update={"data": data, "revision": state.revision, "editable": editable}))
+            views.append(component.model_copy(update={"data": data, "revision": state.revision,
+                "presentation_revision": state.presentation_revision, "editable": editable}))
         return views
 
     def _compact(self, state, views):
@@ -320,7 +320,7 @@ class WorkflowService:
             else:
                 data = raw
             components.append(CompactComponentSnapshot(id=view.id, kind=view.kind, title=view.title,
-                revision=view.revision, editable=view.editable, data=data))
+                revision=view.revision, presentation_revision=view.presentation_revision, editable=view.editable, data=data))
         recent = []
         for record in state.recent_actions[-20:]:
             payload = copy.deepcopy(record.payload)
@@ -328,10 +328,13 @@ class WorkflowService:
                 # Current full preference values are authoritative below; history only needs which fields changed.
                 payload = {"changed_fields": sorted((payload.get("values") or {}).keys())}
             recent.append(record.model_copy(update={"payload": payload}))
-        return UISnapshot(revision=state.revision, stage=state.stage, components=components,
+        allowed, blockers = self._transitions(state)
+        return UISnapshot(revision=state.revision, presentation_revision=state.presentation_revision,
+                          stage=state.stage, components=components,
                           preferences=state.preferences, selected_recipe_ids=[recipe.recipe_id for recipe in state.meal_plan],
                           active_recipe_id=state.active_recipe_id, active_step_id=state.active_step_id,
-                          recent_actions=recent, pending_question=state.pending_question, last_answer=state.last_answer)
+                          recent_actions=recent, pending_question=state.pending_question, last_answer=state.last_answer,
+                          current_actions=self._current_actions(state, allowed), allowed_transitions=allowed, blockers=blockers)
 
     def _response(self, state, status="ok", message=None, action_component=None):
         views = self._views(state)
@@ -354,6 +357,11 @@ class WorkflowService:
     def model_snapshot(self):
         return self.get_workspace()["ui_snapshot"]
 
+    @staticmethod
+    def _business_state(state):
+        # Timers' remaining_seconds/status are refreshed from real time on read, before this comparison.
+        return state.model_dump(mode="json", exclude={"components", "recent_actions", "revision", "presentation_revision"})
+
     def _command(self, operation_id, operation_type, payload, base_revision, callback, view_id=None):
         fingerprint = hashlib.sha256(_dump({"type": operation_type, "payload": payload}).encode()).hexdigest()
         def mutate(raw):
@@ -369,11 +377,16 @@ class WorkflowService:
                 view = next((item for item in self._views(state) if item.id == view_id), None)
                 if view is None or not view.editable:
                     return self._response(state, "stale_view", "这张界面已失效或只读，请在当前工作区操作。")
+            business_before = self._business_state(state)
+            presentation_before = [view.model_dump(mode="json") for view in state.components]
             try:
                 component = callback(state)
             except DomainConflict as error:
                 return self._response(self._state(raw), error.status, str(error))
-            state.revision += 1
+            if self._business_state(state) != business_before:
+                state.revision += 1
+            if [view.model_dump(mode="json") for view in state.components] != presentation_before:
+                state.presentation_revision += 1
             state.recent_actions.append(ActionRecord(action_id=operation_id, type=operation_type, payload=payload,
                 revision=state.revision, created_at=_stamp(self._now()), fingerprint=fingerprint))
             state.recent_actions = state.recent_actions[-20:]
@@ -385,7 +398,8 @@ class WorkflowService:
         return self._mutate(mutate)
 
     def _show(self, state, component_class, title, data):
-        component = component_class(id=str(uuid4()), title=title, revision=state.revision + 1, data=data)
+        component = component_class(id=str(uuid4()), title=title, revision=state.revision,
+                                    presentation_revision=state.presentation_revision + 1, data=data)
         state.components = [view for view in state.components if view.kind != component.kind]
         state.components.append(component)
         return component
@@ -395,7 +409,7 @@ class WorkflowService:
         for index, component in enumerate(state.components):
             if component.kind == kind:
                 refreshed = component.model_copy(update={"title": title, "data": data,
-                                                          "revision": state.revision + 1})
+                    "revision": state.revision, "presentation_revision": state.presentation_revision + 1})
                 state.components[index] = refreshed
                 return refreshed
         return self._show(state, component_class, title, data)
@@ -434,14 +448,43 @@ class WorkflowService:
             frozen.append(FrozenRecipe(recipe_id=identity, data_snapshot=data_snapshot, recipe=clean))
         return frozen
 
+    def _resolve_selection(self, state, recipe_ids, data_snapshot, approved_recipes):
+        """Resolve only frozen/current references or server-approved retrieval evidence."""
+        approved = [ApprovedRecipeRef.model_validate(item) if isinstance(item, dict) else item for item in approved_recipes]
+        recipes = []
+        for identity in dict.fromkeys(recipe_ids):
+            current = [item for item in [*state.meal_plan, *state.candidates] if item.recipe_id == identity
+                       and (data_snapshot is None or item.data_snapshot == data_snapshot)]
+            refs = {_dump(ref.data_snapshot.model_dump(mode="json")): ref.data_snapshot for ref in [*current, *approved]
+                    if ref.recipe_id == identity and (data_snapshot is None or ref.data_snapshot == data_snapshot)}
+            if len(refs) > 1:
+                raise DomainConflict("snapshot_required", "该菜谱有多个已检索来源，请明确使用对应data_snapshot。")
+            existing = next(iter(current), None)
+            if existing is not None:
+                recipes.append(existing)
+                continue
+            if not refs:
+                raise DomainConflict("invalid_reference", "菜谱不属于当前任务或已批准的真实检索结果，请先检索。")
+            recipes.extend(self._freeze([identity], next(iter(refs.values())), approved))
+        return recipes
+
     def _plan(self, state, recipes, servings=None):
         if state.stage not in {"idea", "planning", "completed"}:
             raise DomainConflict("stage_conflict", "请先回到选菜阶段，再更换餐单；不会重置正在烹饪的任务。")
         requested = servings or {}
         if set(requested) - {recipe.recipe_id for recipe in recipes}:
             raise DomainConflict("invalid_reference", "份量参数包含未选中的菜谱。")
-        state.meal_plan = [recipe.model_copy(deep=True, update={"target_servings": requested.get(recipe.recipe_id,
-                           state.preferences.servings)}) for recipe in recipes]
+        existing = {(item.recipe_id, _dump(item.data_snapshot.model_dump(mode="json"))): item for item in state.meal_plan}
+        selected = []
+        for recipe in recipes:
+            prior = existing.get((recipe.recipe_id, _dump(recipe.data_snapshot.model_dump(mode="json"))))
+            target = requested.get(recipe.recipe_id, prior.target_servings if prior else state.preferences.servings)
+            selected.append(recipe.model_copy(deep=True, update={"target_servings": target}))
+        same_plan = [item.model_dump(mode="json") for item in selected] == [item.model_dump(mode="json") for item in state.meal_plan]
+        if same_plan:
+            return self._show(state, MealPlan, "这次的餐单", RecipeListData(
+                recipes=[self._recipe_view(recipe, state, summary=True) for recipe in state.meal_plan]))
+        state.meal_plan = selected
         state.stage = "planning"
         state.prep_status = {}
         state.step_status = {}
@@ -456,20 +499,69 @@ class WorkflowService:
         self._ensure_component(state, TaskProgress, "当前进度", self._progress(state))
         return plan
 
-    def _set_stage(self, state, stage):
+    def _transition_blockers(self, state, stage):
+        blockers = []
+        if state.pending_question is not None:
+            blockers.append({"code": "pending_question_exists", "message": "请先回答当前问题。"})
         if stage != state.stage and stage not in STAGE_TRANSITIONS[state.stage]:
-            raise DomainConflict("stage_conflict", f"不能从 {state.stage} 直接进入 {stage}。")
-        if stage in {"prep", "cooking", "completed"} and not state.meal_plan:
-            raise DomainConflict("plan_required", "请先选择真实菜谱作为本次餐单。")
-        if stage in {"prep", "cooking", "completed"}:
+            blockers.append({"code": "stage_conflict", "message": f"不能从 {state.stage} 直接进入 {stage}。"})
+        if stage != "idea" and not state.meal_plan:
+            blockers.append({"code": "plan_required", "message": "请先选择真实菜谱作为本次餐单。"})
+        if stage in {"prep", "cooking", "completed"} and state.meal_plan:
             if any(not recipe.recipe.get("ingredients") or not recipe.recipe.get("steps") for recipe in state.meal_plan):
-                raise DomainConflict("recipe_incomplete", "餐单菜谱缺少食材或步骤，不能进入执行阶段。")
+                blockers.append({"code": "recipe_incomplete", "message": "餐单菜谱缺少食材或步骤，不能进入执行阶段。"})
         if stage == "cooking" and any(item.status == "pending" for item in self._prep_items(state)):
-            raise DomainConflict("prep_incomplete", "仍有待确认食材；请先标记备齐或明确确认跳过。")
+            blockers.append({"code": "prep_incomplete", "message": "仍有待确认食材；请先标记备齐或明确确认跳过。"})
         if stage == "completed":
             steps = [step for recipe in state.meal_plan for step in self._recipe_view(recipe, state).steps]
             if any(step.status != "done" for step in steps):
-                raise DomainConflict("steps_incomplete", "仍有未完成步骤，不能把本次烹饪标为完成。")
+                blockers.append({"code": "steps_incomplete", "message": "仍有未完成步骤，不能把本次烹饪标为完成。"})
+        return blockers
+
+    def _transitions(self, state):
+        allowed, blockers = [], {}
+        for target in STAGE_TRANSITIONS:
+            if target == state.stage:
+                continue
+            reasons = self._transition_blockers(state, target)
+            if reasons:
+                blockers[target] = reasons
+            else:
+                allowed.append(target)
+        return allowed, blockers
+
+    def _tool_blockers(self, state, name, *, model_visible=False, allowed_transitions=None):
+        contract = TOOL_CONTRACTS[name]
+        blockers = []
+        if model_visible and not contract.model_visible:
+            blockers.append({"code": "use_select_recipes", "message": "请使用统一的select_recipes入口。"})
+        if state.pending_question is not None and name != "get_cooking_workspace":
+            blockers.append({"code": "pending_question_exists", "message": "请先回答当前问题，不会替换尚未回答的确认。"})
+        if state.stage not in contract.allowed_stages:
+            blockers.append({"code": "stage_conflict", "message": "此工具在当前阶段不可用，请查看allowed_transitions及blockers。"})
+        if name in {"show_meal_plan", "show_prep_checklist", "show_cooking_guide", "update_prep_items", "update_cooking_guidance"} and not state.meal_plan:
+            blockers.append({"code": "plan_required", "message": "请先选择真实菜谱作为本次餐单。"})
+        if name == "set_cooking_timer" and sum(timer.status in {"running", "paused"} for timer in state.timers) >= 12:
+            blockers.append({"code": "timer_limit", "message": "同时计时已达上限，请结束已有计时器后再添加。"})
+        if name == "advance_cooking_stage" and model_visible:
+            allowed = self._transitions(state)[0] if allowed_transitions is None else allowed_transitions
+            if not allowed:
+                blockers.append({"code": "no_available_transition", "message": "当前没有可进入的不同阶段，请查看各目标的blockers。"})
+        return blockers
+
+    def _current_actions(self, state, allowed):
+        actions = {}
+        for name, contract in TOOL_CONTRACTS.items():
+            blockers = self._tool_blockers(state, name, model_visible=True, allowed_transitions=allowed)
+            actions[name] = {"available": not blockers, "effect": contract.effect,
+                             "auto_display": contract.auto_display, "blockers": blockers}
+        return actions
+
+    def _set_stage(self, state, stage):
+        blockers = self._transition_blockers(state, stage)
+        if blockers:
+            raise DomainConflict(blockers[0]["code"], blockers[0]["message"])
+        if stage == "completed":
             for timer in state.timers:
                 if timer.status in {"running", "paused"}:
                     timer.status, timer.deadline_at = "cancelled", None
@@ -548,17 +640,20 @@ class WorkflowService:
         model = TOOL_REQUEST_MODELS.get(name)
         if model is None:
             raise ValueError("Unknown workflow tool")
-        validated = model.model_validate(request or {})
+        try:
+            validated = model.model_validate(request or {})
+        except ValidationError as error:
+            result = self._response(self._state(self._get_state()), "invalid_arguments", "工具参数不符合字段要求，没有保存。")
+            result["errors"] = _validation_details(error)
+            result["recovery"] = ["只修正列出的字段，按当前工具schema重新调用；未修改的偏好不要列入changed_fields。"]
+            return result
         args = validated.model_dump(mode="json", exclude_none=False)
         if name == "get_cooking_workspace":
             return self.get_workspace()
         initial = self._state(self._get_state())
-        base_revision = args.pop("base_revision")
-        base_revision = initial.revision if base_revision is None else base_revision
-        if "expected_revision" in args:
-            base_revision = args["expected_revision"]
+        base_revision = args.get("expected_revision", initial.revision)
         if name == "update_preferences":
-            args["values"] = validated.values.model_dump(mode="json", exclude_unset=True)
+            args["values"] = validated.values.model_dump(mode="json", include=set(validated.changed_fields))
         if operation_id:
             prior = next((record for record in initial.recent_actions if record.action_id == operation_id), None)
             fingerprint = hashlib.sha256(_dump({"type": name, "payload": args}).encode()).hexdigest()
@@ -566,12 +661,19 @@ class WorkflowService:
                 if prior.fingerprint != fingerprint:
                     return self._response(initial, "action_id_conflict", "同一操作标识已用于不同内容，请重新确认。")
                 return self._response(initial, "ok", "此操作已经执行，没有重复读取源菜谱或修改状态。")
+        if base_revision != initial.revision:
+            return self._response(initial, "revision_conflict", "工作区已变化，请复核当前界面后重新操作。")
         frozen = None
         try:
+            blockers = self._tool_blockers(initial, name)
+            if blockers:
+                raise DomainConflict(blockers[0]["code"], blockers[0]["message"])
             if name == "set_cooking_timer" and validated.basis == "user" and validated.seconds not in _explicit_durations(user_text):
                 raise DomainConflict("unverified_duration", "用户没有明确提供这个时长，请让用户填写计时器或使用源步骤时长。")
-            if name in {"show_recipe_choices", "set_meal_plan"}:
+            if name == "show_recipe_choices":
                 frozen = self._freeze(validated.recipe_ids, validated.data_snapshot, approved_recipes)
+            elif name in {"select_recipes", "set_meal_plan"}:
+                frozen = self._resolve_selection(initial, validated.recipe_ids, validated.data_snapshot, approved_recipes)
             elif name == "show_recipe_details":
                 try:
                     existing = self._find_recipe(initial, validated.recipe_id,
@@ -591,8 +693,9 @@ class WorkflowService:
         except DomainConflict as error:
             return self._response(initial, error.status, str(error))
         def command(state):
-            if state.pending_question is not None:
-                raise DomainConflict("pending_question_exists", "请先回答当前问题，不会替换尚未回答的确认。")
+            blockers = self._tool_blockers(state, name)
+            if blockers:
+                raise DomainConflict(blockers[0]["code"], blockers[0]["message"])
             if name == "ask_user":
                 state.pending_question = PendingQuestion(id=str(uuid4()), title=validated.title,
                     question=validated.question, options=validated.options,
@@ -605,11 +708,7 @@ class WorkflowService:
                 return self._show(state, PreferenceForm, "核对已更新的用餐条件",
                                   PreferenceFormData(fields=fields, values=state.preferences))
             if name == "select_recipes":
-                recipes = []
-                for identity in dict.fromkeys(validated.recipe_ids):
-                    candidate = next((recipe for recipe in state.candidates if recipe.recipe_id == identity), None)
-                    recipes.append(candidate if candidate is not None else self._find_recipe(state, identity))
-                return self._plan(state, recipes)
+                return self._plan(state, frozen, validated.servings)
             if name == "update_prep_items":
                 if state.stage not in {"planning", "prep"}:
                     raise DomainConflict("stage_conflict", "只有选菜和备菜阶段可以调整准备状态。")
@@ -686,8 +785,11 @@ class WorkflowService:
             return self._set_stage(state, validated.stage)
         try:
             result = self._command(operation_id or str(uuid4()), name, args, base_revision, command)
-        except ValidationError:
-            return self._response(self._state(self._get_state()), "invalid_arguments", "修改后的字段值无效，没有保存。")
+        except ValidationError as error:
+            result = self._response(self._state(self._get_state()), "invalid_arguments", "修改后的字段值无效，没有保存。")
+            result["errors"] = _validation_details(error)
+            result["recovery"] = ["修正列出的字段后重新调用，不要原样重试无效参数。"]
+            return result
         if validated.display == "none":
             result["actions"] = []
         else:
@@ -696,8 +798,14 @@ class WorkflowService:
         return result
 
     def apply_action(self, request):
-        value = UserActionRequest.model_validate(request.model_dump(exclude_unset=True)
-                                                if isinstance(request, UserActionRequest) else request).root
+        try:
+            value = UserActionRequest.model_validate(request.model_dump(exclude_unset=True)
+                                                    if isinstance(request, UserActionRequest) else request).root
+        except ValidationError as error:
+            result = self._response(self._state(self._get_state()), "invalid_action", "操作参数不符合字段要求，没有保存。")
+            result["errors"] = _validation_details(error)
+            result["recovery"] = ["修正列出的字段后重新提交当前界面。"]
+            return result
         payload = value.payload.model_dump(mode="json", exclude_unset=True)
         def command(state):
             kind = value.type
@@ -818,6 +926,9 @@ class WorkflowService:
             return None
         try:
             return self._command(value.action_id, value.type, payload, value.base_revision, command, value.view_id)
-        except ValidationError:
+        except ValidationError as error:
             # Partial preference updates that violate final values never replace the persisted dictionary.
-            return self._response(self._state(self._get_state()), "invalid_action", "更新后的值不符合界面字段要求。")
+            result = self._response(self._state(self._get_state()), "invalid_action", "更新后的值不符合界面字段要求。")
+            result["errors"] = _validation_details(error)
+            result["recovery"] = ["修正列出的字段后重新提交当前界面。"]
+            return result

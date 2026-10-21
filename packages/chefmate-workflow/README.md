@@ -5,7 +5,7 @@
 ## 公开 API
 
 ```python
-from chefmate_workflow import WorkflowService, TOOL_REQUEST_MODELS, TOOL_DESCRIPTIONS
+from chefmate_workflow import WorkflowService, TOOL_REQUEST_MODELS, TOOL_CONTRACTS
 
 service = WorkflowService(
     retrieval,
@@ -30,7 +30,7 @@ response = service.execute_tool(
 - `get_workspace()`：读取当前界面投影，不增加修订号。
 - `model_snapshot()`：返回给下一轮模型的短快照字典。
 
-导出 `WorkspaceState`、`UISnapshot`、`ViewComponent`、`UIAction`、`UserActionRequest` 和 `WorkflowToolResult`。`TOOL_REQUEST_MODELS` 中每个参数类支持 `model_json_schema()`。
+导出 `WorkspaceState`、`UISnapshot`、`ViewComponent`、`UIAction`、`UserActionRequest` 和 `WorkflowToolResult`。`TOOL_REQUEST_MODELS` 中每个参数类支持 `model_json_schema()`。`TOOL_CONTRACTS` 是模型说明与执行阶段的唯一注册表，每项包含 `name/description/allowed_stages/effect/auto_display/side_effects/preconditions/model_visible`；`TOOL_DESCRIPTIONS` 由它派生。应用应按快照 `current_actions[name].available` 提供当前模型工具，不能另写一套阶段表。
 
 响应格式为：
 
@@ -43,6 +43,8 @@ actions         本次需要展示的 UIAction，至多一个 show_component
 message         可选说明
 pending_question 待回答问题，回答前保留；无待答时为null
 last_answer     最近一次已经验证并保存的答案
+errors          参数失败时的安全字段错误：loc/type/hint；不回显原参数
+recovery        可选的恢复动作说明
 ```
 
 持久化的 `WorkspaceState` 包含冻结菜谱和执行状态，由应用保存；它不会作为重复原始数据返回到 HTTP/模型响应。完整 `views` 用于当前工作区。聊天展示仅采用主动生成的 `actions`，工具参数 `display` 决定 inline/workspace/none，动作携带 `placement`。历史 `actions.component` 不能作为可写状态；交互必须按组件ID重新取得当前可信投影与版本，被替换的组件只保留入口。应用注册模型工具时可只返回 `status/message/actions/ui_snapshot/pending_question`，避免将完整 `views` 再次放入模型上下文。
@@ -54,7 +56,7 @@ last_answer     最近一次已经验证并保存的答案
 | `show_preference_form` | 闭合字段名、标题 | `preference_form` |
 | `show_recipe_choices` | 真实 IDs、源数据快照 | `recipe_choices` |
 | `show_recipe_details` | 已选任务 ID，或新候选 ID 与快照 | `recipe_detail` |
-| `set_meal_plan` | 至多4道、按 ID 的目标人数、快照 | `meal_plan` |
+| `set_meal_plan` | 历史兼容别名；新模型使用 `select_recipes` | `meal_plan` |
 | `show_meal_plan` | 无业务参数 | `meal_plan` |
 | `show_prep_checklist` | `recipe_ids` 为当前餐单子集，null整餐 | `prep_checklist` |
 | `show_cooking_guide` | 可选已选菜谱 ID | `cooking_guide` |
@@ -62,14 +64,14 @@ last_answer     最近一次已经验证并保存的答案
 | `show_timers` | 无业务参数 | `timers` |
 | `get_cooking_workspace` | 无业务参数 | 短快照 |
 | `advance_cooking_stage` | 明确目标阶段 | `task_progress` |
-| `update_preferences` | 只提供变化字段的 `values`、必填 `expected_revision` | 显示保存后的偏好表单 |
-| `select_recipes` | 当前真实候选/已选 `recipe_ids`、必填 `expected_revision` | 保存后的餐单 |
+| `update_preferences` | 必填 `changed_fields` 修改掩码、对应 `values`、必填 `expected_revision` | 仅展示实际提交字段的保存值 |
+| `select_recipes` | 真实检索/当前任务 `recipe_ids`、可选来源快照与目标人数、必填 `expected_revision` | 保存后的餐单 |
 | `update_prep_items` | 真实 `item_id/status` 数组、必填 `expected_revision` | 保存后的统一备菜清单 |
 | `ask_user` | 问题、至多6个不同选项、是否多选/允许自填 | 持久化待答问题 |
 
-所有组件使用 `kind` 鉴别，结构为 `id/kind/title/revision/editable/data`；数据来自真实领域投影。模型不能提供 HTML、任意 schema、菜谱步骤或营养内容。偏好字段为 `ingredient_terms`、`exclude_ingredient_terms`、`servings`、`max_total_time_min`、`taste_tags`、`available_tools`、`dietary_notes`、`allow_estimated`。
+所有组件使用 `kind` 鉴别，结构为 `id/kind/title/revision/presentation_revision/editable/data`；数据来自真实领域投影。模型不能提供 HTML、任意 schema、菜谱步骤或营养内容。偏好字段为 `ingredient_terms`、`exclude_ingredient_terms`、`servings`、`max_total_time_min`、`taste_tags`、`available_tools`、`dietary_notes`、`allow_estimated`。
 
-短快照包含当前完整偏好、所选 IDs、当前菜谱/步骤、简短组件状态和最近20条操作。历史偏好操作仅记改变了哪些字段，当前偏好值是唯一依据，避免重复长文本挤满上下文。完整用量、营养、warnings 和源快照保留在界面投影与任务原件中。
+短快照包含当前完整偏好、所选 IDs、当前菜谱/步骤、简短组件状态和最近20条操作。`current_actions` 逐工具给出 `available/effect/auto_display/blockers`；`allowed_transitions` 列出可进入的不同阶段，`blockers[目标阶段]` 给出具体 `code/message`。它们与执行共用注册表和阶段校验。历史偏好操作仅记改变了哪些字段，当前偏好值是唯一依据。完整用量、营养、warnings 和源快照保留在界面投影与任务原件中。
 
 ## 用户动作
 
@@ -89,15 +91,19 @@ last_answer     最近一次已经验证并保存的答案
 
 偏好更新是 Partial，不会清掉未提交字段。直接传已验证的模型对象，或者使用 `model_dump(exclude_unset=True)`；不要把所有未提交默认值展开成显式 `null`。可空字段可以明确清空，列表字段使用 `[]` 清空。
 
-每个成功命令增加 `revision`，同一 `action_id` 与相同内容重放不再修改；同 ID 不同内容返回 `action_id_conflict`。`base_revision` 过期返回 `revision_conflict`，替换后的组件 ID 返回 `stale_view`。响应携带当前可信界面；调用方应让用户复核后重新提交，不能自动重试旧操作。幂等记录保留最近20条；超过该窗口的旧操作仍被旧修订号拒绝。
+`revision` 仅在实际业务状态变化时增加；`presentation_revision` 用于组件替换和纯展示排序，应用按两者排序快照。纯展示仍校验当前业务版本，并从最新工作区原子修改视图，不覆盖同时存在的业务状态。组件的 `revision` 始终是业务版本，用户动作只提交 `base_revision`。模型工具不接受 `base_revision`；支持显式版本参数的模型批量写入只接受 `expected_revision`，其他工具以执行开始时读到的业务版本校验原子事务，应用回合边界仍需拒绝用户并发变更。
 
-模型写工具的 `expected_revision` 是必填字段，批量食材修改先校验全部ID再原子提交。工具按照真实ID执行用户指令，不根据名称自动划分“小料”，不绕过烹饪阶段门槛。`show_preference_form` 始终展示当前保存值；模型偏好patch只修改用户要求的字段，不回写未提供的默认值。
+同一 `action_id` 与相同内容重放不再修改；同 ID 不同内容返回 `action_id_conflict`。`base_revision` 过期返回 `revision_conflict`，即使业务版本不变，被替换的组件 ID 仍返回 `stale_view`。幂等记录保留最近20条；超出窗口的旧业务写入被旧业务版本拒绝。重复无变化写入可记录新操作，但不会提升业务版本。冲突响应携带当前可信界面，调用方应复核后重新提交，不能自动重试旧业务操作。
+
+模型批量修改偏好、餐单和备菜工具的 `expected_revision` 是必填字段，批量食材修改先校验全部ID再原子提交。工具按照真实ID执行用户指令，不根据名称自动划分“小料”，不绕过烹饪阶段门槛。模型偏好更新要求 `changed_fields`，只保存其中显式提供的字段；严格输出补齐的其他 `values` 占位值也忽略。UI偏好动作仍使用Partial，省略保留；人数/时间/厨具允许null清空，列表用[]、文字用空串，其他字段null在schema层拒绝。`show_preference_form` 始终展示当前保存值。
+
+`select_recipes` 可直接使用应用批准的检索引用，不要求先展示候选；同一ID有多个可信来源时必须提供 `data_snapshot`。它与历史 `set_meal_plan` 共用选择事务，重复完全相同的来源、菜品及份量保留阶段和执行进度；更换餐单清理旧备菜/步骤/计时。重复相同餐单要重新制作时，先明确回到idea再选择。修改工具返回的组件已展示保存结果，无需再调用show。`show_recipe_choices` 登记候选、`show_recipe_details` 登记新来源、`show_cooking_guide` 切换当前菜谱/步骤可能实际修改业务版本；重看既有状态只改变展示版本。
 
 `ask_user` 的结构为 `{title?,question,options:[{id,label}],allow_custom:true,multiple:false}`。问题最多500字，标题与选项各80字，至多6个不同选项；没有选项时必须允许自填。待答问题不会被新的提问工具悄悄替换，调用方应停止本轮推理并等用户输入。`answer_question` 使用 `{question_id,option_ids:[],text:""}`，同时携带普通动作的 `action_id/base_revision`；不符合当前问题、多选限制、自填限制或版本的答案不保存。成功后清除 `pending_question`，将题目、选项标签与自填文字存入 `last_answer`，再由应用启动下一轮。
 
 ## 业务边界
 
-- 阶段：`idea → planning → prep → cooking → completed`，支持明确回退；不能跳过选菜和备料校验。只保留统一备菜清单，不再维护独立采购阶段和购物勾选。
+- 阶段：idea尚无餐单，选择真实菜谱后自动进入planning；准备食材进入prep，逐项确认后进入cooking，全部步骤完成后才能completed。支持明确回退；空餐单不能advance到planning，不能跳过备料校验。只保留统一备菜清单，不再维护独立采购阶段和购物勾选。
 - 每个会话一个当前厨房任务。选菜冻结完整真实原件，来源更新不会偷偷替换进行中的任务。原件只保留业务白名单，不保存 `raw_source_json`、凭据或导出整包。
 - 食材稳定 ID 为 `<recipe_id>:ingredient:<原ordinal>`；步骤 ID 为 `<recipe_id>:step:<原列表序号>`，从0开始。指令与顺序沿用源菜谱。
 - 源数据没有可靠的必选/可选字段，因此全部食材需要明确确认 `ready` 或用户主动 `skipped`；界面说明该资料边界，不声称已证明食材可省略。

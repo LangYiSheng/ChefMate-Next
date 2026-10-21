@@ -23,6 +23,7 @@ from .runner import ChefMateMiddleware, TurnRuntimeContext
 from .skills import SkillListRequest, SkillLoadRequest, SkillRegistry
 from .suggestions import REPLY_SUGGESTIONS_TOOL, finalize_reply_suggestions, make_reply_suggestions_tool
 from .debug import tool_catalog
+from .provider import IntegrityChatOpenAI, ProviderIntegrityError
 
 EventCallback = Callable[[dict[str, Any]], Awaitable[None] | None]
 
@@ -56,6 +57,7 @@ _TOOL_DESCRIPTIONS = {
     "search_recipes": (
         "用真实食材候选和限制条件只读查询菜谱。ingredient_groups组内OR、组间AND。"
         "支持排除食材、耗时、厨具、口味、方法、营养及估算政策、排序和分页；返回匹配证据。"
+        "max_total_time_min等限制须显式传入，本工具不会自动读取偏好表单。"
         "传expected_snapshot防止候选来自旧数据。没有结果时不要自行放宽条件。"
     ),
     "get_recipe": "用真实recipe_id和expected_snapshot读取菜谱食材、用量、步骤、营养、原文与warnings。",
@@ -188,6 +190,30 @@ class ChefMateAgent:
         """The actual bound schemas, with execution-stage availability made explicit."""
         return tool_catalog(self.tools if tools is None else tools, self._extra_tools, ui_context)
 
+    def _model_tools(self, context):
+        """Bind executable operations; keep registered schemas for validating closed history."""
+        stage = context.ui_context.get("stage", "idea")
+        actions = context.ui_context.get("current_actions")
+        result = []
+        for tool in self.tools:
+            spec = self._extra_tools.get(tool.name)
+            if spec and not spec.model_visible:
+                continue
+            if spec and spec.allowed_stages is not None and stage not in spec.allowed_stages:
+                continue
+            if spec and isinstance(actions, dict) and not actions.get(tool.name, {}).get("available", True):
+                continue
+            result.append(tool)
+        return result
+
+    def tool_batch_policy(self, calls, context):
+        if len(calls) < 2:
+            return None
+        effects = [self._extra_tools[call["name"]].effect for call in calls if call["name"] in self._extra_tools]
+        if any(effect in {"write", "wait", "presentation", "mixed"} for effect in effects):
+            return "涉及任务修改或界面展示的操作请单独调用，等待成功结果和最新版本后再继续；本批未执行。"
+        return None
+
     def _debug_secrets(self):
         return (self.config.api_key.get_secret_value(),) if self.config.api_key else ()
 
@@ -210,7 +236,7 @@ class ChefMateAgent:
             options["base_url"] = self.config.base_url
         if self.config.temperature is not None:
             options["temperature"] = self.config.temperature
-        return ChatOpenAI(**options)
+        return IntegrityChatOpenAI(**options)
 
     def _make_tool(self, name: str, context=None, messages=None, call_id: str = "", tool_arguments=None) -> StructuredTool:
         async def execute(**kwargs):
@@ -244,6 +270,11 @@ class ChefMateAgent:
             if spec.allowed_stages is not None and context.ui_context.get("stage") not in spec.allowed_stages:
                 return {"status": "stage_conflict", "message": "此工具当前阶段不可用，请先核对任务阶段。",
                         "stage": context.ui_context.get("stage"), "allowed_stages": list(spec.allowed_stages)}
+            availability = context.ui_context.get("current_actions", {}).get(name, {})
+            if availability.get("available") is False:
+                return {"status": "operation_blocked", "message": "当前任务尚不满足这个操作的前置条件。",
+                        "blockers": availability.get("blockers", []),
+                        "recovery": "按最新任务状态中的current_actions与blockers选择可执行操作。"}
             previous_ui = copy.deepcopy(context.ui_context)
             execution = ToolExecutionContext(
                 ui_context=copy.deepcopy(context.ui_context), host_context=context.host_context,
@@ -317,10 +348,9 @@ class ChefMateAgent:
     def _context_prompt(self, context: TurnRuntimeContext, messages) -> str:
         prompt = SYSTEM_PROMPT
         if self.config.reply_suggestions:
-            prompt += ("\n本轮提供后续回复建议：完成必要查询后，调用suggest_replies保存3个不同方向的简短提问草稿，"
-                       "再给出完整最终回答。建议贴合本轮实际结果，采用用户口吻，不能编造事实或替用户确认操作；"
-                       "无需为建议额外查询，适合时可与本轮其他工具放在同一批。需要ask_user等待回答时不生成推荐，"
-                       "也不与提问工具同批。不要在最终正文重复列出建议。")
+            prompt += ("\n可选择调用suggest_replies提供3个不同方向的用户口吻草稿，最多尝试一次；"
+                       "缺少建议或调用失败会由系统提供默认草稿，直接完成主回答，不为此重复调用。"
+                       "需要ask_user等待回答时不生成推荐。不要在最终正文重复列出建议。")
         metadata = self.skills.list_metadata()
         if metadata:
             prompt += "\n已启用Skills仅列元数据，需要细节时调用load_skill；Skill不授予额外工具权限：\n" + _dump(metadata)
@@ -547,6 +577,12 @@ class ChefMateAgent:
             error = exc.error
         except ValidationError:
             error = AgentError(code="invalid_history", message="对话历史格式不正确。")
+        except ProviderIntegrityError as exc:
+            if context.debug_trace:
+                context.debug_trace[-1]["parameter_integrity"] = copy.deepcopy(exc.diagnostics)
+                await self._emit(on_event, {"type": "debug_context", "context": context.debug_trace[-1]})
+            error = AgentError(code=exc.code, message="模型返回的工具参数未通过完整性校验，本批操作未执行，可以重试。",
+                               retryable=True)
         except Exception:
             # Provider exception strings may contain request URLs, headers or credentials.
             error = AgentError(code="model_error", message="模型服务暂时无法完成请求，请检查配置后重试。", retryable=True)

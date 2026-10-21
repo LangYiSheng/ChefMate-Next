@@ -13,4 +13,6 @@ description: 根据任务原件展示统一备菜清单，理解用户的现有�
 
 用户在界面勾选后已经同步服务器，不必再把这些项目标一次。用户明确说“这些小料我都有，帮我勾上”时，先依据当前真实清单识别具体条目，再使用 update_prep_items 一次提供真实 item_id 与 ready 状态。expected_revision 来自最新工作区；冲突后读取并复核，不以旧列表覆盖用户操作。不要使用前端名称匹配或硬编码小料集合，拿不准的具体条目用 ask_user 询问。
 
+update_prep_items成功后已经展示实际清单，不再重复show_prep_checklist；修改与展示分开调用。current_actions和blockers说明可用操作，allowed_transitions说明可进入的阶段，先解决真实缺项，不盲目重试被拒绝的阶段转换。
+
 未经用户确认不把食材设为备齐。源库缺乏可靠的必选/可选字段，任何 skipped 都需要用户明确确认，不能声称已证明可以省略。按用户意图调用 advance_cooking_stage 进入 prep 或 cooking；业务服务会检查真实备菜条件，不自动推进或完成步骤。

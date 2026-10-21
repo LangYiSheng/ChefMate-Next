@@ -180,10 +180,10 @@ def build_agent(config, service):
 
 async def probe_model(config):
     """验证原生工具请求、结果回传和最终回答；不把文本中的工具指令当成功。"""
-    from langchain_openai import ChatOpenAI
+    from chefmate_agent.provider import IntegrityChatOpenAI
     from langchain_core.messages import HumanMessage, ToolMessage
 
-    model = ChatOpenAI(model=config.model, api_key=config.api_key, base_url=config.base_url,
+    model = IntegrityChatOpenAI(model=config.model, api_key=config.api_key, base_url=config.base_url,
                        use_responses_api=config.api_format == "responses", timeout=35, max_retries=0,
                        streaming=config.stream_tool_calls, stream_usage=False)
     tool = {"type": "function", "function": {"name": "connection_echo", "description": "连接测试，无副作用",

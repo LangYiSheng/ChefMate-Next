@@ -53,6 +53,27 @@ def test_debug_captures_are_opt_in_redacted_durable_and_never_ordinary_sse(tmp_p
         assert client.get(uri + f"/debug?turn_id={turn_id}", headers=DEVELOPER).json()["capture"]["status"] == status
 
 
+def test_parameter_integrity_update_enriches_one_request_instead_of_counting_twice(tmp_path):
+    class BoundaryAgent(Agent):
+        async def run_turn(self, messages, *, on_event, **kwargs):
+            trace = {"round": 1, "system": "产品提示", "messages": [], "tools": []}
+            await on_event({"type": "debug_context", "context": trace})
+            await on_event({"type": "debug_context", "context": {
+                **trace, "parameter_integrity": {"protocol": "responses", "status": "verified", "calls": []}}})
+            # Exercise the interrupted/failure fallback that uses emitted records.
+            raise RuntimeError("test interruption")
+
+    app = create_app(PlaygroundConfig(sessions_database=tmp_path / "boundary.db"), service=Service(), agent=BoundaryAgent())
+    with TestClient(app) as client:
+        uri = "/api/sessions/" + client.post("/api/sessions").json()["id"]
+        response = client.post(uri + "/turn", json={"message": "边界记录"})
+        assert all(event["type"] != "debug_context" for event in events(response))
+        data = client.get(uri + "/debug", headers=DEVELOPER).json()
+        assert data["runs"][0]["model_calls"] == 1
+        assert len(data["capture"]["debug_trace"]) == 1
+        assert data["capture"]["debug_trace"][0]["parameter_integrity"]["status"] == "verified"
+
+
 class QuestionAgent(Agent):
     async def run_turn(self, messages, *, on_event, tool_context, **kwargs):
         self.calls += 1

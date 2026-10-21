@@ -122,13 +122,13 @@ result = await agent.run_turn(
 
 初始推荐在用户和历史没有明确排序、数量要求时，智能体默认按 `total_time_min` 升序取8条；工具请求模型的默认值和最大范围保持完整。回答编号与最新搜索 `items` 顺序一致，让“第二道”对应同一张卡片。更多结果使用相同条件和排序分页，新筛选条件从第一页开始。
 
-系统提示与工具目录保持稳定，阶段限制改为执行时校验，不随阶段删改工具定义。服务器状态附在对应用户轮次，后续工具快照优先；仅传变化的快照使用 `snapshot_kind=delta`，组件按ID更新和删除，未列出的字段沿用此前状态。持久化用户文字和完整服务器快照不改写，旧完整快照也在模型请求投影时去重。相同成功只读查询在本轮内不重复执行/回传大结果，失败可重试。请求投影保留菜谱ID、来源快照、用量与未知/估算证据，不将这些事实摘要成猜测。
+单项注册工具的schema保持稳定；每次模型请求根据最新current_actions与阶段绑定可执行工具，保留全部注册定义用于验证闭合历史。执行仍独立校验真实阶段和前置条件。服务器状态附在对应用户轮次，后续工具快照优先；仅传变化的快照使用 `snapshot_kind=delta`，组件按ID更新和删除，未列出的字段沿用此前状态。持久化用户文字和完整服务器快照不改写，旧完整快照也在模型请求投影时去重。相同成功只读查询在本轮内不重复执行/回传大结果，失败可重试。请求投影保留菜谱ID、来源快照、用量与未知/估算证据，不将这些事实摘要成猜测。
 
 `model_usage`事件与最终`usage`来自`AIMessage.usage_metadata`，逐次累计而不估算。工具定义/系统前缀稳定是缓存前提，实际命中仍以供应商报告为准；未添加网关未声明支持的缓存参数。
 
 ## 开发者上下文检查
 
-`tool_catalog(ui_context)` 返回核心实际绑定的全部工具 `name/description/parameters/allowed_stages/available`；阶段限制标注为可用性，不因阶段改变schema顺序或伪称未绑定工具。应用端负责把目录和日志限制在开发者界面。
+`tool_catalog(ui_context)` 返回全部已注册工具及schema、阶段、effect、自动展示、副作用与当前阻塞。开发者目录包含历史别名；实际请求trace.tools只记录本次绑定的可执行子集。应用端负责把目录和日志限制在开发者界面。
 
 每次 `awrap_model_call` 在完成系统提示、历史差异投影和原生图片块装载后、调用模型前发出 `debug_context`，同时加入最终 `debug_trace`。每项包括 `round/system/messages/tools/stage/skills/native_images_count`；`capture=model_request` 表明来自实际请求边界。`messages.content` 保留发送文本；用户消息另有 `user_text` 和实际投影的 `ui_context`，工具消息另有解析后的 `result`，便于界面用正文与状态卡片展示。正文和结构中均剔除密钥、凭据字段、图片字节及隐藏推理，图片仅展示元数据；这不是供应商完整HTTP抓包。
 
@@ -158,7 +158,7 @@ result = await agent.run_turn(
 - 模型以 `finish_reason="tool_calls"` 结束但没有提供完整标准调用时，返回 `incomplete_tool_batch`，不把引导语当作完成回答。
 - DSML 等已知工具协议泄漏到普通文本时返回 `tool_protocol_leak`，不执行文本中的工具、不提交回答历史；流式缓冲防止拆分标记泄漏到界面。不会以宽松文本解析冒充标准工具协议。
 - 食材和营养查询由数据库执行；候选选择与自然语言理解由模型承担。系统提示要求保留多轮硬条件、区分 USDA 参考与食材身份、说明估算、可选配料和原文依据。
-- 本地 schema 或引用校验失败作为工具结果反馈模型进行修正；持续重试仍受预算控制。
+- 本地schema或引用校验失败返回安全字段路径与修复提示。同工具/参数/错误第三次重复时禁用工具并请求一次据实收尾；推荐工具最多尝试一次，失败使用默认建议，不阻塞主回答。
 - `cancel_event.set()` 关闭当前异步模型流并停止本轮推进。已启动的同步数据库读取无法通过 Python 线程强制停止，仍由存储包的只读事务和 statement timeout 收束；中断结果不会写入对话历史。
 - 外部任务取消保留 `asyncio.CancelledError`，由调用方处理。共享 agent 不持有会话状态；应用负责同一会话单运行和并发保护。
 - 工具输出与用户内容都属于不可信数据。提示词要求忽略数据里的指令；模型回答的语义仍应由真实模型端到端测试检验，离线脚本测试不能证明真实模型选择效果。
@@ -177,3 +177,14 @@ apps/chefmate-playground/.venv/Scripts/python.exe -m ruff check packages/chefmat
 实现参考最新 [LangChain create_agent](https://docs.langchain.com/oss/python/langchain/agents)、[middleware](https://docs.langchain.com/oss/python/langchain/middleware/custom)、[工具与运行上下文](https://docs.langchain.com/oss/python/langchain/tools)、[渐进 Skills](https://docs.langchain.com/oss/python/langchain/multi-agent/skills-sql-assistant)、[流式消息](https://docs.langchain.com/oss/python/langchain/streaming)。标准 runner 管理执行，middleware 与应用边界适配控制完整批次验证和事务性历史。
 
 2026-10-21 通过 Context7 查询官方工具文档核实 `return_direct=True`：工具以匹配调用ID的 `ToolMessage` 结束，不再执行下一次模型推理。等待点、请求投影一致性和失败诊断均有注入测试模型覆盖；这些测试不代表真实供应商的提问质量。
+
+
+## 参数完整性与工具契约（2026-10-21）
+
+生产模型使用项目内IntegrityChatOpenAI，在原始SDK边界按请求隔离工具参数，仍由标准create_agent管理运行。Responses校验call_id/output_index、delta与各结束值的一致性，收到完整成功终态后才发布工具调用；结束事件有完整值时可恢复缺失delta。Chat Completions与非流式同样验证完整JSON，截断、重复键、非有限数字、身份冲突和缺终态不执行业务。未修改site-packages。
+
+成功和失败的parameter_integrity只保存长度、哈希、字段名、结束状态与调用身份；不保存原始参数片段、密钥、图片字节或隐藏推理。流式正文保持正常输出，工具批次完整性通过后才交给执行器。连接测试复用同一适配器。
+
+Chat Completions同时使用response_format与流式的特殊SDK分支尚未适配，发送请求前以provider_stream_format_unsupported明确拒绝；普通工具流式、Responses和非流式路径均有定向覆盖。
+
+工作流工具描述、schema、阶段、前置条件、副作用由chefmate-workflow的TOOL_CONTRACTS统一提供。修改和展示单独调用，依赖前次结果的批次整批拒绝并返回闭合回调；只读查询可并行。模型更新偏好必须提供changed_fields和values，严格格式补齐的未列字段不会覆盖旧值。业务revision与presentation_revision分开，纯展示不让任务写入失效。
