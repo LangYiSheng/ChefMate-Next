@@ -13,9 +13,10 @@
   <link rel="stylesheet" href="/static/experience.css">
   <link rel="stylesheet" href="/static/theme.css">
   <link rel="stylesheet" href="/static/shell.css">
+  <link rel="stylesheet" href="/static/focus.css">
   <script type="module" src="/static/app.js"></script>
 </head>
-<body>
+<body class="app-page">
   <a class="skip-link" href="#composer-input">跳到输入框</a>
   <div class="app" id="app">
     <aside class="sidebar" id="sidebar" aria-label="会话导航">
@@ -103,11 +104,21 @@
   </div>
   <button class="drawer-backdrop" id="drawer-backdrop" type="button" aria-label="关闭侧栏" hidden></button>
   <div class="toast" id="toast" role="status" hidden></div>
-  <section class="kitchen-focus" id="kitchen-focus" role="dialog" aria-modal="true" aria-label="全屏做菜" hidden>
-    <header class="focus-header"><img class="brand-icon" data-chefmate-icon src="/static/brand/pot-c.svg" alt=""><h2 id="focus-title">做菜模式</h2><button class="focus-button" id="exit-focus" type="button">返回聊天</button></header>
-    <div class="focus-content" id="focus-content"></div>
-    <div id="focus-reply" class="focus-reply" role="status" hidden></div>
-    <div class="focus-quick-prompts" id="focus-prompts"></div>
+  <section class="kitchen-focus" id="kitchen-focus" role="dialog" aria-modal="true" aria-labelledby="focus-title" hidden>
+    <header class="focus-header">
+      <div class="focus-heading"><span id="focus-stage" class="focus-stage">厨房工作台</span><h2 id="focus-title">这一餐，慢慢来</h2><p id="focus-subtitle">一次专心做好一件事。</p></div>
+      <div class="focus-header-actions"><button class="focus-button" id="focus-talk-toggle" type="button" aria-controls="focus-assistant" aria-expanded="false"><span data-icon="message-circle" aria-hidden="true"></span>问问助手</button><button class="focus-button" id="exit-focus" type="button"><span data-icon="minimize" aria-hidden="true"></span>返回聊天</button></div>
+    </header>
+    <div id="focus-body" class="focus-body">
+      <div class="focus-content" id="focus-content"></div>
+      <aside class="focus-assistant" id="focus-assistant" aria-label="与厨房助手交流" hidden>
+        <div class="focus-assistant-heading"><span data-icon="message-circle" aria-hidden="true"></span><strong>一起想想</strong><span>清单和进度会为你保留</span></div>
+        <div id="focus-reply" class="focus-reply" role="log" aria-label="全屏模式中的对话" aria-live="polite" aria-relevant="additions text"></div>
+        <div id="focus-activity" class="focus-activity" role="status" hidden></div>
+        <div class="focus-quick-prompts" id="focus-prompts"></div>
+        <div id="focus-composer-slot" class="focus-composer-slot"></div>
+      </aside>
+    </div>
   </section>
   <div class="visually-hidden" id="announcer" role="status" aria-live="polite"></div>
 </body>

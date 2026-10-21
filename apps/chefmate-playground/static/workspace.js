@@ -349,7 +349,7 @@ export class WorkspaceController {
         activeRecipeId: entry.snapshot?.active_recipe_id,
         onServings:(origin,recipeId,value)=>this.setServingsDraft(origin,recipeId,value,id),
         onTimer:(origin,label,minutes)=>this.setTimerDraft(origin,label,minutes,id),
-        openFocus: origin => this.onFocus?.(origin,id),
+        openFocus: (origin,trigger) => this.onFocus?.(origin,id,trigger),
         mealRecipes: entry.views.find(item => item.kind === 'meal_plan')?.data.recipes ||
           entry.snapshot?.components?.find(item => item.kind === 'meal_plan')?.data.recipes || [],
         viewState: entry.viewState[view.id] ||= {},

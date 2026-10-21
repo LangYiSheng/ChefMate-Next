@@ -68,7 +68,8 @@ export function renderView(view, context) {
   card.append(heading);
   if (!context.historical && !context.focused && (['prep_checklist','cooking_guide','shopping_list'].includes(view.kind)
       || view.kind==='recipe_detail' && context.viewState?.detailSection==='steps')) {
-    heading.append(button('全屏查看',()=>context.openFocus?.(view),false,'focus-button'));
+    const focus = button('全屏查看',()=>context.openFocus?.(view,focus),false,'focus-button');
+    heading.append(focus);
   }
   const renderer = rendererRegistry.get(view.kind);
   const ctx = { ...context, locked, viewState:context.viewState || {},onViewState:context.onViewState || (()=>{}),
@@ -276,7 +277,7 @@ function shoppingList(view, ctx) {
     input.addEventListener('change', () => ctx.action('check_shopping_item', { item_id: item.id, checked: input.checked }).catch(() => { input.checked = Boolean(item.checked); }));
     const copy = node('span'); copy.append(node('strong', '', item.canonical_name), node('small', '', amount(item)));
     if (item.estimated) copy.append(badge('估算')); label.append(input, copy); return label;
-  }));
+  },ctx.focused?8:4));
   if (!view.data.items?.length) root.append(hint('当前没有待准备项。'));
   if(view.data.notes?.length) root.append(disclosure('用量与数据说明',view.data.notes));
   return root;
@@ -298,7 +299,7 @@ function prepChecklist(view, ctx) {
     if (item.estimated) copy.append(badge('估算')); label.append(input, copy); row.append(label);
     row.append(button(item.status === 'skipped' ? '恢复' : '跳过', () => ctx.action('check_prep_item', { item_id: item.id, status: item.status === 'skipped' ? 'pending' : 'skipped' }), locked, 'ui-text-button'));
     if (item.status === 'skipped') row.append(badge('已跳过', 'muted')); return row;
-  }));
+  },ctx.focused?8:4));
   if(view.data.notes?.length) root.append(disclosure('备菜与原文说明',[...view.data.notes,...(view.data.items || []).map(item=>`${item.canonical_name}：${item.raw_text || '未记录原文'}`)]));
   if (!ctx.historical && view.data.items?.length && !['shopping', 'prep'].includes(ctx.stage)) root.append(hint('切到采购或备菜阶段后，可以逐项确认。'));
   if (!view.data.items?.length) root.append(hint('选定菜谱后可以开始逐项备菜。'));

@@ -66,8 +66,13 @@ const workspace = new WorkspaceController({
   openPanel: (tab) => { setDetails(true); setTab(tab); },
   onConfirm: (sessionId, message) => { state.confirmationQueue.enqueue(sessionId,message); continueConfirmations(); },
 });
-const cookingFocus=new CookingFocus(workspace,{session:currentSession,onChange:updateComposer});
-workspace.onFocus=(view,id)=>{setSidebar(false);setDetails(false);cookingFocus.open(view,id);};
+const cookingFocus=new CookingFocus(workspace,{session:currentSession,onChange:updateComposer,
+  activity:id=>({running:busy(id),status:state.runs.get(id)?.status,cancelling:state.runs.get(id)?.cancelling}),
+  renderMessage:markdown,retry:message=>sendMessage(message.retryMessage,!message.retryAsNew,message)});
+workspace.onFocus=(view,id,trigger)=>{
+  const source=cookingFocus.captureSource(view,trigger);
+  setSidebar(false);setDetails(false);cookingFocus.open(view,id,source);
+};
 
 function element(tag, className, text) {
   const node = document.createElement(tag);
@@ -415,7 +420,7 @@ function normalizeSession(session) {
 }
 
 async function openSession(id) {
-  if(cookingFocus.active?.sessionId!==id)cookingFocus.close();
+  if(cookingFocus.active?.sessionId!==id)cookingFocus.close({immediate:true});
   persistDraft();
   const epoch = ++state.selectionEpoch;
   state.currentId = id;
