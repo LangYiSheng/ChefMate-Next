@@ -154,3 +154,15 @@ def test_failure_fingerprints_normalize_order_but_separate_arguments_and_error_c
                            "msg": "private exception", "ctx": {"error": ValueError("secret")}, "hint": "untrusted"}])
     assert set(errors[0]) == {"loc", "type", "hint"}
     assert "secret" not in json.dumps(errors) and "untrusted" not in json.dumps(errors)
+
+
+def test_registered_recipe_validation_codes_keep_only_static_repair_hints():
+    errors = safe_errors([{"loc": ["ingredients", 2, "amount_evidence"],
+                           "type": "recipe_evidence_not_quoted", "input": "private source",
+                           "msg": "private exception", "ctx": {"error": ValueError("private")},
+                           "hint": "untrusted replacement"}])
+    assert errors[0]["loc"] == ["ingredients", 2, "amount_evidence"]
+    assert errors[0]["type"] == "recipe_evidence_not_quoted"
+    assert "Markdown" in errors[0]["hint"]
+    assert "private" not in json.dumps(errors) and "untrusted" not in json.dumps(errors)
+    assert safe_errors(errors) == errors

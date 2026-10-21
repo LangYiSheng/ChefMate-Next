@@ -12,7 +12,8 @@ from pathlib import Path
 from typing import Literal
 from uuid import uuid4
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
+from pydantic_core import PydanticCustomError
 from chefmate_contracts import RecipeDocument
 from chefmate_recipe_processing import calculate_nutrition, validate_recipe
 
@@ -25,7 +26,7 @@ def _quantity_in(evidence, expected, kind):
              "grams": r"千克|公斤|克|kg|g", "minutes": r"小时|分钟?|秒钟?|hours?|minutes?|seconds?|min"}
     chinese = {"一": 1, "二": 2, "两": 2, "三": 3, "四": 4, "五": 5,
                "六": 6, "七": 7, "八": 8, "九": 9, "十": 10, "半": .5}
-    for match in re.finditer(r"(\d+(?:\.\d+)?|\.\d+|[一二两三四五六七八九十半])\s*(" + units[kind] + ")", evidence, re.I):
+    for match in re.finditer(r"(\d+(?:\.\d+)?|\.\d+|[一二两三四五六七八九十半])\s*(" + units[kind] + r")(?![A-Za-z])", evidence, re.I):
         token, unit = match.groups()
         number = chinese[token] if token in chinese else float(token)
         if kind == "grams" and unit.lower() in {"kg", "千克", "公斤"}:
@@ -46,7 +47,8 @@ class DraftIngredient(BaseModel):
     amount: str = Field(default="适量", max_length=200)
     grams: float | None = Field(default=None, ge=0, le=100000,
         description="原文明确的精确克重；个数、体积、约量或范围不自行换算，留null。")
-    amount_evidence: str = Field(default="", max_length=300)
+    amount_evidence: str = Field(default="", max_length=300,
+        description="逐字复制source_text中的连续原文，保留表格竖线和标点；不能改写成另一种格式。")
     scalable: bool = True
     usda_query: str = Field(default="", max_length=150)
     allergens: list[str] = Field(default_factory=list, max_length=15)
@@ -57,12 +59,14 @@ class RecipeDraftRequest(BaseModel):
     name: str = Field(min_length=1, max_length=100)
     description: str = Field(default="", max_length=1000)
     source_text: str = Field(min_length=1, max_length=20000,
-        description="用户文字或图片中可辨认的原文转写。看不清的内容标为未知，不编造。")
+        description="文字来源直接复制用户消息的完整原文或连续片段，保留Markdown表格与标点，不能摘要改写。图片来源为可辨认原文转写。")
     source_kind: Literal["text", "image"] = "text"
     servings: float | None = Field(default=None, gt=0, le=100)
     servings_evidence: str = Field(default="", max_length=300, description="逐字引用source_text中人数/份数依据。")
-    prep_time_min: float | None = Field(default=None, ge=0, le=2880)
-    cook_time_min: float | None = Field(default=None, ge=0, le=2880)
+    prep_time_min: float | None = Field(default=None, ge=0, le=2880,
+        description="原文明确的备菜总耗时；未明确时为null，不能从总时间倒推。")
+    cook_time_min: float | None = Field(default=None, ge=0, le=2880,
+        description="原文明确的烹饪总耗时；未明确时为null，不能从总时间减去备菜时间倒推。")
     total_time_min: float | None = Field(default=None, ge=0, le=2880,
         description="只有原文明确总耗时才填写；单一步骤计时不等于整道菜总耗时。")
     time_evidence: str = Field(default="", max_length=500,
@@ -74,36 +78,51 @@ class RecipeDraftRequest(BaseModel):
 
     @model_validator(mode="after")
     def grounded(self):
-        if self.servings is not None and not self.servings_evidence:
-            raise ValueError("人数需要原文依据；未写明时保留未知")
-        if any(v is not None for v in (self.prep_time_min, self.cook_time_min, self.total_time_min)) and not self.time_evidence:
-            raise ValueError("耗时需要原文依据；推断时间请写入注意事项")
-        if any(not step.strip() or len(step) > 2000 for step in self.steps):
-            raise ValueError("步骤应为可阅读的非空文本")
-        if any(item.grams is not None and not item.amount_evidence for item in self.ingredients):
-            raise ValueError("克重需要原文依据；鸡蛋个数等不能直接编成克重")
+        # Stable codes and precise locations survive the agent's safe error filter.
+        # Only static repair instructions are exposed; never echo input or exceptions.
+        errors = []
+        def reject(location, code, message):
+            errors.append({"type": PydanticCustomError(code, message), "loc": location})
+
         normalized_source = re.sub(r"\s+", "", self.source_text)
-        for evidence in [self.servings_evidence, self.time_evidence,
-                         *(item.amount_evidence for item in self.ingredients if item.grams is not None)]:
+        evidence_fields = [(('servings_evidence',), self.servings_evidence), (('time_evidence',), self.time_evidence)]
+        evidence_fields.extend((('ingredients', index, 'amount_evidence'), item.amount_evidence)
+                               for index, item in enumerate(self.ingredients) if item.grams is not None)
+        for location, evidence in evidence_fields:
             if evidence and re.sub(r"\s+", "", evidence) not in normalized_source:
-                raise ValueError("人数、时间和克重依据必须逐字引用原文，不能补造依据")
-        if self.servings is not None and not re.search(r"[人份位口]|servings?|people|persons?|portions?", self.servings_evidence, re.I):
-            raise ValueError("原文需明确人数或份数，不能把盘数当成就餐人数")
-        if any(v is not None for v in (self.prep_time_min, self.cook_time_min, self.total_time_min)) and not re.search(
-                r"秒|分钟?|小时|minute|second|hour|(?<![A-Za-z])min(?![A-Za-z])", self.time_evidence, re.I):
-            raise ValueError("原文未给明确时间单位，耗时请保留未知")
-        if any(item.grams is not None and not re.search(r"克|(?<![A-Za-z])k?g(?![A-Za-z])", item.amount_evidence, re.I)
-               for item in self.ingredients):
-            raise ValueError("原文未给克重依据，不能把个数或毫升直接换成克重")
-        if self.servings is not None and not _quantity_in(self.servings_evidence, self.servings, "servings"):
-            raise ValueError("份数与引用原文不一致，请保留原值或留空")
-        if any(item.grams is not None and not _quantity_in(item.amount_evidence, item.grams, "grams") for item in self.ingredients):
-            raise ValueError("克重与引用原文不一致，请核对原始用量")
-        if any(value is not None and not _quantity_in(self.time_evidence, value, "minutes")
-               for value in (self.prep_time_min, self.cook_time_min, self.total_time_min)):
-            raise ValueError("耗时与引用原文不一致，请保留未知，不补造时间")
-        if self.total_time_min is not None and not re.search(r"总|合计|全程|total", self.time_evidence, re.I):
-            raise ValueError("单一步骤时长不能当作整道菜总耗时")
+                reject(location, "recipe_evidence_not_quoted", "依据必须逐字引用原文，保留表格和标点")
+        if self.servings is not None:
+            if not self.servings_evidence:
+                reject(('servings_evidence',), "recipe_evidence_required", "人数需要原文依据；未写明时保留未知")
+            elif not _quantity_in(self.servings_evidence, self.servings, "servings"):
+                reject(('servings',), "recipe_servings_mismatch", "份数与原文人数或份数不一致")
+        for index, item in enumerate(self.ingredients):
+            if item.grams is None:
+                continue
+            if not item.amount_evidence:
+                reject(('ingredients', index, 'amount_evidence'), "recipe_evidence_required", "克重需要原文依据")
+            elif not _quantity_in(item.amount_evidence, item.grams, "grams"):
+                reject(('ingredients', index, 'grams'), "recipe_grams_mismatch", "克重与原文不一致，不能换算个数或体积")
+        for field in ('prep_time_min', 'cook_time_min', 'total_time_min'):
+            value = getattr(self, field)
+            if value is not None:
+                if not self.time_evidence:
+                    reject(('time_evidence',), "recipe_evidence_required", "耗时需要原文依据")
+                    break
+                if not _quantity_in(self.time_evidence, value, "minutes"):
+                    reject((field,), "recipe_time_mismatch", "耗时与原文不一致，不能倒推或补造")
+        # Recipe metadata commonly says "制作时间" without the word "总".
+        # A step heading alone must still never establish the whole recipe time.
+        explicit_total = re.search(r"总|合计|全程|total", self.time_evidence, re.I)
+        recipe_time_heading = re.search(r"制作(?:时间|耗时)", self.time_evidence)
+        step_heading = re.search(r"步骤|第.{0,5}步", self.time_evidence)
+        if self.total_time_min is not None and not (explicit_total or recipe_time_heading and not step_heading):
+            reject(('total_time_min',), "recipe_total_time_ambiguous", "单一步骤时长不能当作整道菜总耗时")
+        for index, step in enumerate(self.steps):
+            if not step.strip() or len(step) > 2000:
+                reject(('steps', index), "recipe_step_invalid", "步骤应为可阅读的非空文本")
+        if errors:
+            raise ValidationError.from_exception_data(type(self).__name__, errors)
         return self
 
 

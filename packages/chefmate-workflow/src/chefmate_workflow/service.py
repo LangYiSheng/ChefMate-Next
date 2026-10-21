@@ -611,7 +611,6 @@ class WorkflowService:
         if stage == "cooking" and any(item.status == "pending" for item in self._prep_items(state)):
             blockers.append({"code": "prep_incomplete", "message": "仍有待确认食材；请先标记备齐或明确确认跳过。"})
         if stage == "completed":
-            state.completed_at = state.completed_at or _stamp(self._now())
             steps = [step for recipe in state.meal_plan for step in self._recipe_view(recipe, state).steps]
             if any(step.status != "done" for step in steps):
                 blockers.append({"code": "steps_incomplete", "message": "仍有未完成步骤，不能把本次烹饪标为完成。"})
@@ -662,6 +661,7 @@ class WorkflowService:
         if blockers:
             raise DomainConflict(blockers[0]["code"], blockers[0]["message"])
         if stage == "completed":
+            state.completed_at = state.completed_at or _stamp(self._now())
             for timer in state.timers:
                 if timer.status in {"running", "paused"}:
                     timer.status, timer.deadline_at = "cancelled", None

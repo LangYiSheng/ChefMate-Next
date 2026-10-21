@@ -24,6 +24,13 @@ _TYPE_HINTS = {
     "less_than_equal": "按当前工具schema的数值上限修正。",
     "too_short": "补全当前工具schema要求的条目或文本。",
     "too_long": "缩减到当前工具schema允许的条目或文本长度。",
+    "recipe_evidence_required": "这个数值需要原文依据；逐字复制到对应evidence字段。原文没有写明时将数值留null，不能补造依据。",
+    "recipe_evidence_not_quoted": "这个evidence必须是source_text中的连续原文，保留Markdown表格竖线和标点；source_text也须复制用户原文，不能摘要改写。",
+    "recipe_servings_mismatch": "servings须匹配引用原文中的人数或份数；盘数、食材个数不是就餐人数，不明确时留null。",
+    "recipe_grams_mismatch": "grams须匹配引用原文中的克重；不能把个数或毫升换成克重，不明确时留null。",
+    "recipe_time_mismatch": "这个耗时须匹配time_evidence中明确的时长；不能用总时间减去其他时间倒推。没有该项原文时留null，并保留有依据的其他时间。",
+    "recipe_total_time_ambiguous": "total_time_min仅填写原文明确的整道菜总耗时或菜谱的制作时间；步骤时长保留在steps中，总耗时不明确时留null。",
+    "recipe_step_invalid": "此步骤须为非空、至多2000字符的可执行文本。",
 }
 
 

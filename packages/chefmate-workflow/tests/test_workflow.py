@@ -132,9 +132,15 @@ def test_complete_meal_action_observes_start_and_finish_and_new_meal_identity(ki
     identity = host.state["meal_id"]
     started_at = host.state["started_at"]
     assert started_at == clock[0].isoformat()
+    assert host.state["completed_at"] is None
+    assert service.meal_record()["status"] == "attempted"
     assert action(kitchen, "complete_meal", {})["status"] == "steps_incomplete"
+    assert host.state["completed_at"] is None
+    assert service.meal_record()["status"] == "attempted"
     for ordinal in (0, 1):
         action(kitchen, "complete_step", {"recipe_id": "r1", "step_id": f"r1:step:{ordinal}"})
+    assert host.state["completed_at"] is None
+    assert service.meal_record()["status"] == "attempted"
     clock[0] += timedelta(minutes=20)
     assert action(kitchen, "complete_meal", {})["status"] == "ok"
     assert service.meal_record()["status"] == "completed"
@@ -146,6 +152,35 @@ def test_complete_meal_action_observes_start_and_finish_and_new_meal_identity(ki
     choose(kitchen)
     assert host.state["meal_id"] != identity
     assert host.state["started_at"] is None and host.state["completed_at"] is None
+
+
+def test_transition_capability_reads_never_assign_completion_time(kitchen):
+    service, host, _, clock = kitchen
+    prepare(kitchen)
+    for all_done in (False, True):
+        if all_done:
+            for ordinal in (0, 1):
+                action(kitchen, "complete_step", {"recipe_id": "r1", "step_id": f"r1:step:{ordinal}"})
+        clock[0] += timedelta(minutes=5)
+        state = WorkspaceState.model_validate(host.state)
+        before = state.model_dump(mode="json")
+        blockers = service._transition_blockers(state, "completed")
+        assert bool(blockers) == (not all_done)
+        allowed, _ = service._transitions(state)
+        assert ("completed" in allowed) is all_done
+        service._current_actions(state, allowed)
+        service._response(state)
+        service.get_workspace()
+        service.model_snapshot()
+        assert state.model_dump(mode="json") == before
+        record = service.meal_record()
+        assert record["completed_at"] is None and record["status"] == "attempted"
+        assert host.state["completed_at"] is None
+
+    clock[0] += timedelta(minutes=7)
+    assert tool(kitchen, "advance_cooking_stage", {"stage": "completed"})["status"] == "ok"
+    record = service.meal_record()
+    assert record["completed_at"] == clock[0].isoformat() and record["status"] == "completed"
 
 
 def prepare(kitchen):

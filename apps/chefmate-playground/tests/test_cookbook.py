@@ -70,6 +70,59 @@ def test_exact_text_evidence_accepts_original_minutes_and_servings():
     assert parsed.total_time_min == 15.0 and parsed.servings == 2.0
 
 
+@pytest.mark.parametrize("source_text", [
+    "西红柿炒鸡蛋\n制作时间：约15分钟\n适用人数：2人\n西红柿：2个（约300克）\n食盐：3克",
+    "# 西红柿炒鸡蛋\n\n制作时间：约15分钟\n适用人数：2人\n\n西红柿：2个（约300克）\n食盐：3克\n\n步骤1：西红柿切块。",
+])
+def test_recipe_conversation_failures_expose_fields_and_safe_repair_hints(source_text):
+    """Replay the source/evidence mismatch and inferred time from the failed chat."""
+    from chefmate_agent.failure_policy import FailurePolicy, safe_errors
+
+    values = {"name": "西红柿炒鸡蛋", "source_text": source_text,
+              "servings": 2, "servings_evidence": "适用人数：2人",
+              "prep_time_min": 3, "cook_time_min": 12, "total_time_min": 15,
+              "time_evidence": "制作时间：约15分钟",
+              "ingredients": [{"name": "西红柿", "amount": "2个（约300克）", "grams": 300,
+                               "amount_evidence": "西红柿 | 2个（约300克）"},
+                              {"name": "食盐", "amount": "3克", "grams": 3,
+                               "amount_evidence": "食盐 | 3克"}],
+              "steps": ["西红柿切块。"]}
+    with pytest.raises(ValidationError) as caught:
+        RecipeDraftRequest.model_validate(values)
+    safe = safe_errors(caught.value.errors())
+    mapped = {tuple(error["loc"]): error for error in safe}
+    assert mapped[("ingredients", 0, "amount_evidence")]["type"] == "recipe_evidence_not_quoted"
+    assert "Markdown" in mapped[("ingredients", 0, "amount_evidence")]["hint"]
+    assert mapped[("cook_time_min",)]["type"] == "recipe_time_mismatch"
+    assert "倒推" in mapped[("cook_time_min",)]["hint"]
+    assert ("total_time_min",) not in mapped
+    assert FailurePolicy().observe("create_recipe_draft", values, {
+        "status": "invalid_arguments", "errors": safe})["errors"] == safe
+
+
+def test_recipe_metadata_time_and_verbatim_table_can_save_without_invented_subtotals(tmp_path):
+    source = "# 西红柿炒鸡蛋\n- **制作时间**：约15分钟\n- **适用人数**：2人\n| 西红柿 | 300克 |\n| 鸡蛋 | 3个 |\n西红柿切块，鸡蛋打散后炒熟。"
+    values = {"name": "西红柿炒鸡蛋", "source_text": source,
+              "servings": 2, "servings_evidence": "**适用人数**：2人",
+              "total_time_min": 15, "time_evidence": "**制作时间**：约15分钟",
+              "ingredients": [{"name": "西红柿", "amount": "300克", "grams": 300,
+                               "amount_evidence": "| 西红柿 | 300克 |"},
+                              {"name": "鸡蛋", "amount": "3个", "grams": None}],
+              "steps": ["西红柿切块，鸡蛋打散后炒熟。"]}
+    record = CookbookRepository(tmp_path / "sessions.db").create_draft(values)
+    assert record["source_text"] == source
+    assert record["document"]["total_time_min"] == 15
+    assert record["document"]["prep_time_min"] is None
+    assert record["document"]["cook_time_min"] is None
+    assert record["document"]["ingredients"][1]["grams"] is None
+    values.update(source_text=source + "步骤1制作时间：3分钟", total_time_min=3,
+                  time_evidence="步骤1制作时间：3分钟")
+    with pytest.raises(ValidationError) as caught:
+        RecipeDraftRequest.model_validate(values)
+    assert any(error["loc"] == ("total_time_min",) and error["type"] == "recipe_total_time_ambiguous"
+               for error in caught.value.errors())
+
+
 def test_quoted_source_cannot_lend_wrong_numbers_or_step_duration_as_total():
     values = draft()
     values["ingredients"][0]["grams"] = 400.0
@@ -80,6 +133,16 @@ def test_quoted_source_cannot_lend_wrong_numbers_or_step_duration_as_total():
     with pytest.raises(ValidationError):
         RecipeDraftRequest.model_validate(values)
     values.update(servings=2.0, total_time_min=10.0, time_evidence="蒸10分钟")
+    with pytest.raises(ValidationError):
+        RecipeDraftRequest.model_validate(values)
+
+
+@pytest.mark.parametrize("unit", ["gallons", "grams_unknown"])
+def test_quantity_units_must_not_match_a_word_prefix(unit):
+    values = draft()
+    evidence = f"番茄200{unit}"
+    values.update(source_text=evidence)
+    values["ingredients"][0]["amount_evidence"] = evidence
     with pytest.raises(ValidationError):
         RecipeDraftRequest.model_validate(values)
 
