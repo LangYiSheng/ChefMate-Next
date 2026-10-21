@@ -147,6 +147,7 @@ class ChefMateAgent:
         ui_context_model: type[BaseModel] | None = None,
         action_model: type[BaseModel] | None = None,
         skills: SkillRegistry | None = None,
+        tool_skill_bindings: Mapping[str, str] | None = None,
     ):
         self.service = service
         self.config = config
@@ -165,6 +166,7 @@ class ChefMateAgent:
         self.ui_context_model = ui_context_model
         self.action_model = action_model
         self._extra_tools: dict[str, InjectedToolSpec] = {}
+        self._tool_skills = dict(tool_skill_bindings or {})
         self._descriptions = {**_TOOL_DESCRIPTIONS,
             "list_skills": "列出显式启用的本地Skills名称与简介；不读取所有正文，不提供shell或任意文件访问。",
             "load_skill": "按已启用名称渐进读取Skill正文；遵循目录allowlist和读取预算，不执行脚本。",
@@ -178,6 +180,11 @@ class ChefMateAgent:
             self._descriptions[spec.name] = spec.description + (
                 " 可用阶段：" + "、".join(spec.allowed_stages) + "；其他阶段调用会被拒绝。" if spec.allowed_stages else "")
             self._extra_tools[spec.name] = spec
+            if spec.required_skill:
+                self._tool_skills[spec.name] = spec.required_skill
+        if any(name not in self._requests or not re.fullmatch(r"[a-z][a-z0-9_-]{0,63}", skill)
+               for name, skill in self._tool_skills.items()):
+            raise ValueError("Tool skill bindings must reference registered tools and valid skill names")
         self._base_model = model if model is not None else self._create_model()
         self.tools = [self._make_tool(name) for name in self._requests]
         self._tool_definitions = [convert_to_openai_tool(tool) for tool in self.tools]
@@ -188,7 +195,14 @@ class ChefMateAgent:
 
     def tool_catalog(self, ui_context=None, *, tools=None) -> list[dict[str, Any]]:
         """The actual bound schemas, with execution-stage availability made explicit."""
-        return tool_catalog(self.tools if tools is None else tools, self._extra_tools, ui_context)
+        result = tool_catalog(self.tools if tools is None else tools, self._extra_tools, ui_context)
+        for item in result:
+            skill = self._tool_skills.get(item["name"])
+            item["required_skill"] = skill
+            if skill and not self.skills.enabled(skill):
+                item["available"] = False
+                item["blockers"].append({"code": "skill_disabled", "skill": skill})
+        return result
 
     def _model_tools(self, context):
         """Bind executable operations; keep registered schemas for validating closed history."""
@@ -196,6 +210,9 @@ class ChefMateAgent:
         actions = context.ui_context.get("current_actions")
         result = []
         for tool in self.tools:
+            skill = self._tool_skills.get(tool.name)
+            if skill and not self.skills.enabled(skill):
+                continue
             spec = self._extra_tools.get(tool.name)
             if spec and not spec.model_visible:
                 continue
@@ -242,6 +259,13 @@ class ChefMateAgent:
         async def execute(**kwargs):
             if context is None:
                 raise _AgentFailure("tool_context_required", "工具执行缺少本轮上下文。")
+            required = [self._tool_skills.get(name)]
+            if name == "get_recipe" and str(kwargs.get("recipe_id", "")).startswith("custom-"):
+                required.append("recipe-authoring")
+            for skill in required:
+                if skill and not self.skills.enabled(skill):
+                    return {"status": "skill_disabled", "skill": skill,
+                            "message": "对应厨房技能已关闭，此工具没有执行；可以在设置中开启技能。"}
             history = self._serialize_messages(messages or [])
             call = {"name": name, "id": call_id, "args": kwargs}
             if name in _TOOL_DESCRIPTIONS:
@@ -297,6 +321,12 @@ class ChefMateAgent:
                 if not isinstance(plain, dict):
                     raise ValueError("Tool result must be a mapping")
                 if plain.get("status") == "ok":
+                    if spec.required_skill == "personal-memory" and isinstance(plain.get("memory"), dict):
+                        memory = plain["memory"]
+                        refreshed = {key: memory[key] for key in
+                                     ("revision", "user_notes", "summary", "updated_at") if key in memory}
+                        if len(_dump(refreshed)) <= self.config.max_memory_chars:
+                            context.memory_context = refreshed
                     actions = plain.get("actions", [])
                     if not isinstance(actions, list) or (actions and self.action_model is None):
                         raise ValueError("UI action schema is required")
@@ -353,7 +383,7 @@ class ChefMateAgent:
                        "需要ask_user等待回答时不生成推荐。不要在最终正文重复列出建议。")
         metadata = self.skills.list_metadata()
         if metadata:
-            prompt += "\n已启用Skills仅列元数据，需要细节时调用load_skill；Skill不授予额外工具权限：\n" + _dump(metadata)
+            prompt += "\n已启用Skills仅列元数据，需要细节时调用load_skill；关闭技能会同时禁用其所属工具：\n" + _dump(metadata)
         return prompt
 
     @classmethod
@@ -498,11 +528,23 @@ class ChefMateAgent:
         ui_context: dict[str, Any] | BaseModel | None = None,
         tool_context: Any = None,
         image_loader: Callable | None = None,
+        memory_context: dict[str, Any] | None = None,
     ) -> AgentTurnResult:
         original = copy.deepcopy(list(messages))
         context = TurnRuntimeContext(on_event=on_event, host_context=tool_context)
         try:
-            working = self._prepare_history(original)
+            if memory_context is not None:
+                if not isinstance(memory_context, dict):
+                    raise _AgentFailure("invalid_memory_context", "长期记忆格式无效。")
+                try:
+                    memory_size = len(_dump(memory_context))
+                except (TypeError, ValueError):
+                    raise _AgentFailure("invalid_memory_context", "长期记忆必须是有限JSON数据。") from None
+                if memory_size > self.config.max_memory_chars:
+                    raise _AgentFailure("memory_context_limit", "长期记忆超过本轮读取预算，请精简记忆。")
+                context.memory_context = copy.deepcopy(memory_context)
+            working = self._prepare_history(original, reserved_chars=len(_dump(context.memory_context))
+                                            if context.memory_context else 0)
             if working[-1].get("images") and not self.config.supports_images:
                 raise _AgentFailure("images_not_supported", "当前模型没有开启图片能力，请更换模型或开启支持图片。")
             if self.config.supports_images:
@@ -751,6 +793,30 @@ class ChefMateAgent:
         """Selections must come from tool evidence at the same data snapshot, including previous turns."""
         if name not in {"search_recipes", "get_recipe"}:
             return None
+        if name == "get_recipe" and str(arguments.get("recipe_id", "")).startswith("custom-"):
+            identity = arguments["recipe_id"]
+            snapshots = []
+            for message in history:
+                if message.get("role") != "tool" or message.get("name") not in {"search_custom_recipes", "get_recipe"}:
+                    continue
+                try:
+                    result = json.loads(message["content"])
+                except (KeyError, TypeError, ValueError):
+                    continue
+                if not isinstance(result, dict) or result.get("status") != "ok":
+                    continue
+                if message["name"] == "search_custom_recipes":
+                    snapshots.extend(item["snapshot"] for item in result.get("items", [])
+                                     if isinstance(item, dict) and item.get("recipe_id") == identity
+                                     and isinstance(item.get("snapshot"), dict))
+                elif result.get("recipe", {}).get("recipe_id") == identity and isinstance(result.get("snapshot"), dict):
+                    snapshots.append(result["snapshot"])
+            if not snapshots:
+                return {"status": "unverified_reference", "message": "请先search_custom_recipes获取真实个人菜谱引用。"}
+            if arguments.get("expected_snapshot") != snapshots[-1]:
+                return {"status": "snapshot_required", "snapshot": snapshots[-1],
+                        "message": "请使用该道个人菜谱检索结果的真实snapshot。"}
+            return None
         snapshot = None
         selectors: set[tuple[str, str | None]] = set()
         recipe_ids: set[str] = set()
@@ -824,7 +890,7 @@ class ChefMateAgent:
         elif name == "get_recipe" and isinstance(result.get("recipe"), dict):
             state["selected_recipe"] = result["recipe"]
 
-    def _prepare_history(self, messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    def _prepare_history(self, messages: list[dict[str, Any]], *, reserved_chars: int = 0) -> list[dict[str, Any]]:
         if not messages or len(messages) > 1000:
             raise _AgentFailure("invalid_history", "请提供有效的对话历史和本轮用户消息。")
         pending: dict[str, str] = {}
@@ -877,7 +943,7 @@ class ChefMateAgent:
         if self.config.supports_images and len(normalized[-1].get("images", [])) > self.config.max_images:
             raise _AgentFailure("image_limit", f"当前模型每次请求最多接受 {self.config.max_images} 张图片，请移除多余图片。")
         # Drop complete older human turns only; never split an assistant/tool batch.
-        while (len(_dump(normalized)) > self.config.max_history_chars
+        while (len(_dump(normalized)) + reserved_chars > self.config.max_history_chars
                or self.config.supports_images
                and sum(len(message.get("images", [])) for message in normalized) > self.config.max_images):
             next_user = next((i for i in range(1, len(normalized)) if normalized[i]["role"] == "user"), None)

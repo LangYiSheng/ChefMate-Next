@@ -10,6 +10,17 @@ from pydantic import BaseModel, ConfigDict, Field
 
 SKILL_NAME = re.compile(r"^[a-z][a-z0-9_-]{0,63}$")
 
+# The application opts into these bindings. A standalone agent may provide its
+# own tool/skill ownership without depending on the kitchen workflow package.
+KITCHEN_TOOL_SKILLS = {
+    **dict.fromkeys(("find_ingredients", "search_recipes", "get_recipe", "get_search_options",
+                     "show_preference_form", "update_preferences", "show_recipe_choices",
+                     "show_recipe_details", "select_recipes", "set_meal_plan", "show_meal_plan"), "meal-planning"),
+    **dict.fromkeys(("show_prep_checklist", "update_prep_items"), "pantry-preparation"),
+    **dict.fromkeys(("show_cooking_guide", "update_cooking_guidance", "set_cooking_timer",
+                     "show_timers", "advance_cooking_stage"), "cooking-guide"),
+}
+
 
 class SkillListRequest(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
@@ -73,6 +84,9 @@ class SkillRegistry:
     def list_metadata(self) -> list[dict[str, str]]:
         return [{"name": name, "description": entry["description"]}
                 for name, entry in sorted(self._entries.items())]
+
+    def enabled(self, name: str) -> bool:
+        return name in self._entries
 
     def load(self, name: str) -> dict[str, Any]:
         if not SKILL_NAME.fullmatch(name) or name not in self._entries:

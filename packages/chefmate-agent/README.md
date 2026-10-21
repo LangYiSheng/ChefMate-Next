@@ -94,6 +94,14 @@ result = await agent.run_turn(
 
 名称限制为小写字母、数字、下划线或连字符；路径解析必须保持在已启用目录内，不接受文件路径，不读取辅助文件，不运行脚本。YAML frontmatter 使用 `safe_load`，文件、元数据和整轮正文分别有预算；文件变更后返回 `skill_changed`，要求刷新配置。Skills 仅提供指导，不添加 shell、任意 SQL 或任意文件工具，也不能授予额外权限。
 
+应用通过 `tool_skill_bindings={tool_name: skill_name}` 绑定现有工具，或在 `InjectedToolSpec(required_skill="personal-memory")` 上声明所属技能。`KITCHEN_TOOL_SKILLS` 提供工作台的默认映射。关闭技能后，所属工具从模型本轮绑定中移除，执行边界也返回 `skill_disabled`，历史中的旧工具定义不构成新权限。已注册 schema 保留用于读取闭合的旧对话。通用的工作区读取和提问不属于某个专属技能；自定义菜谱的详情读取还需要 `recipe-authoring`。
+
+## 长期记忆注入
+
+调用方拥有持久化记忆与历史检索服务，使用 `run_turn(..., memory_context={...})` 提供当前用户自定义记忆和助手总结。核心不读写数据库。动态记忆仅追加到最新用户消息的实际请求中，标明数据来源和优先级，不把旧副本累计保存到消息历史，也不改变稳定系统提示。用户当前明确要求优先于历史，用户自定义记忆优先于助手总结。
+
+默认记忆读取上限为12,000字符，并占用总历史预算；旧历史按完整用户轮次清理。持久化记忆、关闭开关、用户编辑与助手总结的权限边界由应用实现，实际读写与检索工具继续受技能开关和工具输出预算约束。模型维护总结后，当前轮的动态记忆随成功回执刷新。个人菜谱搜索返回每道菜各自的真实快照，后续详情读取验证对应来源，不能拿另一道菜或官方库快照混用。
+
 ## 历史与结果
 
 `run_turn(messages, on_event=None, cancel_event=None)` 返回可 `model_dump(mode="json")` 的 `AgentTurnResult`：

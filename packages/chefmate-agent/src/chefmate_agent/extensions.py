@@ -27,3 +27,4 @@ class InjectedToolSpec:
     preconditions: tuple[str, ...] = ()
     side_effects: tuple[str, ...] = ()
     model_visible: bool = True
+    required_skill: str | None = None

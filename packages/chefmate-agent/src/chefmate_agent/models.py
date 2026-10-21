@@ -34,6 +34,7 @@ class AgentConfig(BaseModel):
     max_tool_result_chars: int = Field(default=60000, ge=2000, le=200000)
     max_ui_context_chars: int = Field(default=24000, ge=1000, le=24000)
     max_skill_chars: int = Field(default=24000, ge=1000, le=64000)
+    max_memory_chars: int = Field(default=12000, ge=1000, le=24000)
 
     @field_validator("model")
     @classmethod
