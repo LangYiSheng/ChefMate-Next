@@ -32,7 +32,8 @@
   --radius-control: 9px;
   --radius-panel: 14px;
   --radius-shell: 18px;
-  --font-reading: "Source Han Serif SC", "Noto Serif CJK SC", "Noto Serif SC", "Songti SC", "STSong", "SimSun", serif;
+  --font-ui: "PingFang SC", "Microsoft YaHei", "SimHei", "Noto Sans CJK SC", sans-serif;
+  --font-reading: "Songti SC", "STSong", "SimSun", "NSimSun", "Noto Serif CJK SC", serif;
 }
 
 :root[data-theme="dark"] {

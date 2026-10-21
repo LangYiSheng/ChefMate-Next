@@ -280,11 +280,11 @@ function checklistScope(view, ctx) {
   return navigation;
 }
 
-function workflowModes(ctx, checklist = false) {
+function workflowModes(ctx) {
   const mode = ctx.viewState.displayMode === 'list' ? 'list' : 'detail';
   const bar = node('div', 'workflow-mode-bar');
-  bar.setAttribute('role', 'tablist'); bar.setAttribute('aria-label', checklist ? '备菜显示方式' : '步骤显示方式');
-  for (const [value, label] of [['detail', '逐项查看'], ['list', checklist ? '清单' : '步骤列表']]) {
+  bar.setAttribute('role', 'tablist'); bar.setAttribute('aria-label', '步骤显示方式');
+  for (const [value, label] of [['detail', '逐项查看'], ['list', '步骤列表']]) {
     const tab = button(label, () => { ctx.viewState.displayMode = value; ctx.onViewState(); }, false, 'workflow-mode-tab');
     tab.setAttribute('role', 'tab'); tab.setAttribute('aria-selected', String(mode === value));
     tab.tabIndex = mode === value ? 0 : -1;
@@ -299,11 +299,13 @@ function workflowModes(ctx, checklist = false) {
   return { mode, bar };
 }
 
-function prepRow(item, ctx, locked, compact = false) {
-  const row = node('div', `ui-prep-row ${item.status === 'ready' ? 'checked' : ''}${compact ? ' workflow-overview-row' : ''}`);
+function prepRow(item, ctx, locked) {
+  const resolved = ['ready','skipped'].includes(item.status);
+  const row = node('div', `ui-prep-row${item.status === 'ready' ? ' checked' : ''}${resolved ? ' prep-resolved' : ''}`);
+  row.dataset.prepId = item.id;
   const label = node('label', 'ui-check-row'), input = node('input');
   input.type = 'checkbox'; input.checked = item.status === 'ready'; input.disabled = locked;
-  input.dataset.controlKey = `${compact ? 'overview-' : ''}prep:${item.id}`;
+  input.dataset.controlKey = `prep:${item.id}`;
   input.setAttribute('aria-label', `${item.canonical_name}已备齐`);
   input.addEventListener('change', () => ctx.action('check_prep_item', { item_id: item.id, status: input.checked ? 'ready' : 'pending' })
     .catch(() => { input.checked = item.status === 'ready'; }));
@@ -311,7 +313,7 @@ function prepRow(item, ctx, locked, compact = false) {
   if (item.raw_text) copy.title = `原文：${item.raw_text}`;
   if (item.estimated) copy.append(badge('估算'));
   label.append(input, copy); row.append(label);
-  if (!compact) row.append(button(item.status === 'skipped' ? '恢复' : '跳过', () => ctx.action('check_prep_item', {
+  if (item.status !== 'ready') row.append(button(item.status === 'skipped' ? '恢复' : '跳过', () => ctx.action('check_prep_item', {
     item_id: item.id, status: item.status === 'skipped' ? 'pending' : 'skipped' }), locked, 'ui-text-button'));
   if (item.status === 'skipped') row.append(badge('已跳过', 'muted'));
   return row;
@@ -319,31 +321,17 @@ function prepRow(item, ctx, locked, compact = false) {
 
 function prepChecklist(view, ctx) {
   const root = node('div');
-  const { mode, bar } = workflowModes(ctx, true); root.append(bar);
-  root.append(checklistScope(view,ctx));
+  if (ctx.mealRecipes?.length > 1) root.append(checklistScope(view,ctx));
   for(const text of view.data.guidance || []) root.append(node('div','ui-adaptation',text));
   const locked = ctx.locked || !['planning','prep'].includes(ctx.stage);
   const items = view.data.items || [];
   const prepared=items.filter(item=>['ready','skipped'].includes(item.status)).length;
   root.append(hint(`已确认 ${prepared} / ${view.data.items?.length || 0} 项`));
-  if (ctx.focused && mode === 'detail' && items.length) {
-    const index = Math.max(0, Math.min(items.length - 1, ctx.viewState.prepIndex ?? Math.max(0, items.findIndex(item => item.status === 'pending'))));
-    const navigation = node('div', 'step-navigator prep-item-nav'); navigation.setAttribute('aria-label', '浏览备菜项目');
-    const select = value => { ctx.viewState.prepIndex = value; ctx.onViewState(); };
-    navigation.append(button('上一项', () => select(index - 1), index === 0, 'page-button'),
-      node('strong', '', `第 ${index + 1} / ${items.length} 项`), button('下一项', () => select(index + 1), index === items.length - 1, 'page-button'));
-    root.append(navigation, prepRow(items[index], ctx, locked));
-    const overview = node('section', 'workflow-overview'); overview.setAttribute('aria-label', '全部备菜项目');
-    overview.append(node('h4', '', '全部食材'));
-    items.forEach((item, itemIndex) => {
-      const row = prepRow(item, ctx, locked, true); row.dataset.selected = String(index === itemIndex);
-      const jump = button('查看', () => select(itemIndex), false, 'workflow-jump');
-      jump.setAttribute('aria-label', `查看${item.canonical_name}`); row.append(jump); overview.append(row);
-    }); root.append(overview);
-  } else if (mode === 'list') {
-    const list = node('div', 'workflow-list prep-flat-list');
-    items.forEach(item => list.append(prepRow(item, ctx, locked))); root.append(list);
-  } else root.append(pagedList(items,ctx,'prepPage',item=>prepRow(item,ctx,locked)));
+  const list = node('div', 'workflow-list prep-flat-list'); list.setAttribute('aria-label','备菜清单');
+  // Stable source order in each group keeps unfinished purchases easy to find.
+  const ordered = [...items.filter(item=>!['ready','skipped'].includes(item.status)),
+    ...items.filter(item=>['ready','skipped'].includes(item.status))];
+  ordered.forEach(item => list.append(prepRow(item, ctx, locked))); root.append(list);
   if(!ctx.focused && view.data.notes?.length) root.append(disclosure('备菜与原文说明',[...view.data.notes,...(view.data.items || []).map(item=>`${item.canonical_name}：${item.raw_text || '未记录原文'}`)]));
   if (!ctx.historical && view.data.items?.length && !['planning','prep'].includes(ctx.stage)) root.append(hint('当前可查看备料记录。需要调整时，先让助手返回选菜或备菜阶段。'));
   if (!view.data.items?.length) root.append(hint('选定菜谱后可以开始逐项备菜。'));

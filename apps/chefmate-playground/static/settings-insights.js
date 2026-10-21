@@ -73,6 +73,6 @@ export class SettingsInsights {
     const intro=node('div','about-intro'),image=node('img');image.src='/static/brand/friendly-pot.svg';image.alt='';intro.append(image,node('h2','',data.name || 'ChefMate'),node('p','',data.subtitle || '您的个性化烹饪助手'));this.host.append(intro);
     this.host.append(row('版本',data.version || '未提供'),row('运行方式',data.runtime || '本地工作台'),row('基础菜谱',`${data.recipe_count ?? '—'} 道`),row('系统组件',`${data.component_count ?? '—'} 个`));
     this.host.append(node('h2','insight-section-title','数据与隐私'),node('p','settings-note','聊天、个人菜谱、饮食记录和长期记忆保存在本机。调用模型时，会发送本次对话需要的内容与图片。API Key 不回显。'));
-    this.host.append(node('h2','','营养数据'),node('p','settings-note','菜谱制作量与个人饮食分别记录。照片识别、份量和营养估算会标明依据，核对后再保存；未知值不会填成零。'));
+    this.host.append(node('h2','','营养数据'),node('p','settings-note','制作量与个人摄入分别记录。单人餐完成后按配方自动登记，多人餐先确认本人份额；照片记餐需核对后保存，未知营养留空。'));
   }
 }

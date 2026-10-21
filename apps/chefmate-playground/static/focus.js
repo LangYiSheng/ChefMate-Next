@@ -118,7 +118,7 @@ export class CookingFocus {
     this.root.classList.remove('focus-closing'); this.root.style.pointerEvents = '';
     const startIndex = previous?.sessionId === sessionId ? previous.startIndex : focusStartIndex(this.session());
     this.active = { kind: view.kind, id: view.id, view, sessionId, source, startIndex };
-    this.signature = null; this.replySignature = null; this.contentIdentity = null; this.wasRunning = false;
+    this.signature = null; this.replySignature = null; this.contentIdentity = null; this.workFocusKey = null; this.wasRunning = false;
     this.talking = Boolean(this.activity(sessionId).running); this.root.hidden = false;
     this.slot.append(this.composer); this.composer.hidden = false;
     document.getElementById('app').inert = true; document.body.classList.add('focus-scene-active');
@@ -196,11 +196,14 @@ export class CookingFocus {
       const displayedStep = view.data.steps?.[entry.viewState[view.id]?.stepIndex]
         || view.data.steps?.find(step=>step.id===view.data.active_step_id) || view.data.steps?.[0];
       const displayState = entry.viewState[view.id] || {};
-      const identity = JSON.stringify([view.kind, view.data.recipe_id, view.data.recipe_ids, displayState.displayMode,
-        displayState.displayMode === 'list' ? null : [displayedStep?.id, displayState.stepIndex, displayState.prepIndex], displayState.detailSection]);
+      const listMode = view.kind === 'prep_checklist' || displayState.displayMode === 'list';
+      const identity = JSON.stringify([view.kind, view.data.recipe_id, view.data.recipe_ids, listMode,
+        listMode ? null : [displayedStep?.id, displayState.stepIndex], displayState.detailSection]);
       const ctx = { ...this.workspace.context(view, active.sessionId), focused: true };
       ctx.onViewState = () => { this.workspace.onInlineChange?.(); this.refresh(); };
       const focusedTool = this.work.contains(document.activeElement) ? document.activeElement?.dataset.controlKey : null;
+      if (focusedTool) this.workFocusKey = focusedTool;
+      else if (document.activeElement !== document.body) this.workFocusKey = null;
       const blocks = contentBlocks(renderView(view, ctx)).filter(block => !cooking || !block.matches('.ui-recipe-name,.cooking-overview'));
       const toolBlock = block => block.matches('.step-navigator,.workflow-mode-bar,.cooking-recipe-scope');
       this.tools.replaceChildren(...blocks.filter(toolBlock));
@@ -210,10 +213,10 @@ export class CookingFocus {
       const overviewScroll = this.overviewBody.scrollTop;
       this.overviewBody.replaceChildren(...(overview ? [overview] : [])); this.overviewBody.scrollTop = overviewScroll;
       this.overview.hidden = !overview; this.work.classList.toggle('with-overview', Boolean(overview));
-      this.overviewSummary.textContent = view.kind === 'prep_checklist' ? '全部食材' : '全部步骤';
+      this.overviewSummary.textContent = '全部步骤';
       const units = blocks.filter(block => !toolBlock(block) && block !== overview).map((block, index) => ({ node: block,
         key: block.dataset.focusKey || block.querySelector('[data-control-key]')?.dataset.controlKey || `content-${index}` }));
-      this.listMode = ctx.viewState.displayMode === 'list';
+      this.listMode = listMode;
       this.content.classList.toggle('focus-list-content', this.listMode);
       this.contentPager.controls.hidden = this.listMode;
       if (this.listMode) {
@@ -223,7 +226,7 @@ export class CookingFocus {
       } else {
         this.contentPager.setEnabled(true); this.contentPager.setContent(units, { reset: identity !== this.contentIdentity });
       }
-      if (focusedTool) [...this.work.querySelectorAll('[data-control-key]')].find(control => control.dataset.controlKey === focusedTool && !control.disabled)?.focus({ preventScroll: true });
+      if (this.workFocusKey) [...this.work.querySelectorAll('[data-control-key]')].find(control => control.dataset.controlKey === this.workFocusKey && !control.disabled)?.focus({ preventScroll: true });
       this.contentIdentity = identity; this.signature = signature;
     }
     const state = focusConversation(this.session(), active.startIndex, this.activity(active.sessionId));

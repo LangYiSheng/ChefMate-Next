@@ -490,10 +490,11 @@ function selectBlank() {
   updateComposer();
 }
 
-function newSession() {
-  if(state.creating || state.preparing)return;
+function newSession({retainDraft=false}={}) {
+  if(state.creating || state.preparing)return false;
   cookingFocus.close({immediate:true});
   persistDraft();
+  if(retainDraft && (state.drafts.get(state.blankId)?.trim() || state.imageDrafts.get(state.blankId)?.length))state.failedDrafts.set(state.blankId,true);
   if(!state.failedDrafts.has(state.blankId)) {
     releaseImages(state.imageDrafts.get(state.blankId));
     state.imageDrafts.delete(state.blankId);state.drafts.delete(state.blankId);
@@ -501,6 +502,7 @@ function newSession() {
   state.imageUploads.delete(state.blankId);
   state.blankId=`draft:${crypto.randomUUID()}`;
   selectBlank();setSidebar(false);renderWelcomeTemplates(true);ui['composer-input'].focus();
+  return true;
 }
 
 function normalizeMessage(message) {
@@ -1434,15 +1436,19 @@ const shell=initShell({onSettingsClose:()=>{
   refreshDisplayPreferences();loadStatus();
   if(state.currentId)workspace.load(state.currentId).catch(()=>{});
 }});
-const centers=new KitchenCenters({api,onReturn:()=>shell.setPage('chat'),onNavigate:page=>shell.setPage(page),onRecord:()=>{
-  if(state.creating || state.preparing){toast('这轮正在准备，请稍后再记录。');return;}
-  if(!shell.setPage('chat'))return;const prompt='帮我记录这顿饭：识别我接下来提供的照片或文字，整理我自己吃的份量和营养；估算请写清假设，留待我核对后保存。';
-  const existing=ui['composer-input'].value.trim();fillComposer(existing?`${existing}\n${prompt}`:prompt);
-  if(state.status?.supports_images && !ui['attach-image'].disabled)ui['image-input'].click();
-  else if(busy() || pendingQuestion())toast('记餐草稿已保留，等本轮结束或回答当前问题后再添加照片。');
-},onChat:text=>{
-  if(shell.setPage('chat'))return sendMessage(text,false,null,{fromComposer:false});
-}});
+function startCenterConversation(text,{record=false}={}) {
+  if(state.initializing || state.creating || state.preparing){toast('这轮正在准备，请稍后再试。');return;}
+  if(!shell.setPage('chat') || !newSession({retainDraft:true}))return;
+  fillComposer(text);
+  if(record) {
+    if(state.status?.supports_images && !ui['attach-image'].disabled)ui['image-input'].click();
+    return;
+  }
+  return sendMessage(text);
+}
+const centers=new KitchenCenters({api,onReturn:()=>shell.setPage('chat'),onNavigate:page=>shell.setPage(page),
+  onRecord:()=>startCenterConversation('帮我记录这顿饭：识别我接下来提供的照片或文字，整理我自己吃的份量和营养；估算请写清假设，留待我核对后保存。',{record:true}),
+  onChat:text=>startCenterConversation(text)});
 window.addEventListener('chefmate:page-change',event=>{centers.show(event.detail.page);setDetails(false);renderConversation();});
 const finishingMeals=new Set();
 window.addEventListener('chefmate:finish-meal',async event=>{
@@ -1453,7 +1459,7 @@ window.addEventListener('chefmate:finish-meal',async event=>{
     const result=await workspace.dispatch('complete_meal',{},null,{sessionId:id});
     if(result?.status && result.status!=='ok')return;
     if(cookingFocus.active?.sessionId===id && workspace.entry(id).snapshot?.stage==='completed')cookingFocus.close();
-    state.confirmationQueue.enqueue(id,'这顿饭所有菜都做好啦，我已点击完成本次菜肴。');
+    state.confirmationQueue.enqueue(id,'这顿饭所有菜都做好啦，我已点击完成本次菜肴。请查看本次营养登记状态；如果是多人用餐或人数不明确，先问我自己吃了哪些、吃了多少，再登记个人营养。');
     await continueConfirmations();
   } catch(error){toast(error.message || '还没有完成，请核对步骤后再试。');}
   finally{finishingMeals.delete(id);}

@@ -106,18 +106,39 @@ test('a planning checklist accepts explicit user confirmations without requiring
   assert.equal(descendants(cooked).find(element=>element.type==='checkbox').disabled,true);
 });
 
-test('focused prep exposes every item in its compact overview and a single large current item',async t=>{
-  const actions=[],ctx=context(t,{stage:'prep',focused:true,action:async(type,payload)=>actions.push({type,payload})});
-  const items=Array.from({length:9},(_,index)=>({id:`item-${index}`,canonical_name:`食材${index+1}`,amount_text:'少许',status:index===0?'ready':'pending'}));
-  const root=renderView({id:'prep',kind:'prep_checklist',editable:true,data:{items}},ctx);
-  const overview=byClass(root,'workflow-overview');
-  assert.equal(descendants(overview).filter(element=>element.type==='checkbox').length,9);
-  assert.equal(input(root,'prep:item-1').checked,false);
-  const last=input(overview,'overview-prep:item-8');last.checked=true;await last.emit('change');
-  assert.deepEqual(actions,[{type:'check_prep_item',payload:{item_id:'item-8',status:'ready'}}]);
-  const list=renderView({id:'prep',kind:'prep_checklist',editable:true,data:{items}},{...ctx,viewState:{displayMode:'list'}});
-  assert.equal(descendants(byClass(list,'workflow-list')).filter(element=>element.type==='checkbox').length,9);
-  assert.equal(byClass(list,'workflow-overview'),undefined);
+for(const focused of [false,true])test(`prep always presents one complete ordered checklist ${focused?'in fullscreen':'inline'}`,async t=>{
+  const actions=[],items=Array.from({length:9},(_,index)=>({id:`item-${index}`,canonical_name:`食材${index+1}`,amount_text:'少许',
+    status:index===0?'ready':index===3?'skipped':'pending'}));
+  const ctx=context(t,{stage:'prep',focused,viewState:{displayMode:'detail',prepIndex:8},
+    action:async(type,payload)=>{actions.push({type,payload});items.find(item=>item.id===payload.item_id).status=payload.status;}});
+  const view={id:'prep',kind:'prep_checklist',editable:true,data:{items}};
+  const order=root=>byClass(root,'prep-flat-list').children.map(row=>row.dataset.prepId);
+  let root=renderView(view,ctx);
+  assert.equal(byClass(root,'workflow-mode-bar'),undefined);
+  assert.equal(byClass(root,'workflow-overview'),undefined);
+  assert.equal(byClass(root,'step-navigator'),undefined);
+  assert.equal(descendants(root).filter(element=>element.type==='checkbox').length,9);
+  assert.deepEqual(order(root),['item-1','item-2','item-4','item-5','item-6','item-7','item-8','item-0','item-3']);
+  assert.equal(byClass(root,'prep-flat-list').children.at(-1).classList.contains('prep-resolved'),true);
+  assert.deepEqual(items.map(item=>item.id),Array.from({length:9},(_,index)=>`item-${index}`));
+  const checkbox=input(root,'prep:item-1');checkbox.checked=true;await checkbox.emit('change');
+  root=renderView(view,ctx);
+  assert.deepEqual(order(root),['item-2','item-4','item-5','item-6','item-7','item-8','item-0','item-1','item-3']);
+  assert.equal(input(root,'prep:item-1').checked,true);
+  const undo=input(root,'prep:item-1');undo.checked=false;await undo.emit('change');
+  root=renderView(view,ctx);
+  assert.equal(order(root)[0],'item-1');
+  assert.deepEqual(actions,[{type:'check_prep_item',payload:{item_id:'item-1',status:'ready'}},
+    {type:'check_prep_item',payload:{item_id:'item-1',status:'pending'}}]);
+});
+
+test('a rejected prep update restores the checked state and keeps canonical ordering',async t=>{
+  const items=[{id:'ready',canonical_name:'盐',status:'ready'},{id:'pending',canonical_name:'豆腐',status:'pending'}];
+  const ctx=context(t,{stage:'prep',focused:true,action:async()=>{throw new Error('revision conflict');}});
+  const view={id:'prep',kind:'prep_checklist',editable:true,data:{items}};
+  const root=renderView(view,ctx),checkbox=input(root,'prep:ready');
+  checkbox.checked=false;await checkbox.emit('change');assert.equal(checkbox.checked,true);
+  assert.deepEqual(byClass(renderView(view,ctx),'prep-flat-list').children.map(row=>row.dataset.prepId),['pending','ready']);
 });
 
 test('step overview can complete any actual step and the list preserves all full instructions',async t=>{

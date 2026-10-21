@@ -1,9 +1,55 @@
-/* Offline reading faces for recipe prose. Controls retain the interface face. */
-.ui-step-instruction,.ui-steps,.ui-description,.recipe-description,.ui-adaptation {
+/* Song-style reading and display text; Hei-style controls and annotations. */
+:root,body,button,input,select,textarea,summary,small,caption {
+  font-family:var(--font-ui);
+}
+
+h1,h2,.brand-copy strong,.settings-brand>span,.panel-recipe-title,
+.ui-recipe-name,.center-host .center-recipe-title,
+.center-journal-row h3,.food-log-row h3,.chat-food-heading h3,
+.center-empty h2,.focus-header h2,#settings-form .about-intro h2 {
+  font-family:var(--font-reading);
+  font-kerning:normal;
+}
+
+.assistant-body,.user-bubble,.focus-message-copy,
+.ui-step-instruction,.ui-steps,.ui-description,.recipe-description,.ui-adaptation,
+.center-recipe-description,.center-recipe-steps,.center-meal-recipes,
+.memory-summary,.focus-content .ui-check-row strong {
   font-family:var(--font-reading);
   font-kerning:normal;
   letter-spacing:.025em;
 }
+
+.center-stats dd,.center-nutrition dd,.intake-metrics dd,
+.chat-food-metrics dd,.insight-metric dd,.food-log-energy,
+.timer-readout .ui-timer-clock,.cooking-step-number {
+  font-family:var(--font-reading);
+  font-variant-numeric:tabular-nums;
+}
+
+/* Keep compact headings and captions independent of a reading parent. */
+h3,h4,h5,h6,.settings-nav h2,#settings-form h2,
+.assistant-body h3,.assistant-body h4,.assistant-body h5,.assistant-body h6,
+.ui-component-heading h3,.ui-step-heading,.focus-message-label,
+.focus-section-label,.focus-overview-pane>summary,.workflow-overview,
+.ui-hint,.ui-badge,.ui-check-row small,.center-muted,.center-eyebrow,
+.center-footnote,.center-field-hint,.center-warning,.center-source-text,
+.settings-note,.setting-help,.settings-header p,.setting-label,.field-label,
+.question-title,.question-heading,.chat-food-note,.chat-food-source,
+.chat-food-kicker,.chat-food-state,.chat-food-items,.chat-food-item-energy,
+.chat-food-metrics dt,.chat-food-metrics dd small,.chat-food-unknown,
+.center-stats dt,.center-nutrition dt,.intake-metrics dt,.intake-metrics dd small,
+.intake-coverage,.intake-chart,.food-log-basis,.food-log-item-note,.food-log-amount,
+.insight-metric dt,.insight-metric small,.usage-calendar,
+.assistant-body table,.assistant-body figcaption,.focus-message-copy table {
+  font-family:var(--font-ui);
+  letter-spacing:normal;
+}
+
+code,kbd,samp,pre {
+  font-family:Consolas,"SFMono-Regular",monospace;
+}
+
 .ui-cooking-guide .ui-step-instruction,.focus-content .ui-step-instruction {
   font-family:var(--font-reading);
   font-weight:400;
@@ -16,8 +62,6 @@
 }
 .ui-steps {line-height:1.95}
 .ui-recipe_detail .ui-disclosure>.ui-hint {
-  font-family:var(--font-reading);
   font-size:15px;
   line-height:1.95;
-  letter-spacing:.02em;
 }

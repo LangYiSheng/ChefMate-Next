@@ -134,16 +134,11 @@
 .focus-overview-pane{min-width:0;min-height:0;border:0;margin:0;padding:0}
 .focus-overview-pane>summary{font-size:12px;font-weight:550;color:var(--muted);cursor:pointer;min-height:32px;line-height:32px}
 .focus-overview-body{overflow:auto;max-height:calc(100% - 32px);padding-right:5px;overscroll-behavior:contain}
-.focus-overview-pane .ui-prep-row{gap:4px}.focus-overview-pane .ui-badge{font-size:10px}
 .focus-list-content{overflow:auto;overscroll-behavior:contain;touch-action:pan-y;padding-right:6px}
 .focus-list-content>.ui-hint,.focus-list-content>.checklist-scope{margin-bottom:12px}
 .focus-list-content .workflow-list .ui-step-instruction{font-size:17px;line-height:1.85}
 .focus-list-content .workflow-list .ui-check-row strong{font-size:16px}
 .focus-list-content .workflow-list .ui-check-row{padding:12px 2px}
-.focus-content:not(.focus-list-content) .ui-prep-row .ui-check-row{padding:24px 3px;gap:18px}
-.focus-content:not(.focus-list-content) .ui-prep-row .ui-check-row strong{font-size:26px;font-weight:550}
-.focus-content:not(.focus-list-content) .ui-prep-row .ui-check-row small{font-size:16px}
-.focus-content:not(.focus-list-content) .ui-prep-row .ui-check-row input{width:26px;height:26px}
 .focus-pagination[hidden],.focus-overview-pane[hidden]{display:none!important}
 @media(min-width:1000px){
   .focus-body>.focus-deck.with-overview{display:grid;grid-template-columns:220px minmax(0,1fr);grid-template-rows:auto minmax(0,1fr) auto;column-gap:30px;max-width:1160px}
@@ -156,8 +151,6 @@
   .talking .with-overview .focus-overview-body{max-height:82px}
 }
 @media(max-width:999px){
-  .focus-content:not(.focus-list-content) .ui-prep-row .ui-check-row strong{font-size:22px}
-  .focus-content:not(.focus-list-content) .ui-prep-row .ui-check-row small{font-size:14px}
   .focus-overview-pane{flex:none;max-height:145px;border-bottom:1px solid var(--line);padding-bottom:5px}
   .focus-overview-body{max-height:105px}.focus-deck.with-overview{gap:10px}
   .focus-tools{gap:9px}.talking .focus-overview-pane{max-height:105px}.talking .focus-overview-body{max-height:65px}
