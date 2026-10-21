@@ -1,6 +1,7 @@
 import { node } from "./ui-components.js";
 import { applyBranding } from "./branding.js";
 import { readAppearance, applyAppearance } from './appearance.js';
+import {AppearanceSettings} from './appearance-settings.js';
 import { TimerSound, readKitchenPreferences, saveKitchenPreferences } from './timer-sound.js';
 import { icon } from './icons.js';
 import {navigationIndex, navigationEdges, revealNavigationItem} from './settings-navigation.js';
@@ -43,6 +44,7 @@ let memoryHost = null;
 let memorySaving = false;
 let closeWaitMessage = '';
 let insights = null;
+let appearanceSettings = null;
 window.addEventListener('chefmate:memory-busy', event => {
   memorySaving = event.detail?.busy === true;
   updateFooter();
@@ -70,12 +72,7 @@ function updateNavigation(ensureCurrent=false) {
   if(Math.abs(left-navigation.scrollLeft)>1)navigation.scrollTo({left,behavior:window.matchMedia('(prefers-reduced-motion:reduce)').matches?'instant':'smooth'});
 }
 function readDisplay() {
-  try {
-    const { inline_limit = 2, density = "comfortable", theme = 'system' } = readAppearance();
-    return { inline_limit, density, theme };
-  } catch {
-    return { inline_limit: 2, density: "comfortable", theme: 'system' };
-  }
+  return {inline_limit:2,density:'comfortable',...readAppearance()};
 }
 function readDeveloper() {
   try { return { enabled: false, trace_mode: "compact", ...JSON.parse(localStorage.getItem("chefmate:developer-settings") || "{}") }; }
@@ -259,6 +256,8 @@ function field(
 }
 function render() {
   insights?.dispose();insights=null;
+  appearanceSettings?.dispose();appearanceSettings=null;
+  $("settings-form").classList.toggle('has-appearance',current==='display');
   document.querySelector('.settings-content').scrollTop = 0;
   $("section-title").textContent = names[current][0];
   $("section-description").textContent = names[current][1];
@@ -332,10 +331,13 @@ function render() {
     });
     $("settings-form").append(node("p", "settings-note", "上下文按实际请求分类统计，Token分解为估算；实际用量以服务端报告为准。"));
   } else if (current === "display") {
-    heading('外观主题');
-    field('主题', 'theme', {options:[['system','跟随系统'],['light','浅色'],['dark','深色']],
-      hint:'聊天、做菜和设置同步切换。'});
-    heading("核心内容");
+    heading('配色与字体');
+    const mode=field('显示模式', 'theme', {options:[['light','浅色'],['dark','深色'],['system','跟随系统']],
+      hint:'跟随系统时，可分别选择白天和夜间配色。'});
+    const host=node('section');$('settings-form').append(host);
+    appearanceSettings=new AppearanceSettings({host,values:drafts.get(current),onChange:changed});
+    mode.addEventListener('change',()=>{appearanceSettings.previewMode=null;appearanceSettings.update();});
+    heading("对话显示");
     field("每次回复展开几项内容", "inline_limit", {
       options: [
         [1, "只展开一项，例如食材清单"],
@@ -507,7 +509,7 @@ async function save() {
       delete values.reply_suggestions;
       values.inline_limit = Number(values.inline_limit);
       localStorage.setItem("chefmate:ui-settings", JSON.stringify(values));
-      applyBranding(); applyAppearance(values.theme);
+      applyBranding(); applyAppearance(values);
     } else {
       const payload =
         section === "components"
@@ -540,7 +542,7 @@ async function save() {
     notifyParent('chefmate:settings-saved');
     if (current === section) {
       render();
-      message(section==='cooking'?'计时设置已保存，对当前和新会话立即生效。':"设置已保存。接下来的对话使用新设置。", true);
+      message(section==='cooking'?'计时设置已保存，对当前和新会话立即生效。':section==='display'?'外观与对话偏好已保存。':"设置已保存。接下来的对话使用新设置。", true);
     }
   } catch (error) {
     message(error.message);

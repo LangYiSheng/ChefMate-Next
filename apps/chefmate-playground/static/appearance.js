@@ -1,33 +1,31 @@
-export const THEME_MODES = Object.freeze(['system', 'light', 'dark']);
-
-export function resolveTheme(mode, darkSystem = false) {
-  return mode === 'dark' || mode === 'system' && darkSystem ? 'dark' : 'light';
-}
+import {normalizeAppearance,resolveAppearance,appearanceTokens} from './appearance-presets.js';
+export {THEME_MODES,resolveTheme} from './appearance-presets.js';
 
 export function readAppearance(storage = globalThis.localStorage) {
   try {
     const saved = JSON.parse(storage?.getItem('chefmate:ui-settings') || '{}');
-    return { ...saved, theme: THEME_MODES.includes(saved.theme) ? saved.theme : 'system' };
-  } catch { return { theme: 'system' }; }
+    return normalizeAppearance(saved);
+  } catch { return normalizeAppearance(); }
 }
 
 let listening = false;
-export function applyAppearance(mode = readAppearance().theme) {
+export function applyAppearance(preferences = readAppearance()) {
   if (typeof document === 'undefined') return;
   const darkSystem = globalThis.matchMedia?.('(prefers-color-scheme: dark)').matches || false;
-  const theme = resolveTheme(mode, darkSystem);
-  document.documentElement.dataset.theme = theme;
-  document.documentElement.style.colorScheme = theme;
+  const {theme,palette,fonts}=resolveAppearance(preferences,darkSystem),root=document.documentElement;
+  root.dataset.theme=theme;root.dataset.palette=palette.id;root.dataset.fontPairing=fonts.id;
+  root.style.colorScheme=theme;
+  for(const [token,value]of Object.entries(appearanceTokens(palette,fonts)))root.style.setProperty(token,value);
   const color = document.querySelector('meta[name="theme-color"]');
-  if (color) color.content = theme === 'dark' ? '#18211c' : '#f2f4f2';
+  if (color) color.content = palette.background;
 }
 
 export function initAppearance() {
   applyAppearance();
   if (listening || typeof window === 'undefined') return;
   listening = true;
-  window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => applyAppearance());
+  window.matchMedia?.('(prefers-color-scheme: dark)').addEventListener('change', () => applyAppearance());
   window.addEventListener('storage', event => {
-    if (event.key === 'chefmate:ui-settings') applyAppearance();
+    if (event.key === 'chefmate:ui-settings' || event.key === null) applyAppearance();
   });
 }

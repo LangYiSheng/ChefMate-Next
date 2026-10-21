@@ -19,7 +19,7 @@
 .ui-cooking-guide .ui-step-instruction{font-size:clamp(21px,2.1vw,27px);line-height:1.8;letter-spacing:.01em;font-weight:450;margin:0 0 24px;color:var(--color-text);white-space:pre-wrap;overflow-wrap:anywhere}
 .ui-actions.cooking-step-actions{display:flex;flex-wrap:wrap;gap:10px;margin:0 0 16px;align-items:center}
 .cooking-step-actions .ui-button,.ui-timer .ui-button,.timer-controls .ui-button,.timer-expired .ui-button,.timer-create-form .ui-button,.cooking-step-timing .ui-button{min-height:44px;padding:10px 16px;font-size:14px;line-height:1.5;display:inline-flex;align-items:center;justify-content:center;gap:7px;text-decoration:none;border-radius:10px}
-.ui-button.cooking-primary{background:var(--color-accent);border-color:var(--color-accent);color:var(--color-canvas);font-weight:550}
+.ui-button.cooking-primary{background:var(--color-accent);border-color:var(--color-accent);color:var(--color-on-accent);font-weight:550}
 .ui-button.cooking-primary:not(:disabled):hover{background:var(--color-accent-hover);border-color:var(--color-accent-hover)}
 .ui-button.cooking-secondary{background:var(--color-canvas);border-color:var(--color-border);color:var(--color-accent)}
 .ui-button.cooking-secondary:not(:disabled):hover{background:var(--color-surface);border-color:var(--color-border-strong)}

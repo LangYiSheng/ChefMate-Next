@@ -109,7 +109,7 @@ button[hidden],div[hidden],p[hidden],aside[hidden]{display:none!important}
 .composer textarea::placeholder{color:var(--color-subtle)}
 .composer-bottom{display:flex;align-items:center;justify-content:space-between;margin-top:9px;gap:12px}
 .composer-hint{font-size:9px;color:var(--color-subtle)}
-.send-button{display:grid;place-items:center;width:32px;height:32px;border-radius:9px;background:var(--color-text);color:var(--color-canvas);flex:none}
+.send-button{display:grid;place-items:center;width:32px;height:32px;border-radius:9px;background:var(--color-text);color:var(--color-on-accent);flex:none}
 .send-button:hover{background:var(--color-text)}
 .send-button:disabled{background:var(--color-border-strong);opacity:.7}
 .stop-button>span{width:10px;height:10px;border-radius:2px;background:var(--color-canvas)}

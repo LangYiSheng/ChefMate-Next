@@ -1,4 +1,7 @@
-/* Song-style reading and display text; Hei-style controls and annotations. */
+@font-face{font-family:"ChefMate Sans";src:url('/static/fonts/noto-sans-sc.woff2') format('woff2');font-style:normal;font-weight:100 900;font-display:swap}
+@font-face{font-family:"ChefMate Serif";src:url('/static/fonts/noto-serif-sc.woff2') format('woff2');font-style:normal;font-weight:200 900;font-display:swap}
+@font-face{font-family:"ChefMate WenKai";src:url('/static/fonts/lxgw-wenkai-tc.woff2') format('woff2');font-style:normal;font-weight:400;font-display:swap}
+/* Semantic font roles shared by chat, centers, cooking and settings. */
 :root,body,button,input,select,textarea,summary,small,caption {
   font-family:var(--font-ui);
 }
@@ -7,8 +10,19 @@ h1,h2,.brand-copy strong,.settings-brand>span,.panel-recipe-title,
 .ui-recipe-name,.center-host .center-recipe-title,
 .center-journal-row h3,.food-log-row h3,.chat-food-heading h3,
 .center-empty h2,.focus-header h2,#settings-form .about-intro h2 {
-  font-family:var(--font-reading);
+  font-family:var(--font-title);
+  font-weight:var(--font-title-weight);
   font-kerning:normal;
+}
+
+/* Match the page-level selectors that otherwise override the title weight. */
+:root .settings-header h1,:root .center-heading h1,:root .welcome h1,
+:root .center-inspector-header h2,:root .center-empty h2,:root .focus-header h2,
+:root .center-section-title,:root .intake-hero-heading h2,
+:root .brand-copy strong,:root .settings-brand>span,
+:root .panel-recipe-title,:root .ui-recipe-name,:root .center-recipe-title,
+:root .center-journal-row h3,:root .food-log-row h3,:root .chat-food-heading h3 {
+  font-weight:var(--font-title-weight);
 }
 
 .assistant-body,.user-bubble,.focus-message-copy,
@@ -17,13 +31,13 @@ h1,h2,.brand-copy strong,.settings-brand>span,.panel-recipe-title,
 .memory-summary,.focus-content .ui-check-row strong {
   font-family:var(--font-reading);
   font-kerning:normal;
-  letter-spacing:.025em;
+  letter-spacing:normal;
 }
 
 .center-stats dd,.center-nutrition dd,.intake-metrics dd,
 .chat-food-metrics dd,.insight-metric dd,.food-log-energy,
 .timer-readout .ui-timer-clock,.cooking-step-number {
-  font-family:var(--font-reading);
+  font-family:var(--font-numeric);
   font-variant-numeric:tabular-nums;
 }
 

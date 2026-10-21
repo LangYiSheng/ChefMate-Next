@@ -9,8 +9,8 @@ test('appearance follows system only when requested and repairs invalid browser 
   assert.equal(resolveTheme('system',false),'light');
   assert.equal(resolveTheme('light',true),'light');
   assert.equal(resolveTheme('dark',false),'dark');
-  assert.equal(readAppearance(storage('{"theme":"invalid","density":"compact"}')).theme,'system');
-  assert.equal(readAppearance(storage('broken')).theme,'system');
+  assert.equal(readAppearance(storage('{"theme":"invalid","density":"compact"}')).theme,'light');
+  assert.equal(readAppearance(storage('broken')).theme,'light');
 });
 
 test('timer sound starts enabled and persists a browser-only mute', () => {

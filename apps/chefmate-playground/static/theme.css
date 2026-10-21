@@ -14,7 +14,7 @@ button,input,select,textarea{font-family:inherit}
 .settings-page{max-width:none;grid-template-columns:220px minmax(0,1fr)}
 .settings-nav{padding:27px 15px 18px;overflow:auto}.settings-header{background:var(--color-canvas);border-color:var(--line)}
 .settings-workspace{background:var(--color-canvas)}.settings-footer{background:var(--surface);border-color:var(--line)}
-.primary-button,.ui-button{background:var(--accent);color:var(--color-canvas);border-radius:9px}
+.primary-button,.ui-button{background:var(--accent);color:var(--color-on-accent);border-radius:9px}
 .settings-note,.setting-control small,.setting-label small{color:var(--muted)}
 .setting-field{padding:22px 0}.settings-content{padding-top:8px}.settings-nav>small{display:none}
 .brand-candidates{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin:20px 0 28px}
