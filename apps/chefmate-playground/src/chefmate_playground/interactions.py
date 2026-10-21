@@ -3,12 +3,16 @@
 import asyncio
 import copy
 import json
+import logging
+import sqlite3
 from typing import Any
 
 from chefmate_workflow import TOOL_REQUEST_MODELS, WorkflowService
 from chefmate_workflow.contracts import TOOL_CONTRACTS
 
 from .sessions import SessionRepository, now
+
+logger = logging.getLogger(__name__)
 
 
 class WorkspaceChanged(Exception):
@@ -43,10 +47,24 @@ def approved_recipes(messages: list[dict]) -> list[dict]:
 
 
 class WorkspaceBinding:
-    def __init__(self, repository: SessionRepository, retrieval, *, cooking_settings=None):
+    def __init__(self, repository: SessionRepository, retrieval, *, cooking_settings=None, journal=None):
         self.repository = repository
         self.retrieval = retrieval
         self.cooking_settings = cooking_settings
+        self.journal = journal
+
+    def record_journal(self, session_id):
+        if self.journal is not None:
+            state = self.repository.get(session_id)
+            if state:
+                try:
+                    self.journal.sync_session(state)
+                except (sqlite3.Error, OSError, ValueError):
+                    # The workflow has already committed. A journal outage must not
+                    # turn a saved action into a reported failure or break SSE done.
+                    logger.warning("Cooking journal synchronization pending for session %s", session_id)
+                    return False
+        return True
 
     def service(self, session_id: str) -> WorkflowService:
         def get_state():
@@ -122,6 +140,7 @@ class ScopedWorkspace:
             result.update(status="revision_conflict", message="用户刚修改了界面，请先读取最新工作区，不要覆盖已确认操作。")
         except TurnClosed:
             return {"status": "turn_closed", "message": "本轮已停止，没有继续修改任务。"}
+        self.binding.record_journal(self.session_id)
         # Full views belong to HTTP/UI. Model history receives only this tool's presentation and compact snapshot.
         return {key: copy.deepcopy(value) for key, value in result.items()
                 if key in {"status", "message", "errors", "recovery", "actions", "ui_snapshot", "pending_question"}}

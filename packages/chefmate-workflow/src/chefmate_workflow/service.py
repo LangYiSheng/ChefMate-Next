@@ -283,9 +283,8 @@ class WorkflowService:
         if state.portion_mode == "per_dish":
             return f"整餐{state.meal_diners:g}人；按明确要求，每道菜分别准备足量，单菜仍可调整。"
         count = len(state.meal_plan)
-        factor = {1: 1.0, 2: 0.75, 3: 0.6, 4: 0.5}.get(count, 1.0)
-        return (f"整餐{state.meal_diners:g}人共享{count}道菜；默认每盘按人数×{factor:g}的配方等效份量起算。"
-                "这是便于家常搭配的初始菜量，不是每盘各供这么多人单独吃一餐；请结合实际食材量、主食和食量调整。")
+        return (f"{state.meal_diners:g}人共享{count}道菜，已按一桌搭配安排菜量。"
+                "可根据主食、食量和实际食材调整每盘份量。")
 
     def _meal_data(self, state):
         return RecipeListData(recipes=[self._recipe_view(recipe, state, summary=True) for recipe in state.meal_plan],

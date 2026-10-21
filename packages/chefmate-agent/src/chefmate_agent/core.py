@@ -147,7 +147,7 @@ class ChefMateAgent:
         ui_context_model: type[BaseModel] | None = None,
         action_model: type[BaseModel] | None = None,
         skills: SkillRegistry | None = None,
-        tool_skill_bindings: Mapping[str, str] | None = None,
+        tool_skill_bindings: Mapping[str, str | Mapping[str, str]] | None = None,
     ):
         self.service = service
         self.config = config
@@ -166,7 +166,7 @@ class ChefMateAgent:
         self.ui_context_model = ui_context_model
         self.action_model = action_model
         self._extra_tools: dict[str, InjectedToolSpec] = {}
-        self._tool_skills = dict(tool_skill_bindings or {})
+        self._tool_skills = copy.deepcopy(dict(tool_skill_bindings or {}))
         self._descriptions = {**_TOOL_DESCRIPTIONS,
             "list_skills": "列出显式启用的本地Skills名称与简介；不读取所有正文，不提供shell或任意文件访问。",
             "load_skill": "按已启用名称渐进读取Skill正文；遵循目录allowlist和读取预算，不执行脚本。",
@@ -182,8 +182,14 @@ class ChefMateAgent:
             self._extra_tools[spec.name] = spec
             if spec.required_skill:
                 self._tool_skills[spec.name] = spec.required_skill
-        if any(name not in self._requests or not re.fullmatch(r"[a-z][a-z0-9_-]{0,63}", skill)
-               for name, skill in self._tool_skills.items()):
+        def valid_binding(binding):
+            def valid_name(value):
+                return isinstance(value, str) and re.fullmatch(r"[a-z][a-z0-9_-]{0,63}", value)
+            return valid_name(binding) if isinstance(binding, str) else (
+                isinstance(binding, Mapping) and bool(binding)
+                and all(valid_name(stage) and valid_name(skill) for stage, skill in binding.items()))
+        if any(name not in self._requests or not valid_binding(binding)
+               for name, binding in self._tool_skills.items()):
             raise ValueError("Tool skill bindings must reference registered tools and valid skill names")
         self._base_model = model if model is not None else self._create_model()
         self.tools = [self._make_tool(name) for name in self._requests]
@@ -197,12 +203,21 @@ class ChefMateAgent:
         """The actual bound schemas, with execution-stage availability made explicit."""
         result = tool_catalog(self.tools if tools is None else tools, self._extra_tools, ui_context)
         for item in result:
-            skill = self._tool_skills.get(item["name"])
-            item["required_skill"] = skill
-            if skill and not self.skills.enabled(skill):
+            binding = self._tool_skills.get(item["name"])
+            item["required_skill"] = binding if isinstance(binding, str) else None
+            if isinstance(binding, Mapping):
+                item["required_skill_by_stage"] = copy.deepcopy(binding)
+                item["enabled_target_stages"] = [stage for stage, skill in binding.items() if self.skills.enabled(skill)]
+            if not self._tool_skill_available(item["name"]):
                 item["available"] = False
-                item["blockers"].append({"code": "skill_disabled", "skill": skill})
+                item["blockers"].append({"code": "skill_disabled", "skill": copy.deepcopy(binding)})
         return result
+
+    def _tool_skill_available(self, name):
+        binding = self._tool_skills.get(name)
+        if isinstance(binding, Mapping):
+            return any(self.skills.enabled(skill) for skill in binding.values())
+        return not binding or self.skills.enabled(binding)
 
     def _model_tools(self, context):
         """Bind executable operations; keep registered schemas for validating closed history."""
@@ -210,8 +225,7 @@ class ChefMateAgent:
         actions = context.ui_context.get("current_actions")
         result = []
         for tool in self.tools:
-            skill = self._tool_skills.get(tool.name)
-            if skill and not self.skills.enabled(skill):
+            if not self._tool_skill_available(tool.name):
                 continue
             spec = self._extra_tools.get(tool.name)
             if spec and not spec.model_visible:
@@ -259,7 +273,14 @@ class ChefMateAgent:
         async def execute(**kwargs):
             if context is None:
                 raise _AgentFailure("tool_context_required", "工具执行缺少本轮上下文。")
-            required = [self._tool_skills.get(name)]
+            binding = self._tool_skills.get(name)
+            if isinstance(binding, Mapping):
+                skill = binding.get(kwargs.get("stage"))
+                if skill is None:
+                    return {"status": "invalid_arguments", "message": "目标阶段没有对应的技能权限，没有执行操作。"}
+                required = [skill]
+            else:
+                required = [binding]
             if name == "get_recipe" and str(kwargs.get("recipe_id", "")).startswith("custom-"):
                 required.append("recipe-authoring")
             for skill in required:

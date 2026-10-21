@@ -96,6 +96,8 @@ result = await agent.run_turn(
 
 应用通过 `tool_skill_bindings={tool_name: skill_name}` 绑定现有工具，或在 `InjectedToolSpec(required_skill="personal-memory")` 上声明所属技能。`KITCHEN_TOOL_SKILLS` 提供工作台的默认映射。关闭技能后，所属工具从模型本轮绑定中移除，执行边界也返回 `skill_disabled`，历史中的旧工具定义不构成新权限。已注册 schema 保留用于读取闭合的旧对话。通用的工作区读取和提问不属于某个专属技能；自定义菜谱的详情读取还需要 `recipe-authoring`。
 
+跨阶段操作可用 `tool_skill_bindings={tool_name: {target_stage: skill_name}}` 声明目标阶段权限。`advance_cooking_stage` 进入备菜需要 `pantry-preparation`，进入烹饪或完成需要 `cooking-guide`，进入想法或规划需要 `meal-planning`。任一目标技能启用时模型仍可看见这个共用工具，执行时按请求的 `stage` 检查，不能借共用工具进入已关闭技能负责的阶段。
+
 ## 长期记忆注入
 
 调用方拥有持久化记忆与历史检索服务，使用 `run_turn(..., memory_context={...})` 提供当前用户自定义记忆和助手总结。核心不读写数据库。动态记忆仅追加到最新用户消息的实际请求中，标明数据来源和优先级，不把旧副本累计保存到消息历史，也不改变稳定系统提示。用户当前明确要求优先于历史，用户自定义记忆优先于助手总结。

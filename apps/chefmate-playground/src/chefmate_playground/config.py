@@ -35,7 +35,7 @@ class PlaygroundConfig:
     api_format: str = "chat_completions"
     port: int = 18765
     sessions_database: Path = APP_ROOT / ".runtime" / "sessions.db"
-    enabled_skills: tuple[str, ...] = ("meal-planning", "pantry-preparation", "cooking-guide")
+    enabled_skills: tuple[str, ...] = ("meal-planning", "pantry-preparation", "cooking-guide", "recipe-authoring", "personal-memory")
 
     def __post_init__(self):
         if type(self.max_images) is not int or not 1 <= self.max_images <= 12:
@@ -61,7 +61,7 @@ class PlaygroundConfig:
             database = (source.parent / database).resolve()
         skill_names = tuple(name.strip() for name in (values.get("CHEFMATE_ENABLED_SKILLS")
                             if values.get("CHEFMATE_ENABLED_SKILLS") is not None
-                            else "meal-planning,pantry-preparation,cooking-guide").split(",") if name.strip())
+                            else "meal-planning,pantry-preparation,cooking-guide,recipe-authoring,personal-memory").split(",") if name.strip())
         if len(skill_names) > 16 or any(not re.fullmatch(r"[a-z][a-z0-9_-]{0,63}", name) for name in skill_names):
             raise ValueError("Enabled kitchen skill names are invalid")
         config = cls(

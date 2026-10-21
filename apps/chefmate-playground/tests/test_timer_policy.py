@@ -17,7 +17,7 @@ from test_cooking_timers import CookingSource, SNAPSHOT, timers
 @pytest.fixture
 def kitchen(tmp_path, monkeypatch):
     app_module = importlib.import_module("chefmate_playground.app")
-    monkeypatch.setattr(app_module, "build_agent", lambda config, source: (SimpleNamespace(), SkillRegistry()))
+    monkeypatch.setattr(app_module, "build_agent", lambda config, source, **kwargs: (SimpleNamespace(), SkillRegistry()))
     config = PlaygroundConfig(sessions_database=tmp_path / "timer-policy.db")
     repository = SessionRepository(config.sessions_database)
     app = app_module.create_app(config, service=CookingSource(), repository=repository)

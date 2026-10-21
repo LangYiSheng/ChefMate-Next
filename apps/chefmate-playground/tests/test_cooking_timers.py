@@ -41,7 +41,7 @@ def kitchen_http(tmp_path, monkeypatch):
     clock = [datetime(2026, 10, 21, tzinfo=timezone.utc)]
     monkeypatch.setattr(interactions, "WorkflowService", lambda *args, **kwargs: WorkflowService(
         *args, **kwargs, now=lambda: clock[0]))
-    monkeypatch.setattr(app_module, "build_agent", lambda config, source: (SimpleNamespace(), SkillRegistry()))
+    monkeypatch.setattr(app_module, "build_agent", lambda config, source, **kwargs: (SimpleNamespace(), SkillRegistry()))
     repository = SessionRepository(tmp_path / "cooking.db")
     app = app_module.create_app(PlaygroundConfig(sessions_database=repository.path), service=CookingSource(),
                                 repository=repository)

@@ -47,13 +47,15 @@ class ActiveTurn:
 
 class TurnManager:
     def __init__(self, repository: SessionRepository, agent, workspace_binding=None, images=None, *, reply_suggestions=True,
-                 debug_secrets=()):
+                 debug_secrets=(), memory=None, memory_enabled=None):
         self.repository = repository
         self.agent = agent
         self.workspace_binding = workspace_binding
         self.images = images
         self.reply_suggestions = reply_suggestions
         self.debug_secrets = debug_secrets
+        self.memory = memory
+        self.memory_enabled = memory_enabled or (lambda: False)
         self.active: dict[str, ActiveTurn] = {}
         self._lock = asyncio.Lock()
 
@@ -201,6 +203,10 @@ class TurnManager:
                 arguments["image_loader"] = lambda reference: self.images.data_url(turn.session_id, reference)
             if turn.ui_context is not None:
                 arguments.update(ui_context=turn.ui_context, tool_context=turn.host_context)
+            if self.memory is not None and self.memory_enabled():
+                context = self.memory.context()
+                if context.get("user_notes") or context.get("summary"):
+                    arguments["memory_context"] = context
             result = await self.agent.run_turn(history, **arguments)
             data = result.model_dump(mode="json") if hasattr(result, "model_dump") else dict(result)
         except asyncio.CancelledError:
@@ -248,6 +254,8 @@ class TurnManager:
             self.repository.mutate(turn.session_id, finish)
             save_debug("waiting_for_user" if visible.get("awaiting_user") else status, data)
             self.active.pop(turn.session_id, None)
+        if self.workspace_binding:
+            self.workspace_binding.record_journal(turn.session_id)
         if status == "error":
             turn.emit({"type": "error", **(data.get("error") or {
                 "code": "turn_failed", "message": "这一轮未完成。", "retryable": True,

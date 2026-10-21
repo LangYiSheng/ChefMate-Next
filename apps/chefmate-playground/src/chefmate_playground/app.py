@@ -3,15 +3,16 @@
 import asyncio
 from contextlib import asynccontextmanager
 from dataclasses import replace
+from datetime import datetime, timedelta, timezone
 from urllib.parse import urlsplit
 
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException, Request, Query
 from fastapi.exception_handlers import request_validation_exception_handler
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
-from chefmate_workflow import CookingSettings, UISnapshot, UserActionRequest
+from chefmate_workflow import CookingSettings, UISnapshot, UserActionRequest, WorkspaceState
 
 from .config import APP_ROOT, PlaygroundConfig
 from .interactions import WorkspaceBinding
@@ -19,6 +20,9 @@ from .images import ImageError, MAX_UPLOAD_BYTES, SessionImages
 from .debug import redact_debug
 from .runtime import TurnConflict, TurnManager, encode_event
 from .sessions import SessionRepository, public_session
+from .cookbook import CookbookRepository, PersonalRecipeRetrieval, RecipeDraftRequest
+from .journal import JournalRepository
+from .memory import MemoryRepository, MemoryConflict
 from .settings import (SKILLS, ContextSettings, InteractionSettings, RuntimeSettings, build_agent, persist_settings, probe_model,
                        public_settings, resolve_model)
 
@@ -57,6 +61,9 @@ def create_app(config: PlaygroundConfig | None = None, *, service=None, agent=No
     settings = config or PlaygroundConfig.load()
     setup_error = None
     repo = repository or SessionRepository(settings.sessions_database)
+    cookbook = CookbookRepository(settings.sessions_database)
+    journal = JournalRepository(settings.sessions_database)
+    memory = MemoryRepository(settings.sessions_database, journal=journal)
     if service is None and settings.database_url:
         try:
             from chefmate_food_data import LocalFoodData
@@ -68,17 +75,20 @@ def create_app(config: PlaygroundConfig | None = None, *, service=None, agent=No
             service = RetrievalService(store, foods=foods)
         except (ValueError, OSError):
             setup_error = "数据库或本地 USDA 配置无效。"
+    if service is not None:
+        service = PersonalRecipeRetrieval(service, cookbook)
     workspace_binding = WorkspaceBinding(repo, service, cooking_settings=lambda: {
-        key: getattr(settings, key) for key in CookingSettings.model_fields}) if service is not None else None
+        key: getattr(settings, key) for key in CookingSettings.model_fields}, journal=journal) if service is not None else None
     skill_registry = None
     try:
-        configured_agent, skill_registry = build_agent(settings, service)
+        configured_agent, skill_registry = build_agent(settings, service, memory=memory, cookbook=cookbook)
         agent = agent if agent is not None else configured_agent
     except (ValueError, OSError):
         setup_error = "模型或厨房技能配置无效，请打开设置检查。"
     images = SessionImages(settings.sessions_database.parent / "images", repo)
     manager = TurnManager(repo, agent, workspace_binding, images, reply_suggestions=settings.reply_suggestions,
-                          debug_secrets=(settings.api_key, settings.database_url))
+                          debug_secrets=(settings.api_key, settings.database_url), memory=memory,
+                          memory_enabled=lambda: "personal-memory" in settings.enabled_skills)
 
     @asynccontextmanager
     async def lifespan(_app):
@@ -91,6 +101,7 @@ def create_app(config: PlaygroundConfig | None = None, *, service=None, agent=No
     app.state.service = service
     app.state.workspace = workspace_binding
     app.state.skills = skill_registry
+    app.state.cookbook, app.state.journal, app.state.memory = cookbook, journal, memory
 
     @app.exception_handler(RequestValidationError)
     async def invalid_request(request: Request, error: RequestValidationError):
@@ -162,7 +173,7 @@ def create_app(config: PlaygroundConfig | None = None, *, service=None, agent=No
                     candidate = replace(settings, enabled_skills=tuple(dict.fromkeys(names)))
                 else:
                     raise ValueError("无效设置分类")
-                replacement, registry = (agent, skill_registry) if body.section == "cooking" else build_agent(candidate, service)
+                replacement, registry = (agent, skill_registry) if body.section == "cooking" else build_agent(candidate, service, memory=memory, cookbook=cookbook)
                 persist_settings(candidate)
             except ValueError:
                 raise HTTPException(422, "设置值无效；更换供应商时必须填写专用密钥。") from None
@@ -208,6 +219,158 @@ def create_app(config: PlaygroundConfig | None = None, *, service=None, agent=No
         return {"items": [{key: value for key, value in public_session(state).items()
                            if key in {"id", "title", "updated_at", "running", "last_status", "conversation_state", "awaiting_user", "pending_question"}}
                           for state in repo.list() if state.get("messages")]}
+
+    @app.get("/api/timer-sessions")
+    async def timer_sessions():
+        """Discover background reminders without activating or mutating a chat.
+
+        Finished timer acknowledgements belong to the browser. Include recently
+        touched finished timers so a refreshed page can apply its saved ack set;
+        updated_at limits discovery only and is not presented as an expiry time.
+        """
+        recent_since = datetime.now(timezone.utc) - timedelta(hours=24)
+        items = []
+        for state in await asyncio.to_thread(repo.list):
+            try:
+                workspace = WorkspaceState.model_validate(state.get("workspace") or {})
+            except (ValueError, TypeError):
+                continue
+            has_active = any(timer.status in {"running", "paused"} for timer in workspace.timers)
+            has_recent_finished = False
+            if any(timer.status == "finished" for timer in workspace.timers):
+                try:
+                    updated = datetime.fromisoformat(state["updated_at"])
+                    has_recent_finished = updated.tzinfo is not None and updated >= recent_since
+                except (KeyError, ValueError, TypeError):
+                    pass
+            if has_active or has_recent_finished:
+                items.append({"id": state["id"], "title": state.get("title") or "厨房计时"})
+        return {"items": items}
+
+    @app.get("/api/memory")
+    async def get_memory():
+        return memory.snapshot()
+
+    @app.patch("/api/memory")
+    async def update_memory(values: dict):
+        if (set(values) - {"user_notes", "revision", "enabled"} or type(values.get("revision")) is not int
+                or not isinstance(values.get("user_notes"), str)
+                or "enabled" in values and type(values["enabled"]) is not bool):
+            raise HTTPException(422, "记忆设置无效。")
+        try:
+            return memory.update_user(values["user_notes"], values["revision"], enabled=values.get("enabled"))
+        except MemoryConflict:
+            raise HTTPException(409, "记忆已更新，你的草稿仍保留；请重新读取并核对。") from None
+        except ValueError:
+            raise HTTPException(422, "记忆内容过长或无效。") from None
+
+    @app.delete("/api/memory")
+    async def clear_memory(revision: int = Query(ge=0)):
+        try:
+            return memory.clear(revision)
+        except MemoryConflict:
+            raise HTTPException(409, "记忆已更新，请重新读取后再清空。") from None
+
+    @app.get("/api/journal")
+    async def food_journal(days: int = Query(default=7, ge=1, le=366), date: str | None = None):
+        try:
+            if workspace_binding:
+                for state in repo.list():
+                    if (state.get("workspace") or {}).get("meal_id"):
+                        await asyncio.to_thread(workspace_binding.record_journal, state["id"])
+            return {"summary": journal.summary(days=days), "entries": journal.entries(date, days=days)}
+        except ValueError:
+            raise HTTPException(422, "请选择有效日期。") from None
+
+    @app.patch("/api/journal/{entry_id}")
+    async def journal_feedback(entry_id: str, values: dict):
+        if set(values) - {"rating", "notes"}:
+            raise HTTPException(422, "反馈字段无效。")
+        try:
+            previous = journal.get(entry_id)
+            if previous is None:
+                raise KeyError(entry_id)
+            return journal.feedback(entry_id, rating=values.get("rating", previous["rating"]), notes=values.get("notes", previous["notes"]))
+        except KeyError:
+            raise HTTPException(404, "饮食记录不存在。") from None
+        except ValueError:
+            raise HTTPException(422, "请填写有效的评分和笔记。") from None
+
+    @app.get("/api/cookbook")
+    async def recipe_center(query: str = Query(default="", max_length=200),
+                            source: str = Query(default="all", pattern="^(all|user|favorites|drafts)$"),
+                            offset: int = Query(default=0, ge=0, le=100000), limit: int = Query(default=12, ge=1, le=30)):
+        favorite_ids = cookbook.favorites()
+        personal = cookbook.list(query=query, status="draft" if source == "drafts" else "saved", limit=100)
+        def card(record):
+            return {"recipe_id": record["recipe_id"], "name": record["document"]["name"], "origin": "user",
+                    "status": record["status"], "revision": record["revision"],
+                    "servings": record["document"]["servings"], "total_time_min": record["document"]["total_time_min"],
+                    "description": record["document"]["description"], "favorite": record["recipe_id"] in favorite_ids}
+        if source in {"user", "drafts"}:
+            personal = cookbook.list(query=query, status="draft" if source == "drafts" else "saved", limit=limit, offset=offset)
+            return {**personal, "items": [card(item) for item in personal["items"]]}
+        if source == "favorites":
+            items = []
+            for identity in favorite_ids:
+                result = await asyncio.to_thread(service.get_recipe, {"recipe_id": identity}) if service else cookbook.retrieve(identity)
+                recipe = result.get("recipe")
+                if result.get("status") == "ok" and recipe and (not query or query.casefold() in recipe["name"].casefold()):
+                    items.append({**{key: recipe.get(key) for key in ("recipe_id", "name", "servings", "total_time_min", "description")},
+                                  "origin": recipe.get("origin", "system"), "favorite": True, "status": "saved"})
+            return {"items": items[offset:offset+limit], "total": len(items), "offset": offset, "limit": limit}
+        # Page personal records first, then the official catalog without copying its dataset.
+        personal_count = personal["total"]
+        personal_page = cookbook.list(query=query, limit=limit, offset=offset)["items"]
+        remaining = limit - len(personal_page)
+        official_offset = max(0, offset-personal_count)
+        try:
+            official = await asyncio.to_thread(service.search_recipes,
+                {"name": query or None, "ready_for_recommendation": None, "limit": max(1, remaining), "offset": official_offset}) if service else {"items": [], "total": 0}
+        except Exception:
+            raise HTTPException(503, "菜谱库暂时无法读取，请稍后重试。") from None
+        items = [card(item) for item in personal_page]
+        items.extend({**{key: item.get(key) for key in ("recipe_id", "name", "servings", "total_time_min", "description")},
+                      "origin": "system", "favorite": item["recipe_id"] in favorite_ids, "status": "saved"}
+                     for item in official.get("items", [])[:remaining])
+        return {"items": items, "total": personal_count+official.get("total", 0), "offset": offset, "limit": limit}
+
+    @app.get("/api/cookbook/{recipe_id}")
+    async def personal_recipe(recipe_id: str):
+        record = cookbook.get(recipe_id)
+        if record is None:
+            raise HTTPException(404, "个人菜谱不存在。")
+        return record
+
+    @app.put("/api/cookbook/{recipe_id}")
+    async def edit_recipe_draft(recipe_id: str, values: dict):
+        if set(values) != {"revision", "recipe"} or type(values["revision"]) is not int:
+            raise HTTPException(422, "草稿请求无效。")
+        try:
+            return cookbook.update_draft(recipe_id, RecipeDraftRequest.model_validate(values["recipe"]), values["revision"])
+        except ValueError:
+            raise HTTPException(409, "草稿未保存，请检查填写内容和版本。") from None
+
+    @app.post("/api/cookbook/{recipe_id}/publish")
+    async def publish_recipe(recipe_id: str, values: dict):
+        if set(values) != {"revision"} or type(values["revision"]) is not int:
+            raise HTTPException(422, "请核对草稿版本。")
+        try:
+            return cookbook.publish(recipe_id, values["revision"])
+        except KeyError:
+            raise HTTPException(404, "草稿不存在。") from None
+        except ValueError:
+            raise HTTPException(409, "草稿已更新，请重新核对。") from None
+
+    @app.put("/api/favorites/{recipe_id}")
+    async def favorite_recipe(recipe_id: str, values: dict):
+        if set(values) != {"favorite"} or type(values["favorite"]) is not bool:
+            raise HTTPException(422, "收藏设置无效。")
+        if values["favorite"]:
+            result = await asyncio.to_thread(service.get_recipe, {"recipe_id": recipe_id}) if service else cookbook.retrieve(recipe_id)
+            if result.get("status") != "ok":
+                raise HTTPException(404, "菜谱不存在，不能收藏。")
+        return cookbook.favorite(recipe_id, values["favorite"])
 
     @app.post("/api/sessions")
     async def new_session():
@@ -307,7 +470,9 @@ def create_app(config: PlaygroundConfig | None = None, *, service=None, agent=No
             raise HTTPException(503, "厨房任务尚未连接菜谱库。")
         # Keep partial-form field presence; Pydantic defaults must not overwrite untouched values.
         try:
-            return await asyncio.to_thread(workspace_binding.service(session_id).apply_action, body)
+            result = await asyncio.to_thread(workspace_binding.service(session_id).apply_action, body)
+            await asyncio.to_thread(workspace_binding.record_journal, session_id)
+            return result
         except ValueError:
             raise HTTPException(422, "这项界面操作无法执行，请检查输入。") from None
         except Exception:
@@ -318,6 +483,8 @@ def create_app(config: PlaygroundConfig | None = None, *, service=None, agent=No
         state = require_session(session_id)
         if session_id in manager.active:
             raise HTTPException(409, "请先停止这段对话。")
+        if workspace_binding and not await asyncio.to_thread(workspace_binding.record_journal, session_id):
+            raise HTTPException(503, "饮食记录暂未同步，请稍后再删除这段对话。")
         removed = repo.delete(session_id)
         await asyncio.to_thread(images.remove_session_files, removed or state)
         return {"deleted": True}

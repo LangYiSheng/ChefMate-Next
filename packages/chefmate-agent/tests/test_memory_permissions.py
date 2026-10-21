@@ -2,10 +2,13 @@
 
 import asyncio
 import json
+from typing import Literal
+
+import pytest
 
 from pydantic import BaseModel, ConfigDict
 
-from chefmate_agent import AgentConfig, ChefMateAgent, InjectedToolSpec, SkillRegistry
+from chefmate_agent import AgentConfig, ChefMateAgent, InjectedToolSpec, KITCHEN_TOOL_SKILLS, SkillRegistry
 from test_agent import REQUESTS, ScriptedModel, Service, answer, tool
 
 
@@ -104,3 +107,52 @@ def test_custom_recipe_detail_cannot_bypass_disabled_authoring_skill():
     assert result.status == "completed" and service.calls == []
     assert result.tool_calls[0].result["status"] == "skill_disabled"
     assert result.tool_calls[0].result["skill"] == "recipe-authoring"
+
+
+class StageRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+    stage: Literal["idea", "planning", "prep", "cooking", "completed"]
+
+
+@pytest.mark.parametrize("enabled,target,owner,allowed", [
+    (("meal-planning", "cooking-guide"), "prep", "pantry-preparation", False),
+    (("meal-planning", "cooking-guide"), "planning", "meal-planning", True),
+    (("meal-planning", "pantry-preparation"), "prep", "pantry-preparation", True),
+    (("meal-planning", "pantry-preparation"), "cooking", "cooking-guide", False),
+    (("meal-planning", "pantry-preparation"), "completed", "cooking-guide", False),
+    (("pantry-preparation",), "idea", "meal-planning", False),
+    (("pantry-preparation",), "planning", "meal-planning", False),
+    ((), "prep", "pantry-preparation", False),
+    (("personal-memory",), "prep", "pantry-preparation", False),
+])
+def test_stage_transition_skill_is_checked_for_requested_target(tmp_path, enabled, target, owner, allowed):
+    directories = []
+    for name in enabled:
+        root = tmp_path / name
+        root.mkdir()
+        (root / "SKILL.md").write_text(f"---\nname: {name}\ndescription: Test skill\n---\nUse verified state.", encoding="utf-8")
+        directories.append(root)
+    called = []
+    def transition(request, context):
+        called.append(request["stage"])
+        return {"status": "ok"}
+    model = ScriptedModel([tool("advance_cooking_stage", {"stage": target}), answer("阶段权限已核对。")])
+    binding = KITCHEN_TOOL_SKILLS["advance_cooking_stage"]
+    agent = ChefMateAgent(Service(), AgentConfig(model="test"), model=model, request_models=REQUESTS,
+                         skills=SkillRegistry(directories), extra_tools=[
+                             InjectedToolSpec("advance_cooking_stage", "按目标阶段推进", StageRequest, transition, effect="write")],
+                         tool_skill_bindings={"advance_cooking_stage": binding})
+    result = asyncio.run(agent.run_turn([{"role": "user", "content": "继续当前任务"}]))
+    assert result.status == "completed"
+    receipt = result.tool_calls[0].result
+    assert receipt["status"] == ("ok" if allowed else "skill_disabled")
+    assert called == ([target] if allowed else [])
+    if not allowed:
+        assert receipt["skill"] == owner
+    visible = any(name in enabled for name in binding.values())
+    assert all(("advance_cooking_stage" in {item["function"]["name"] for item in batch}) == visible
+               for batch in model.bind_history)
+    catalog = next(item for item in agent.tool_catalog() if item["name"] == "advance_cooking_stage")
+    assert catalog["available"] == visible
+    assert catalog["required_skill_by_stage"] == binding
+    assert (target in catalog["enabled_target_stages"]) == allowed

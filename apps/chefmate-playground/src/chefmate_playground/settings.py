@@ -14,7 +14,7 @@ from chefmate_workflow import CookingSettings
 
 from .config import APP_ROOT
 
-SKILLS = ("meal-planning", "pantry-preparation", "cooking-guide")
+SKILLS = ("meal-planning", "pantry-preparation", "cooking-guide", "recipe-authoring", "personal-memory")
 PERSISTED = {"model", "base_url", "api_key", "api_format", "stream_tool_calls", "supports_images", "max_images", "enabled_skills",
              "turn_timeout_s", "model_timeout_s", "model_max_retries", "max_model_rounds", "max_tool_calls",
              "max_history_chars", "max_tool_result_chars", "reply_suggestions", "timer_limit", "clear_timer_on_step_change"}
@@ -154,8 +154,8 @@ def persist_settings(config):
             temporary.unlink(missing_ok=True)
 
 
-def build_agent(config, service):
-    from chefmate_agent import AgentConfig, ChefMateAgent, SkillRegistry
+def build_agent(config, service, *, memory=None, cookbook=None):
+    from chefmate_agent import AgentConfig, ChefMateAgent, SkillRegistry, KITCHEN_TOOL_SKILLS
     from chefmate_workflow import UIAction, UISnapshot
     from .interactions import make_tool_specs
 
@@ -168,6 +168,13 @@ def build_agent(config, service):
     skills = SkillRegistry(directories)
     if not config.model_configured or service is None:
         return None, skills
+    extra_tools = make_tool_specs()
+    if memory is not None:
+        from .memory import make_memory_tools
+        extra_tools.extend(make_memory_tools(memory))
+    if cookbook is not None:
+        from .cookbook import make_recipe_tools
+        extra_tools.extend(make_recipe_tools(cookbook))
     agent = ChefMateAgent(service, AgentConfig(
         model=config.model, api_key=config.api_key, base_url=config.base_url,
         use_responses_api=config.api_format == "responses", stream_tool_calls=config.stream_tool_calls,
@@ -177,7 +184,8 @@ def build_agent(config, service):
         max_model_retries=config.model_max_retries, max_model_rounds=config.max_model_rounds,
         max_tool_calls=config.max_tool_calls,
         max_history_chars=config.max_history_chars, max_tool_result_chars=config.max_tool_result_chars,
-    ), extra_tools=make_tool_specs(), ui_context_model=UISnapshot, action_model=UIAction, skills=skills)
+    ), extra_tools=extra_tools, ui_context_model=UISnapshot, action_model=UIAction, skills=skills,
+       tool_skill_bindings=KITCHEN_TOOL_SKILLS)
     return agent, skills
 
 

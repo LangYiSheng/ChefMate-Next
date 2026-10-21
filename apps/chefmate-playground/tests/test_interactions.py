@@ -89,7 +89,8 @@ def test_action_schema_and_id_collision_cannot_overwrite_values(tmp_path):
         assert client.post(uri + "/actions", json={**first, "payload": {"values": {"arbitrary": True}}}).status_code == 422
         current = client.get(uri + "/workspace").json()["workspace"]
         assert current["revision"] == 1 and current["preferences"]["max_total_time_min"] == 30
-        assert len(client.get("/api/skills").json()["items"]) == 3
+        assert {item["name"] for item in client.get("/api/skills").json()["items"]} == {
+            "meal-planning", "pantry-preparation", "cooking-guide", "recipe-authoring", "personal-memory"}
 
 
 def test_stage_is_agent_owned_and_published_on_conversation(tmp_path):
