@@ -17,7 +17,7 @@ export function stepControl(input, direction) {
   return true;
 }
 
-export function enhanceControl(input, { label = '' } = {}) {
+export function enhanceControl(input, { label = '', stepper = true } = {}) {
   if (input._controlSurface) {
     input._syncControl?.();
     return input._controlSurface;
@@ -25,7 +25,7 @@ export function enhanceControl(input, { label = '' } = {}) {
   const type = input.type;
   const isSwitch = type === 'checkbox';
   const isSelect = input.tagName === 'SELECT';
-  const isNumber = type === 'number';
+  const isNumber = type === 'number' && stepper;
   const isPassword = type === 'password';
   const surface = element('span', `control-surface${isSwitch ? ' control-switch' : ''}${isSelect ? ' control-select' : ''}${isNumber ? ' control-number' : ''}${input.tagName === 'TEXTAREA' ? ' control-multiline' : ''}`);
   input.classList.add('control-input');

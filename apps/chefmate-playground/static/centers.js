@@ -3,6 +3,8 @@ import {icon} from './icons.js';
 import {enhanceControl} from './form-controls.js';
 import {CenterEditorState,draftIngredient} from './center-state.js';
 import {FocusMotion} from './focus-state.js';
+import {renderJournalContent} from './nutrition-dashboard.js';
+import {renderFoodLogEditor} from './food-log-editor.js';
 
 const nutrients=[['calories_kcal','热量','kcal'],['protein_g','蛋白质','g'],['fat_g','脂肪','g'],['carbohydrate_g','碳水','g']];
 const value=(number,unit='')=>Number.isFinite(number)?`${Math.round(number*10)/10}${unit?` ${unit}`:''}`:'暂无数据';
@@ -39,7 +41,8 @@ function tabs(items,selected,onSelect,{label='内容分类',panels=null}={}) {
 }
 
 export class KitchenCenters {
-  constructor({api,onChat,onReturn,onNavigate}) {
+  constructor({api,onChat,onReturn,onNavigate,onRecord}) {
+    this.onRecord=onRecord;
     Object.assign(this,{api,onChat,onReturn,onNavigate});this.page='chat';this.source='all';this.query='';this.offset=0;this.days=7;this.journalTab='overview';this.generation=0;this.detailGeneration=0;
     this.host=node('section','center-host');this.host.id='center-host';this.host.hidden=true;this.host.setAttribute('aria-label','个人厨房');
     document.querySelector('.main').insertBefore(this.host,document.getElementById('settings-host'));
@@ -70,6 +73,7 @@ export class KitchenCenters {
     this.layout=node('div','center-layout');this.pane=node('div','center-main-pane');const top=node('header','center-heading'),heading=node('div','center-title'),actions=node('div','center-heading-actions');
     heading.append(node('h1','',this.page==='recipes'?'菜谱中心':'食光手记'),node('p','center-muted',this.page==='recipes'?'收好喜欢的味道，随时开始做。':'记下每一顿饭，慢慢找到适合自己的味道。'));
     actions.append(button('返回对话',this.onReturn,'quiet'));if(this.page==='recipes')actions.append(button('新建菜谱',()=>this.chat('我想制作自己的菜谱。我会提供截图或文字，请帮我整理成可核对的菜谱草稿。'),'primary'));
+    else actions.append(button('记一餐',()=>this.leave(()=>{this.disposeInspector(false);this.onRecord?.();}),'primary'));
     top.append(heading,actions);this.notice=node('p','center-notice');this.notice.hidden=true;this.notice.setAttribute('role','status');this.navigation=node('div','center-navigation');this.content=node('div','center-content');
     this.pane.append(top,this.navigation,this.notice,this.content);this.layout.append(this.pane);this.host.replaceChildren(this.layout);
     if(this.page==='recipes')this.recipeNavigation();else this.journalNavigation();
@@ -232,15 +236,28 @@ export class KitchenCenters {
   }
   linkContentTab(bar,key) {this.content.id||=`center-page-panel-${++tabSequence}`;this.content.setAttribute('role','tabpanel');for(const tab of bar.children){tab.setAttribute('aria-controls',this.content.id);if(tab.dataset.key===key)this.content.setAttribute('aria-labelledby',tab.id);}}
   journalNavigation() {
-    const navigation=tabs([['overview','概览'],['records','餐食记录'],['nutrition','营养参考']],this.journalTab,key=>{this.journalTab=key;this.linkContentTab(navigation.bar,key);this.journalContent();},{label:'食光手记内容'}),toolbar=node('div','center-journal-toolbar'),period=node('select','center-input');period.setAttribute('aria-label','记录时间范围');this.linkContentTab(navigation.bar,this.journalTab);
+    const navigation=tabs([['overview','营养概览'],['records','饮食记录'],['drafts','待核对'],['production','做饭记录'],['deleted','回收站']],this.journalTab,key=>{this.journalTab=key;this.linkContentTab(navigation.bar,key);this.journalContent();},{label:'食光手记内容'}),toolbar=node('div','center-journal-toolbar'),period=node('select','center-input');this.journalTabs=navigation;period.setAttribute('aria-label','记录时间范围');this.linkContentTab(navigation.bar,this.journalTab);
     for(const days of [7,30,90]){const option=node('option','',`最近 ${days} 天`);option.value=String(days);option.selected=days===this.days;period.append(option);}period.onchange=()=>{this.days=Number(period.value);this.refresh();};toolbar.append(enhanceControl(period,{label:'记录时间范围'}),iconButton('refresh-cw','刷新记录',()=>this.refresh()));this.navigation.append(navigation.bar,toolbar);
   }
   journalContent() {
-    const data=this.journalData;if(!data)return;this.content.replaceChildren();if(this.journalTab==='records'){this.journalRecords(data.entries);return;}const summary=data.summary;
-    if(this.journalTab==='nutrition'){this.content.append(node('h2','center-section-title','已完成餐食的营养汇总'),metricGrid(summary.nutrition?.meal_total),node('p','center-muted',`${summary.nutrition?.estimated?'含估算。':''}这是这段时间整餐制作量的累计。资料缺失时保留未知，不能当成一个人的实际摄入。`));this.journalRecords(data.entries.filter(entry=>entry.status==='completed'),true);return;}
-    const stats=node('dl','center-stats');for(const [label,count] of [['完成餐次',summary.completed_meals],['完成菜品',summary.completed_dishes],['尝试菜谱',summary.unique_recipes],['开始餐次',summary.attempted_meals]]){const cell=node('div');cell.append(node('dt','',label),node('dd','',String(count)));stats.append(cell);}this.content.append(stats,node('h2','center-section-title','每天的厨房足迹'));
-    const spark=node('div','center-spark');spark.setAttribute('role','img');spark.setAttribute('aria-label',summary.days.map(day=>`${day.date} 完成${day.completed_meals}餐`).join('；'));const days=summary.days.slice(-14),maximum=Math.max(1,...days.map(day=>day.completed_meals));
-    for(const day of days){const column=node('div','center-spark-column'),bar=node('div','center-spark-bar');bar.style.height=`${Math.max(2,day.completed_meals/maximum*80)}px`;column.append(node('span','',String(day.completed_meals)),bar,node('span','',day.date.slice(5)));spark.append(column);}this.content.append(spark,node('h2','center-section-title','最近做过的饭'));this.journalRecords(data.entries.slice(0,5));this.content.append(node('p','center-footnote',summary.notice));
+    renderJournalContent(this);
+  }
+  setJournalTab(key) {this.journalTabs?.select(key);}
+  openFoodLog(record) {
+    return this.leave(async()=>{
+      this.disposeInspector(false);const epoch=++this.detailGeneration;this.detailAbort=new AbortController();const editor=this.createInspector(record.id,record.document.title);editor.body.append(node('p','center-muted','正在读取记录…'));
+      try{const current=await this.api(`/api/food-logs/${record.id}`,{signal:this.detailAbort.signal});if(epoch===this.detailGeneration && this.editor===editor)renderFoodLogEditor(this,editor,current);}catch(error){if(error.name!=='AbortError' && this.editor===editor)this.status(editor,error.message,true);}
+    });
+  }
+  async deleteFoodLog(record) {
+    const editor=this.editor;if(editor?.state.busy)return;const approved=await this.confirm(`移除「${record.document.title}」？`,'移入回收站后不计入个人营养统计，之后可以恢复。未保存修改会丢失。','移入回收站','保留记录');if(!approved || this.editor!==editor)return;
+    const token=editor.state.begin();if(token===null)return;const controls=[...editor.panel.querySelectorAll('input,textarea,select,button')];for(const item of controls)item.disabled=true;
+    try{await this.api(`/api/food-logs/${record.id}?revision=${record.revision}`,{method:'DELETE'});if(editor.state.finish(token,{saved:true}) && this.editor===editor){this.disposeInspector();this.message('饮食记录已移入回收站。');await this.refresh();}}
+    catch(error){if(editor.state.finish(token))this.status(editor,error.message,true);}finally{if(this.editor===editor)for(const item of controls)item.disabled=false;}
+  }
+  async restoreFoodLog(record) {
+    if(this.restorePending.has(record.id))return;this.restorePending.add(record.id);const pane=this.pane;
+    try{await this.api(`/api/food-logs/${record.id}/restore`,{method:'POST',body:JSON.stringify({revision:record.revision})});if(this.isCurrentPane(pane)){this.message('饮食记录已恢复。');await this.refresh();}}catch(error){if(this.isCurrentPane(pane))this.message(error.message,true);}finally{this.restorePending.delete(record.id);}
   }
   journalRecords(entries,nutrition=false) {
     const list=node('div','center-journal-list');for(const entry of entries){const row=node('article','center-journal-row'),identity=node('div','center-journal-identity');identity.append(node('time','center-eyebrow',entry.date),node('h3','',entry.recipes.map(recipe=>recipe.name).join('、')),node('p','center-muted',`${entry.status==='completed'?'已完成':'已尝试'} · ${entry.diners?`${entry.diners} 人共享`:'人数待确认'} · ${entry.recipes.length} 道菜`));const actions=node('div','center-row-actions');actions.append(button(nutrition?'查看营养':'查看这顿饭',()=>this.openJournal(entry),'quiet'));row.append(identity,actions);if(nutrition)row.append(metricGrid(entry.nutrition?.meal_total));list.append(row);}

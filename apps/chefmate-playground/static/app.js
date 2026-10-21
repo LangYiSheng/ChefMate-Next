@@ -16,6 +16,7 @@ import {QuestionComposer} from './question.js';
 import {DeveloperPanel} from './developer-panel.js';
 import {TimerPopover} from './timer-popover.js';
 import {KitchenCenters} from './centers.js';
+import {ContextMeter} from './context-meter.js';
 applyBranding();
 
 const $ = (id) => document.getElementById(id);
@@ -25,7 +26,7 @@ const ui = Object.fromEntries([
   'composer-input', 'send-button', 'stop-button', 'turn-status',
   'detail-panel', 'query-tab', 'recipe-tab', 'query-content', 'recipe-content',
   'drawer-backdrop', 'toast', 'announcer', 'open-sidebar', 'toggle-details',
-  'workspace-tab', 'workspace-content', 'workspace-context', 'skills-tab', 'skills-content',
+  'workspace-tab', 'workspace-content', 'workspace-context', 'components-tab', 'components-content',
   'conversation-stage',
   'attach-image','image-input','image-drafts','image-status','composer-choices','reply-suggestions','welcome-templates','shuffle-templates','resume-draft','question-composer',
 ].map((id) => [id, $(id)]));
@@ -34,11 +35,12 @@ const state = {
   status: null, sessions: [], currentId: null, cache: new Map(), drafts: new Map(),
   runs: new Map(), selectionEpoch: 0, sessionsEpoch: 0, detailEpoch: 0,
   detailAbort: null, detailOpen: false, sidebarOpen: false, tab: 'query',
-  selectedRecipe: null, remotePoll: null, renderFrame: null, creating: false, preparing: false, initializing:true, skills: [], skillsEpoch: 0,
+  selectedRecipe: null, remotePoll: null, renderFrame: null, creating: false, preparing: false, initializing:true, components: [], componentsEpoch: 0,
   traceMode: readTraceMode(), developer: readDeveloper(), uiPreferences: readUIPreferences(),
   imageDrafts:new Map(),imageUploads:new Map(),confirmationQueue:new ConfirmationQueue(),
   blankId:`draft:${crypto.randomUUID()}`,starterCapability:null,failedDrafts:new Map(),
 };
+const contextMeter=new ContextMeter(ui.sidebar);
 const questions=new QuestionState({
   read:id=>JSON.parse(localStorage.getItem(`chefmate:question:${id}`) || 'null'),
   write:(id,value)=>value ? localStorage.setItem(`chefmate:question:${id}`,JSON.stringify(value)) : localStorage.removeItem(`chefmate:question:${id}`),
@@ -50,8 +52,8 @@ function readUIPreferences() { try { return JSON.parse(localStorage.getItem('che
 document.body.classList.toggle('compact-density',state.uiPreferences.density==='compact');
 function refreshDisplayPreferences() {
   state.developer=readDeveloper();state.traceMode=readTraceMode();state.uiPreferences=readUIPreferences();
-  ui['query-tab'].hidden=!state.developer;ui['skills-tab'].hidden=!state.developer;
-  if (!state.developer && ['query','skills'].includes(state.tab)) setTab('workspace');
+  ui['query-tab'].hidden=!state.developer;ui['components-tab'].hidden=!state.developer;
+  if (!state.developer && ['query','components'].includes(state.tab)) setTab('workspace');
   document.body.classList.toggle('compact-density',state.uiPreferences.density==='compact');
   applyBranding();
   renderConversation();
@@ -66,7 +68,7 @@ const labels = {
   get_search_options: '读取查询选项', beginner: '新手', normal: '普通', advanced: '进阶',
   update_preferences: '更新偏好', present_preferences: '整理偏好', show_recipe_choices: '展示菜谱选择',
   build_meal_plan: '安排菜单', build_shopping_list: '整理备菜清单', prepare_ingredients: '准备食材',
-  get_cooking_guide: '整理烹饪步骤', start_timer: '开始计时', load_skill: '读取厨房技能', list_skills: '查看厨房技能',
+  get_cooking_guide: '整理烹饪步骤', start_timer: '开始计时', load_skill: '读取组件指南', list_skills: '查看组件指南',
   complete: '完整', estimated: '含估算', incomplete: '不完整', unknown: '未知',
 };
 const methods = { steam: '蒸', boil: '煮', stir_fry: '炒', deep_fry: '炸', pan_fry: '煎', bake: '烘焙', roast: '烤', stew: '炖', braise: '焖烧', cold_mix: '凉拌', other: '其他' };
@@ -469,7 +471,7 @@ function selectBlank() {
   state.currentId = null;
   try { localStorage.removeItem('chefmate:active-session'); } catch { /* In-memory selection remains usable. */ }
   workspace.select(null);
-  state.skillsEpoch++;
+  state.componentsEpoch++;
   clearTimeout(state.remotePoll);
   resetRecipe();
   ui['composer-input'].value = state.drafts.get(state.blankId) || '';
@@ -505,6 +507,7 @@ function normalizeMessage(message) {
     skills: message.skills ?? result.skills ?? [],
     process: message.process ?? result.process ?? [],
     usage: message.usage ?? result.usage,
+    context_usage:message.context_usage ?? result.context_usage,
     suggested_replies:message.suggested_replies ?? result.suggested_replies ?? [],
   };
 }
@@ -519,12 +522,12 @@ function normalizeSession(session) {
   const lastUser = [...messages].reverse().find((message) => message.role === 'user');
   if (running && session.active_turn) {
     messages.push({ role: 'assistant',turn_id:session.active_turn.id,content: session.active_turn.text || '',
-      tool_calls: (session.active_turn.tool_calls || []).map(normalizeToolCall), actions: session.active_turn.actions || [], process: session.active_turn.process || [], usage:session.active_turn.usage, recipes: [], streaming: true });
+      tool_calls: (session.active_turn.tool_calls || []).map(normalizeToolCall), actions: session.active_turn.actions || [], process: session.active_turn.process || [], usage:session.active_turn.usage,context_usage:session.active_turn.context_usage, recipes: [], streaming: true });
   } else if (['error', 'cancelled', 'interrupted'].includes(session.last_status) && messages.at(-1)?.role === 'user') {
     const result = session.last_run?.result || {};
     const cancelled = session.last_status === 'cancelled';
     const message = { role: 'assistant', content: result.text || '', tool_calls: (result.tool_calls || []).map(normalizeToolCall),
-      recipes: result.recipes || [], snapshot: result.snapshot, actions: result.actions || [], process: result.process || [], usage:result.usage, cancelled,
+      recipes: result.recipes || [], snapshot: result.snapshot, actions: result.actions || [], process: result.process || [], usage:result.usage,context_usage:result.context_usage, cancelled,
       retryMessage: session.last_error?.retryable === false ? null : lastUser?.content };
     message.retryImages=lastUser?.images || [];
     if (!cancelled) message.error = session.last_error?.message
@@ -542,8 +545,8 @@ async function openSession(id) {
   try { localStorage.setItem('chefmate:active-session',id); } catch { /* In-memory selection remains usable. */ }
   workspace.setRunning(id,true);
   workspace.select(id);
-  state.skills = [];
-  loadSkills(id);
+  state.components = [];
+  loadComponents(id);
   clearTimeout(state.remotePoll);
   resetRecipe();
   setSidebar(false);
@@ -581,7 +584,7 @@ function pollRemoteSession(id, epoch) {
       renderQueryPanel();
       updateComposer();
       if (session.running) pollRemoteSession(id, epoch);
-      else { await loadSessions(); workspace.load(id).catch(() => {}); loadSkills(id); announce('本次执行已结束。'); }
+      else { await loadSessions(); workspace.load(id).catch(() => {}); loadComponents(id); announce('本次执行已结束。'); }
     } catch { if (id === state.currentId && epoch === state.selectionEpoch) pollRemoteSession(id, epoch); }
   }, 2500);
 }
@@ -761,6 +764,7 @@ function recipeButton(recipe, snapshot) {
 }
 
 function renderConversation(forceScroll = false) {
+  contextMeter.render(currentSession(),state.developer);
   const session = currentSession();
   const messages = session?.messages || [];
   const nearBottom = ui.conversation.scrollHeight - ui.conversation.scrollTop - ui.conversation.clientHeight < 100;
@@ -821,6 +825,12 @@ function renderConversation(forceScroll = false) {
     if (!message.streaming && message.tool_calls?.some(call=>call.name==='create_recipe_draft' && call.result?.status==='ok')) {
       const receipt=element('button','view-receipt','核对刚整理的菜谱草稿');receipt.type='button';
       receipt.onclick=()=>{centers.source='drafts';shell.setPage('recipes');};node.append(receipt);
+    }
+    if(!message.streaming){
+      for(const call of message.tool_calls || [])if(['create_food_log_draft','revise_food_log_draft'].includes(call.name) && call.result?.status==='ok' && call.result.draft?.id){
+        const draft=call.result.draft,receipt=element('button','view-receipt','核对这顿饭的份量与营养');receipt.type='button';
+        receipt.onclick=()=>{if(shell.setPage('journal')){centers.setJournalTab('drafts');centers.openFoodLog({id:draft.id,document:{title:draft.title || draft.document?.title || '这顿饭'}});}};node.append(receipt);
+      }
     }
     if ((message.streaming || state.developer) && (message.tool_calls?.length || message.process?.length || message.streaming || message.usage?.model_calls)) {
       const log = executionTrace(message);
@@ -912,6 +922,7 @@ async function readEvents(response, onEvent) {
 function applyEvent(run, event) {
   const message = run.message;
   if (event.type === 'model_usage') message.usage = event.usage;
+  if (event.type === 'context_usage') message.context_usage=event.context_usage;
   if (event.type === 'status') run.status = safeText(event.message || event.text || '正在执行…');
   if (event.type === 'assistant_delta') message.content += String(event.text ?? event.delta ?? '');
   if (event.type === 'tool_start') {
@@ -923,7 +934,7 @@ function applyEvent(run, event) {
     const call = message.tool_calls.find((item) => item.call_id === event.call_id);
     if (call) Object.assign(call, event, { running: false });
     else message.tool_calls.push({ ...event, running: false });
-    if (event.name === 'load_skill' && run.sessionId === state.currentId) renderSkillsPanel();
+    if (event.name === 'load_skill' && run.sessionId === state.currentId) renderComponentsPanel();
   }
   if (event.type === 'ui_action') {
     message.actions ||= [];
@@ -933,7 +944,7 @@ function applyEvent(run, event) {
   if (event.type === 'skill_loaded') {
     message.skills ||= [];
     message.skills.push(event.skill || event);
-    if (run.sessionId === state.currentId) renderSkillsPanel();
+    if (run.sessionId === state.currentId) renderComponentsPanel();
   }
   if (event.type === 'result') {
     const result = event.result || event;
@@ -942,6 +953,7 @@ function applyEvent(run, event) {
     message.selected_recipe = result.status === 'completed' ? result.selected_recipe : null;
     message.snapshot = result.snapshot;
     message.usage = result.usage;
+    message.context_usage=result.context_usage ?? message.context_usage;
     message.actions = result.actions || message.actions || [];
     message.skills = result.skills || message.skills || [];
     message.process = result.process || message.process || [];
@@ -1011,7 +1023,7 @@ async function sendMessage(text, retry = false, replacedMessage = null, options 
         state.selectionEpoch++;
         try{localStorage.setItem('chefmate:active-session',id);}catch{/* Selection is available in memory. */}
         workspace.select(id);
-        loadSkills(id);
+        loadComponents(id);
       }
       if(state.blankId===sourceKey)state.blankId=`draft:${crypto.randomUUID()}`;
       state.creating=false;updateComposer();
@@ -1129,7 +1141,7 @@ async function sendMessage(text, retry = false, replacedMessage = null, options 
     }
     await loadSessions().catch(() => {});
     workspace.load(id).catch(() => {});
-    if (id === state.currentId) loadSkills(id);
+    if (id === state.currentId) loadComponents(id);
     if (recovered?.running) announce('连接中断，正在恢复本次执行。');
     else if (recovered?.last_status === 'completed' || run.resultReceived) announce('查询完成。');
     else announce(assistant.cancelled || recovered?.last_status === 'cancelled' ? '本次执行已停止。' : '执行未完成，可以重试。');
@@ -1173,16 +1185,16 @@ function setDetails(open) {
   backdrop();
 }
 function setTab(tab, focus = false) {
-  if (!state.developer && ['query','skills'].includes(tab)) tab='workspace';
+  if (!state.developer && ['query','components'].includes(tab)) tab='workspace';
   state.tab = tab;
-  for (const name of ['workspace', 'query', 'recipe', 'skills']) {
+  for (const name of ['workspace', 'query', 'recipe', 'components']) {
     ui[`${name}-tab`].classList.toggle('active', name === tab);
     ui[`${name}-tab`].setAttribute('aria-selected', String(name === tab));
     ui[`${name}-tab`].tabIndex = name === tab ? 0 : -1;
     ui[`${name}-content`].hidden = name !== tab;
   }
   if (focus) ui[`${tab}-tab`].focus();
-  if (tab === 'skills') renderSkillsPanel();
+  if (tab === 'components') renderComponentsPanel();
   if (tab === 'query') renderQueryPanel();
 }
 
@@ -1240,43 +1252,43 @@ function renderRecipeEmpty() {
   ui['recipe-content'].append(empty);
 }
 
-async function loadSkills(id = state.currentId) {
-  const epoch = ++state.skillsEpoch;
+async function loadComponents(id = state.currentId) {
+  const epoch = ++state.componentsEpoch;
   try {
-    const payload = await api(`/api/skills${id ? `?session_id=${encodeURIComponent(id)}` : ''}`);
-    if (epoch !== state.skillsEpoch || id !== state.currentId) return;
-    state.skills = Array.isArray(payload) ? payload : payload?.skills || payload?.items || [];
-    renderSkillsPanel();
+    const payload = await api('/api/components');
+    if (epoch !== state.componentsEpoch || id !== state.currentId) return;
+    state.components = Array.isArray(payload) ? payload : payload?.skills || payload?.items || [];
+    renderComponentsPanel();
   } catch (error) {
-    if (epoch === state.skillsEpoch && id === state.currentId) {
-      ui['skills-content'].replaceChildren(element('div', 'error-box', error.message));
+    if (epoch === state.componentsEpoch && id === state.currentId) {
+      ui['components-content'].replaceChildren(element('div', 'error-box', error.message));
     }
   }
 }
 
-function renderSkillsPanel() {
-  ui['skills-content'].replaceChildren();
-  const heading = element('div', 'workspace-heading'); heading.append(element('span', 'workspace-stage', '厨房技能'));
-  const refresh = element('button', 'ui-text-button', '刷新'); refresh.type = 'button'; refresh.addEventListener('click', () => loadSkills()); heading.append(refresh);
-  ui['skills-content'].append(heading, element('p', 'ui-hint', '技能指导助手的处理流程。启用和本轮实际加载会分别标明。'));
+function renderComponentsPanel() {
+  ui['components-content'].replaceChildren();
+  const heading = element('div', 'workspace-heading'); heading.append(element('span', 'workspace-stage', '系统组件'));
+  const refresh = element('button', 'ui-text-button', '刷新'); refresh.type = 'button'; refresh.addEventListener('click', () => loadComponents()); heading.append(refresh);
+  ui['components-content'].append(heading, element('p', 'ui-hint', '组件统一绑定指南、工具与界面。指南在需要时加载。'));
   const latest = [...(currentSession()?.messages || [])].reverse().find((message) => message.role === 'assistant');
   const loaded = new Set();
   for (const skill of latest?.skills || []) loaded.add(skill.id || skill.name || skill.skill_id);
   for (const action of latest?.actions || []) if (action.kind === 'skill_loaded') loaded.add(action.skill_id || action.skill?.id || action.skill?.name);
   for (const call of latest?.tool_calls || []) if (call.name === 'load_skill' && call.result?.status === 'ok') loaded.add(call.arguments?.name || call.arguments?.skill_id || call.result?.skill?.id || call.result?.skill?.name);
-  if (!state.skills.length) ui['skills-content'].append(element('div', 'panel-empty', '目前没有可用技能。'));
-  for (const skill of state.skills) {
+  if (!state.components.length) ui['components-content'].append(element('div', 'panel-empty', '目前没有可用系统组件。'));
+  for (const skill of state.components) {
     const card = element('details', 'skill-card'); const summary = element('summary');
-    const title = skill.name || skill.id || '厨房技能';
+    const title = skill.name || skill.id || '系统组件';
     const isLoaded = loaded.has(skill.id) || loaded.has(skill.name) || Boolean(skill.loaded);
-    summary.append(element('strong', '', title), element('span', 'ui-badge muted', isLoaded ? '本轮已加载' : skill.enabled === false ? '已禁用' : '可用'));
+    summary.append(element('strong', '', title), element('span', 'ui-badge muted', skill.enabled === false ? '已关闭' : isLoaded ? '本轮指南已读取' : '已启用'));
     card.append(summary, element('p', '', skill.description || '暂无说明'));
     const details = [skill.scope ? `来源：${skill.scope}` : '', skill.version ? `版本：${skill.version}` : '', skill.digest ? `内容版本：${skill.digest.slice(0, 12)}` : ''].filter(Boolean);
     if (details.length) card.append(element('p', 'ui-hint', details.join(' · ')));
-    const loadedCall = latest?.tool_calls?.find((call) => call.name === 'load_skill' && call.arguments?.name === title && call.result?.status === 'ok');
+    const loadedCall = latest?.tool_calls?.find((call) => call.name === 'load_skill' && call.arguments?.name === skill.id && call.result?.status === 'ok');
     const content = skill.body || skill.content || loadedCall?.result?.content;
     if (content) card.append(element('pre', '', content));
-    ui['skills-content'].append(card);
+    ui['components-content'].append(card);
   }
 }
 
@@ -1367,7 +1379,7 @@ ui['toggle-details'].addEventListener('click', () => setDetails(!state.detailOpe
 $('close-details').addEventListener('click', () => { setDetails(false); ui['toggle-details'].focus(); });
 ui['status-button'].addEventListener('click', () => { setDetails(true); setTab('query'); });
 ui['workspace-context'].addEventListener('click', () => { setDetails(true); setTab('workspace'); });
-const panelTabs = ['workspace', 'query', 'recipe', 'skills'];
+const panelTabs = ['workspace', 'query', 'recipe', 'components'];
 for (const name of panelTabs) {
   ui[`${name}-tab`].addEventListener('click', () => setTab(name));
   ui[`${name}-tab`].addEventListener('keydown', (event) => {
@@ -1402,7 +1414,7 @@ async function initialize() {
   const epoch = state.selectionEpoch;
   workspace.renderInto(ui['workspace-content']);
   setTab('workspace'); renderRecipeEmpty(); renderConversation(); backdrop();
-  const results = await Promise.allSettled([loadStatus(), loadSessions(), loadSkills()]);
+  const results = await Promise.allSettled([loadStatus(), loadSessions(), loadComponents()]);
   if (results[1].status === 'rejected') toast('会话列表暂时无法读取，请刷新页面重试。');
   const initial = state.sessions.find(session=>session.id===storedSession()) || state.sessions[0];
   if (initial && epoch === state.selectionEpoch && !state.creating && !state.currentId) await openSession(initial.id);
@@ -1417,7 +1429,13 @@ const shell=initShell({onSettingsClose:()=>{
   refreshDisplayPreferences();loadStatus();
   if(state.currentId)workspace.load(state.currentId).catch(()=>{});
 }});
-const centers=new KitchenCenters({api,onReturn:()=>shell.setPage('chat'),onNavigate:page=>shell.setPage(page),onChat:text=>{
+const centers=new KitchenCenters({api,onReturn:()=>shell.setPage('chat'),onNavigate:page=>shell.setPage(page),onRecord:()=>{
+  if(state.creating || state.preparing){toast('这轮正在准备，请稍后再记录。');return;}
+  if(!shell.setPage('chat'))return;const prompt='帮我记录这顿饭：识别我接下来提供的照片或文字，整理我自己吃的份量和营养；估算请写清假设，留待我核对后保存。';
+  const existing=ui['composer-input'].value.trim();fillComposer(existing?`${existing}\n${prompt}`:prompt);
+  if(state.status?.supports_images && !ui['attach-image'].disabled)ui['image-input'].click();
+  else if(busy() || pendingQuestion())toast('记餐草稿已保留，等本轮结束或回答当前问题后再添加照片。');
+},onChat:text=>{
   if(shell.setPage('chat'))return sendMessage(text,false,null,{fromComposer:false});
 }});
 window.addEventListener('chefmate:page-change',event=>{centers.show(event.detail.page);setDetails(false);renderConversation();});

@@ -14,13 +14,13 @@ export function snapshotStatus(snapshot={}) {
     active_recipe_name:recipes.find(recipe=>recipe.recipe_id===snapshot.active_recipe_id)?.name,
     choosing:snapshot.components?.some(view=>['preference_form','recipe_choices','recipe_detail'].includes(view.kind))};
 }
-export const TOOL_NAMES = Object.freeze({find_ingredients:'识别食材',search_recipes:'筛选菜谱',get_recipe:'读取菜谱',
+export const TOOL_NAMES = Object.freeze({create_food_log_draft:'整理饮食记录',search_food_logs:'查看个人饮食',get_food_log:'读取饮食草稿',revise_food_log_draft:'调整饮食草稿',find_ingredients:'识别食材',search_recipes:'筛选菜谱',get_recipe:'读取菜谱',
   get_search_options:'核对查询条件',show_preference_form:'整理用餐条件',show_recipe_choices:'整理菜品选择',
   show_recipe_details:'展示菜品详情',set_meal_plan:'安排餐单',show_meal_plan:'核对餐单',show_shopping_list:'整理备菜清单',
   show_prep_checklist:'整理备菜清单',show_cooking_guide:'整理烹饪步骤',set_cooking_timer:'设置计时',show_timers:'查看计时',
   get_cooking_workspace:'核对当前进度',advance_cooking_stage:'更新会话阶段',update_cooking_guidance:'调整当前做法',
   request_recipe_deletion:'确认删除个人菜谱',confirm_recipe_deletion:'处理菜谱删除确认',
-  update_preferences:'保存用餐条件',select_recipes:'更新菜品选择',update_prep_items:'确认备菜状态',ask_user:'向你确认细节',load_skill:'加载厨房技能',list_skills:'查看厨房技能'});
+  update_preferences:'保存用餐条件',select_recipes:'更新菜品选择',update_prep_items:'确认备菜状态',ask_user:'向你确认细节',load_skill:'读取组件指南',list_skills:'查看组件指南'});
 export function viewChoices(views, stage) {
   const preferred = {idea:'preference_form',planning:'meal_plan',shopping:'prep_checklist',prep:'prep_checklist',cooking:'cooking_guide',completed:'meal_plan'}[stage];
   return views.filter(v => VIEW_LABELS[v.kind] && !(v.kind === 'recipe_choices' && ['prep','cooking','completed'].includes(stage)))

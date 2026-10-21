@@ -102,14 +102,14 @@ export class DeveloperPanel {
     const payload=this.payload,root=node('div','developer-panel');
     const heading=node('header','dev-heading');heading.append(node('div','',`智能体调试 · ${labels[payload.stage]||payload.stage||'交流'}`),this.refreshButton());root.append(heading);
     const nav=node('nav','dev-modes');nav.setAttribute('aria-label','调试内容');
-    for(const [id,label,glyph]of [['tools','工具','sliders-horizontal'],['logs','调用','list'],['skills','技能','book-open'],['context','上下文','layers']]){
+    for(const [id,label,glyph]of [['tools','工具','sliders-horizontal'],['logs','调用','list'],['components','组件','book-open'],['context','上下文','layers']]){
       const button=node('button','',label);button.type='button';button.dataset.devKey=`mode:${id}`;button.setAttribute('aria-pressed',String(this.mode===id));button.prepend(icon(glyph));
       button.addEventListener('click',()=>{this.mode=id;this.paint();});nav.append(button);
     }
     root.append(nav);
     if(this.mode==='tools')this.tools(root,payload);
     else if(this.mode==='logs')this.logs(root,payload);
-    else if(this.mode==='skills')this.skills(root,payload);
+    else if(this.mode==='components')this.components(root,payload);
     else this.context(root,payload);
     this.host.replaceChildren(root);
     for(const item of this.host.querySelectorAll('details[data-dev-key]'))if(opened.has(item.dataset.devKey))item.open=true;
@@ -151,13 +151,13 @@ export class DeveloperPanel {
     root.append(node('p','dev-note','历史公开调用记录。旧轮次没有实际请求快照。'));
     for(const log of [...(payload.logs||[])].reverse())for(const call of log.tool_calls||[])root.append(details(`${call.name} · ${call.result?.status||'已结束'}`,()=>valueView({arguments:call.arguments,result:call.result})));
   }
-  skills(root,payload){
-    root.append(node('p','dev-note','已启用技能只在系统提示中提供名称与简介，需要时才读取正文；技能指引不会增加工具权限。'));
-    for(const skill of payload.skills||[])root.append(details(skill.name,()=>valueView(skill)));
+  components(root,payload){
+    root.append(node('p','dev-note','系统组件统一绑定指南、工具、界面和依赖，开关同时控制可见性与执行权限。'));
+    for(const component of payload.components||[])root.append(details(`${component.name} · ${component.enabled?'已启用':'已关闭'}`,()=>valueView(component)));
     this.turnSelect(root,payload);
-    root.append(node('h4','','本轮技能使用'));
+    root.append(node('h4','','本轮指南读取'));
     const events=payload.capture?.skill_events||[];
-    if(!events.length)root.append(paragraph('本轮没有读取技能正文的记录。'));
+    if(!events.length)root.append(paragraph('本轮没有读取指南正文。'));
     events.forEach(event=>root.append(details(`${event.name} · ${event.status}`,()=>valueView(event))));
   }
   context(root,payload){
@@ -170,7 +170,7 @@ export class DeveloperPanel {
         const body=node('div','dev-request');
         body.append(details('系统提示词',()=>paragraph(request.system||'')));
         if(request.parameter_integrity)body.append(details('工具参数完整性',()=>valueView(request.parameter_integrity)));
-        if(request.skills?.length)body.append(details('本次系统提示中的技能目录',()=>valueView(request.skills)));
+        if(request.skills?.length)body.append(details('本次系统提示中的组件指南',()=>valueView(request.skills)));
         if(request.native_images_count)body.append(node('p','dev-constraint',`实际发送 ${request.native_images_count} 张图片 · 不记录图片字节`));
         (request.messages||[]).forEach((message,messageIndex)=>body.append(messageView(message,messageIndex)));
         body.append(details(`本次绑定的 ${request.tools?.length||0} 项工具`,()=>valueView((request.tools||[]).map(tool=>({name:tool.name||tool.function?.name,description:tool.description||tool.function?.description})))));

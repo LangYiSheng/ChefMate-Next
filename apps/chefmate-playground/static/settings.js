@@ -5,6 +5,7 @@ import { TimerSound, readKitchenPreferences, saveKitchenPreferences } from './ti
 import { icon } from './icons.js';
 import {navigationIndex, navigationEdges, revealNavigationItem} from './settings-navigation.js';
 import {enhanceControl} from './form-controls.js';
+import {SettingsInsights} from './settings-insights.js';
 const reminderSound = new TimerSound();
 applyBranding();
 const embedded = window.parent !== window && new URLSearchParams(location.search).get('embedded') === '1';
@@ -15,27 +16,19 @@ function notifyParent(type) { if (embedded) window.parent.postMessage({ type }, 
 const $ = (id) => document.getElementById(id);
 const names = {
   model: ["模型连接", "选择模型、端点和连接方式。保存后用于接下来的对话。"],
-  display: ["界面显示", "把注意力留给菜谱和下一步。"],
+  display: ["外观与对话", "按你的习惯使用小锅搭子。"],
   interaction: ["对话建议", "让下一步更好开口，也保留你自己的表达。"],
   cooking: ["烹饪与计时", "让计时和步骤切换更符合你的做饭习惯。"],
   memory: ["长期记忆", "留下口味、忌口和做饭习惯，让每一次建议更懂你。"],
   developer: ["开发者", "按需查看公开执行记录、工具参数和模型实际用量。"],
-  skills: ["厨房技能", "让助手按需使用你启用的厨房知识。"],
+  components: ["系统组件", "统一管理指南、工具和交互界面。"],
+  usage: ['Token 用量','查看模型服务已报告的使用量。'],
+  about: ['关于 ChefMate',''],
   runtime: ["执行设置", "设置一次任务的等待时间和操作上限。"],
   context: ["上下文预算", "给查询结果和连续对话留出足够空间。"],
   data: ["数据与状态", "查看当前菜谱库和本地工作台状态。"],
 };
-const skillLabels = {
-  "meal-planning": ["选菜与餐单", "按食材、时间和人数安排这一餐。"],
-  "pantry-preparation": [
-    "备菜与准备",
-    "核对已有和缺少的食材，逐项确认准备情况。",
-  ],
-  "cooking-guide": ["烹饪引导", "跟随原始步骤、确认完成情况和管理计时。"],
-  'recipe-authoring': ['菜谱创作','把文字或截图整理成可复用的私房菜谱，确认后再保存。'],
-  'personal-memory': ['长期记忆','读取你的口味与忌口，整理长期习惯，并按需查找历史对话和做菜记录。'],
-};
-let current = "model",
+let current = "display",
   loaded = null,
   status = null,
   busy = false,
@@ -48,6 +41,7 @@ const selectedTabs = new Map();
 let memoryHost = null;
 let memorySaving = false;
 let closeWaitMessage = '';
+let insights = null;
 window.addEventListener('chefmate:memory-busy', event => {
   memorySaving = event.detail?.busy === true;
   updateFooter();
@@ -58,8 +52,13 @@ window.addEventListener('chefmate:memory-dirty', event => {
   updateFooter();
 });
 const navigation = document.querySelector('.settings-nav');
+const advancedNavigation=navigation.querySelector('.settings-advanced');
+const advancedButtons=[...advancedNavigation.querySelectorAll('[data-section]')];
 function updateNavigation(ensureCurrent=false) {
   const horizontal=window.matchMedia('(max-width:760px)').matches;
+  for(const button of advancedButtons){if(horizontal && button.parentElement!==navigation)navigation.insertBefore(button,advancedNavigation);else if(!horizontal && button.parentElement!==advancedNavigation)advancedNavigation.append(button);}
+  advancedNavigation.hidden=horizontal;
+  if(!horizontal && advancedButtons.some(button=>button.dataset.section===current))advancedNavigation.open=true;
   const edges=horizontal?navigationEdges(navigation.scrollLeft,navigation.clientWidth,navigation.scrollWidth):{left:false,right:false};
   navigation.dataset.overflowLeft=String(edges.left);navigation.dataset.overflowRight=String(edges.right);
   if(!ensureCurrent || !horizontal)return;
@@ -110,10 +109,11 @@ function updateFooter() {
     if ($("settings-message").textContent === closeWaitMessage) message('');
     closeWaitMessage = '';
   }
-  const readOnly = ['data','memory'].includes(current);
+  const readOnly = ['data','memory','usage','about'].includes(current);
   document.querySelector('.settings-footer').hidden = current === 'memory';
   $("save-settings").hidden = readOnly;
   $("reload-settings").hidden = current === 'memory';
+  $("reload-settings").textContent = ['usage','about'].includes(current)?'刷新':'重新读取';
   $("reload-settings").disabled = busy || testing;
   $("save-settings").disabled =
     !loaded || !dirty.has(current) || busy || testing;
@@ -123,7 +123,7 @@ function updateFooter() {
       ? busyMessage
       : dirty.has(current)
         ? "当前页有未保存修改"
-        : "设置已同步";
+        : current==='usage'?'按服务端报告统计':current==='about'?'ChefMate 本地工作台':"设置已同步";
   if ($("test-model")) $("test-model").disabled = busy || testing;
   const fieldsLocked = busy || testing || current === 'memory' && memorySaving;
   for (const input of $("settings-form").querySelectorAll('input, select, textarea')) {
@@ -257,6 +257,7 @@ function field(
   return input;
 }
 function render() {
+  insights?.dispose();insights=null;
   document.querySelector('.settings-content').scrollTop = 0;
   $("section-title").textContent = names[current][0];
   $("section-description").textContent = names[current][1];
@@ -273,13 +274,12 @@ function render() {
     field("模型名称", "model");
     field("API Key", "api_key", {
       type: "password",
-      hint: "密钥仅保存在本机，不回显，也不写进聊天记录。",
+      hint: "留空沿用同一端点的已保存密钥。",
     });
     heading("连接方式");
-    field("支持图片输入", "supports_images", {type:"checkbox",note:"模型能看图片时开启；聊天输入框会出现上传图片入口。",hint:"照片会自动压缩，可发送食材、包装标签或做菜现场。不支持图片的模型请关闭。"});
+    field("支持图片输入", "supports_images", {type:"checkbox",note:"按模型实际能力开启，用于识图与拍照记餐。"});
     field("同时接收的图片上限", "max_images", {type:"number", min:1, max:12,
-      note:"按模型实际支持的数量设置，默认 3 张。",
-      hint:"每次请求共 1–12 张，包含历史图片。超出时会移除最早的完整历史轮次，聊天记录仍保留。"});
+      hint:"1–12 张，包含当前请求保留的历史图片。"});
     field("请求协议", "api_format", {
       options: [
         ["chat_completions", "OpenAI · Chat Completions"],
@@ -308,8 +308,7 @@ function render() {
   } else if (current === "cooking") {
     heading("烹饪计时");
     field('到时声音提醒', 'timer_sound', {type:'checkbox',
-      note:'默认开启。计时结束时播放三声轻提示。',
-      hint:'声音跟随设备音量；这个开关保存在当前浏览器。页面关闭后无法提醒。'});
+      note:'页面打开时播放提示音，音量跟随设备。'});
     const preview = node('button','secondary-button','试听提醒声'); preview.type = 'button';
     preview.addEventListener('click', async () => {
       const played = await reminderSound.play({preview:true});
@@ -317,14 +316,12 @@ function render() {
     });
     $("settings-form").append(preview);
     field("同时进行的计时器", "timer_limit", {type:"number",options:[[1,"单计时器"],[3,"最多 3 个"]],
-      note:"运行和暂停中的计时器计入上限。",
-      hint:"达到上限时，先结束已有计时再开始新的计时。调低上限会保留当前计时。"});
+      hint:"运行和暂停计入上限；已有计时会保留。"});
     field("切换步骤时清除上一步计时", "clear_timer_on_step_change", {type:"checkbox",
-      note:"默认关闭，计时可跨步骤继续。",
-      hint:"进入另一实际步骤或切换菜品时，清除离开步骤的计时；仅浏览步骤不会清除。"});
+      note:"仅在进入下一实际步骤时清除，浏览步骤不影响计时。"});
   } else if (current === "developer") {
     heading("调试信息");
-    field("开发者模式", "enabled", { type: "checkbox", note: "默认关闭。在右侧调试面板查看可用工具、调用记录、技能与实际上下文。" });
+    field("开发者模式", "enabled", { type: "checkbox", note: "显示上下文占用、系统组件、工具和脱敏请求记录。" });
     field("记录展示方式", "trace_mode", {
       options: [
         ["compact", "收起记录 · 按需展开"],
@@ -332,52 +329,48 @@ function render() {
       ],
       note: "只展示公开操作与工具状态。",
     });
-    $("settings-form").append(node("p", "settings-note", "用量来自模型服务实际返回，未返回时显示“未报告”。上下文调试保留最近20轮的脱敏实际请求；图片只留元数据，不展示内部推理。这个开关控制当前浏览器中的展示。"));
+    $("settings-form").append(node("p", "settings-note", "上下文按实际请求分类统计，Token分解为估算；实际用量以服务端报告为准。"));
   } else if (current === "display") {
     heading('外观主题');
     field('主题', 'theme', {options:[['system','跟随系统'],['light','浅色'],['dark','深色']],
-      note:'聊天、做菜和设置使用同一套外观。',hint:'跟随系统会随设备的深色模式自动切换。'});
+      hint:'聊天、做菜和设置同步切换。'});
     heading("核心内容");
     field("每次回复展开几项内容", "inline_limit", {
       options: [
         [1, "只展开一项，例如食材清单"],
         [2, "最多两项，例如餐单和食材清单"],
       ],
-      note: "控制聊天中展开的交互内容；更多内容仍可在工作区打开。",
-      hint: "助手决定展示哪些内容，这里只控制同时展开的数量，不限制查询数量或工具调用。",
+      hint: "更多内容仍可在工作区打开。",
     });
     field("内容间距", "density", {
       options: [
         ["comfortable", "宽松 · 内容之间留白更多"],
         ["compact", "紧凑 · 同一屏显示更多内容"],
       ],
-      hint:"只改变间距，不会省略食材、步骤或改变模型回答。全屏做菜模式会自动使用更大的文字。",
+      hint:"仅调整留白，做菜模式自动放大文字。",
     });
-    $("settings-form").append(
-      node(
-        "p",
-        "settings-note",
-        "表单、选菜和清单可以在聊天中操作。补充资料放在工作区，已有内容随任务更新。",
-      ),
-    );
+    heading('对话建议');field('显示推荐回复','reply_suggestions',{type:'checkbox',note:'回复后提供接话思路，点击后仍可修改再发送。'});
   } else if (current === 'memory') {
     const initialize = !memoryHost;
     memoryHost ||= node('section','memory-settings'); memoryHost.id = 'memory-settings';
     $("settings-form").append(memoryHost);
     if (initialize) window.dispatchEvent(new CustomEvent('chefmate:memory-settings',{detail:{container:memoryHost}}));
-  } else if (current === "skills") {
-    heading("启用的技能");
-    for (const name of loaded.available_skills || []) {
-      const [label, note] = skillLabels[name] || [name, '启用对应技能指引与工具。'];
-      field(label, name, { type: "checkbox", note });
+  } else if (current === "components") {
+    heading("已安装组件");
+    for (const component of loaded.components || []) {
+      const name=component.id;field(component.name,name,{type:'checkbox',note:component.description});
+      const details=node('details','settings-component-details'),summary=node('summary','',`${component.tools?.length || 0} 项工具 · 查看组成`);details.append(summary);
+      details.append(node('p','settings-note',`指南按需加载 · ${component.ui?.pages?.length?'含独立页面入口':'在对话内使用'}`));$('settings-form').append(details);
     }
     $("settings-form").append(
       node(
         "p",
         "settings-note",
-        "关闭技能后，助手也无法调用它绑定的工具。启用技能后，助手会按需读取指引。",
+        "开关同时控制组件的指南与工具权限，已有记录会保留。",
       ),
     );
+  } else if (['usage','about'].includes(current)) {
+    const host=node('section','settings-insights');$('settings-form').append(host);insights=new SettingsInsights({host,api});insights.show(current);
   } else if (current === "context") {
     heading("信息容量");
     field("会话上下文上限", "max_history_chars", {
@@ -440,7 +433,7 @@ function render() {
       node(
         "p",
         "settings-note",
-        "会话、厨房进度和计时器随当前任务保存。模型与技能设置保存在本机，界面显示偏好只作用于这个浏览器。",
+        "会话、厨房进度和计时器随当前任务保存。模型与组件设置保存在本机，界面显示偏好只作用于这个浏览器。",
       ),
     );
   }
@@ -458,18 +451,18 @@ async function load() {
     ]);
     loaded = result[0];
     status = result[1];
-    for (const section of ["model", "skills", "runtime", "context", "interaction", "cooking", "display", "developer"])
+    for (const section of ["model", "components", "runtime", "context", "interaction", "cooking", "display", "developer"])
       if (!dirty.has(section)) {
         draftRevisions.set(section,loaded.revision);
         drafts.set(
           section,
           section === "model"
             ? { ...loaded.model, api_key: "" }
-            : section === "skills"
+            : section === "components"
               ? Object.fromEntries(
-                  loaded.available_skills.map((name) => [
+                  loaded.available_components.map((name) => [
                     name,
-                    loaded.enabled_skills.includes(name),
+                    loaded.enabled_components.includes(name),
                   ]),
                 )
               : section === "runtime"
@@ -480,7 +473,7 @@ async function load() {
                 : section === "cooking" ? {timer_limit:loaded.cooking?.timer_limit===1?1:3,
                     clear_timer_on_step_change:loaded.cooking?.clear_timer_on_step_change===true,
                     ...readKitchenPreferences()}
-                : section === "developer" ? readDeveloper() : readDisplay(),
+                : section === "developer" ? readDeveloper() : {...readDisplay(),reply_suggestions:loaded.interaction?.reply_suggestions!==false},
         );
       }
     render();
@@ -505,14 +498,19 @@ async function save() {
     if (section === "developer") {
       localStorage.setItem("chefmate:developer-settings", JSON.stringify(values));
     } else if (section === "display") {
+      if(values.reply_suggestions!==loaded.interaction?.reply_suggestions){
+        const revision=draftRevisions.get(section);loaded=await api('/api/settings',{method:'PATCH',body:JSON.stringify({revision,section:'interaction',values:{reply_suggestions:values.reply_suggestions}})});
+        for(const [name,baseline] of draftRevisions)if(baseline===revision)draftRevisions.set(name,loaded.revision);
+      }
+      delete values.reply_suggestions;
       values.inline_limit = Number(values.inline_limit);
       localStorage.setItem("chefmate:ui-settings", JSON.stringify(values));
       applyBranding(); applyAppearance(values.theme);
     } else {
       const payload =
-        section === "skills"
+        section === "components"
           ? {
-              enabled_skills: Object.keys(values).filter(
+              enabled_components: Object.keys(values).filter(
                 (name) => values[name],
               ),
             }
@@ -627,6 +625,7 @@ $("accept-confirm").addEventListener("click",()=>{
   $("settings-confirm").close();action?.();
 });
 $("reload-settings").addEventListener("click", () => {
+  if(insights && ['usage','about'].includes(current)){insights.show(current);return;}
   const section=current;
   const reload=()=>{
     dirty.delete(section);
