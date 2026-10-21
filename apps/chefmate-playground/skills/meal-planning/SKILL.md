@@ -9,6 +9,8 @@ description: 根据已同步的食材、厨具、时间和人数安排真实菜�
 
 调用 search_recipes 时保留当前硬条件、真实选项和来源快照。不因为找不到菜而偷偷放宽条件。取得结果后调用 show_recipe_choices 展示最多6个真实ID，编号沿用查询顺序。不要自己拼菜谱内容或任意页面控件。
 
+用户明确指定菜名时，优先按name定位，不把普通历史口味偏好额外升级成筛选条件；本餐明确的忌口、过敏和硬条件仍须保留。枚举值来自get_search_options，不能直接把中文厨具名当工具ID。available_tools表示完整可用厨具集合：只知道“家里只有电磁炉”这一热源，不代表没有锅，也不能只传["stove"]把需要锅的菜全部排除。未取得完整厨具清单时省略此筛选，先读取指定菜谱真实required_tools；遇到确实影响执行的厨具冲突再询问，不通过反复换食材或菜名绕圈。
+
 用户选择或明确请你安排以后，用select_recipes配合最新expected_revision建立餐单。ID及data_snapshot来自最近真实检索或当前已登记候选，不要求先展示候选；成功后自动进入planning并展示餐单，不重复调用展示工具。已存在的备菜与步骤不能因重复确认餐单而被重置。表单里的食材只是需求，展示候选不等于替用户确认。
 
 current_actions、allowed_transitions及blockers来自服务器。业务修改与展示操作分开调用，先等结果再取新版本；纯展示只改变presentation_revision，任务revision用于业务写入。进入prep准备食材、进入cooking开始做菜均按用户明确意图与服务器门槛执行，不靠阶段名字猜权限。

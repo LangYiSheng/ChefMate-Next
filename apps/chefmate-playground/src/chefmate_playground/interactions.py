@@ -47,24 +47,41 @@ def approved_recipes(messages: list[dict]) -> list[dict]:
 
 
 class WorkspaceBinding:
-    def __init__(self, repository: SessionRepository, retrieval, *, cooking_settings=None, journal=None):
+    def __init__(self, repository: SessionRepository, retrieval, *, cooking_settings=None, journal=None, intake_enabled=lambda: True):
         self.repository = repository
         self.retrieval = retrieval
         self.cooking_settings = cooking_settings
         self.journal = journal
+        self.intake_enabled = intake_enabled
 
-    def record_journal(self, session_id):
+    def record_journal(self, session_id, *, register_intake=False):
         if self.journal is not None:
             state = self.repository.get(session_id)
             if state:
                 try:
-                    self.journal.sync_session(state)
+                    self.journal.sync_session(state, register_intake=register_intake and self.intake_enabled())
                 except (sqlite3.Error, OSError, ValueError):
                     # The workflow has already committed. A journal outage must not
                     # turn a saved action into a reported failure or break SSE done.
                     logger.warning("Cooking journal synchronization pending for session %s", session_id)
                     return False
         return True
+
+    def intake_status(self, session_id):
+        if self.journal is None:
+            return {"status": "unavailable", "record": None, "message": "营养记录服务尚未连接。"}
+        if not self.intake_enabled():
+            return {"status": "ok", "intake_status": "disabled", "record": None,
+                    "message": "饮食记录组件已关闭，本次仅保留制作历史，没有自动登记个人营养。"}
+        from .cooked_intake import entry_identity
+        state = self.repository.get(session_id) or {}
+        workspace = state.get("workspace") or {}
+        if not workspace.get("meal_id") or workspace.get("stage") != "completed":
+            return {"status": "meal_not_completed", "record": None}
+        try:
+            return self.journal.cooked_intake.get(entry_identity(session_id, workspace["meal_id"]))
+        except (sqlite3.Error, OSError, ValueError):
+            return {"status": "sync_pending", "record": None, "message": "本次制作已完成，营养同步待重试，尚不能声称已登记个人营养。"}
 
     def service(self, session_id: str) -> WorkflowService:
         def get_state():
@@ -140,10 +157,13 @@ class ScopedWorkspace:
             result.update(status="revision_conflict", message="用户刚修改了界面，请先读取最新工作区，不要覆盖已确认操作。")
         except TurnClosed:
             return {"status": "turn_closed", "message": "本轮已停止，没有继续修改任务。"}
-        self.binding.record_journal(self.session_id)
+        completed = name == "advance_cooking_stage" and request.get("stage") == "completed" and result.get("status") == "ok"
+        self.binding.record_journal(self.session_id, register_intake=completed)
+        if completed:
+            result["cooking_intake"] = self.binding.intake_status(self.session_id)
         # Full views belong to HTTP/UI. Model history receives only this tool's presentation and compact snapshot.
         return {key: copy.deepcopy(value) for key, value in result.items()
-                if key in {"status", "message", "errors", "recovery", "actions", "ui_snapshot", "pending_question"}}
+                if key in {"status", "message", "errors", "recovery", "actions", "ui_snapshot", "pending_question", "cooking_intake"}}
 
 
 def make_tool_specs():

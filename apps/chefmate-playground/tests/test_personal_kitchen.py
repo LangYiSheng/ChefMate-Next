@@ -130,7 +130,7 @@ def test_journal_io_failure_cannot_hide_persisted_answer_or_done_event(tmp_path,
         binding = WorkspaceBinding(repository, Source(), journal=journal)
         manager = TurnManager(repository, Agent(), binding)
         session_id = repository.create()["id"]
-        def unavailable(state):
+        def unavailable(state, *, register_intake=False):
             raise sqlite3.OperationalError("temporary journal write failure")
         monkeypatch.setattr(journal, "sync_session", unavailable)
         turn, _ = await manager.begin(session_id, "这顿饭完成啦")

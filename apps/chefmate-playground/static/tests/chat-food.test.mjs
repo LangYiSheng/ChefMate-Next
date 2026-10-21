@@ -32,6 +32,18 @@ test('duplicate create/read/revise receipts show the latest record once and resp
   const root=chat.render({tool_calls:calls},{sessionId:'chat-one',recordOwners:owners,index:2});assert.equal(root.children.length,1);
 });
 
+test('cooked meal receipts share the actual saved intake card without offering draft confirmation',t=>{
+  const saved=record({status:'saved',revision:2});
+  const calls=[{name:'get_cooked_meal_intake',result:{status:'ok',intake_status:'awaiting_portions',record:null}},
+    {name:'record_cooked_meal_intake',result:{status:'ok',intake_status:'saved',record:saved}},
+    {name:'get_cooked_meal_intake',result:{status:'ok',intake_status:'saved',record:saved}}];
+  assert.deepEqual(foodPresentations(calls).records,[saved]);
+  const {chat}=install(t,async()=>{throw new Error('unexpected request');});
+  const root=chat.render({tool_calls:calls},{sessionId:'chat-one'});
+  assert.equal(root.children.length,1);assert.match(root.textContent,/已计入个人饮食/);
+  assert.equal(findButton(root,'确认记录'),undefined);
+});
+
 test('double confirmation sends one CAS publication and changes the actual card to saved',async t=>{
   const response=deferred(),requests=[];const {render,chat}=install(t,async(path,options)=>{requests.push([path,JSON.parse(options.body)]);return response.promise;});
   const root=render(),confirm=findButton(root,'确认记录'),first=confirm.onclick(),second=confirm.onclick();await second;

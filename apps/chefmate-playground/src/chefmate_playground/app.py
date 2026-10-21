@@ -79,7 +79,8 @@ def create_app(config: PlaygroundConfig | None = None, *, service=None, agent=No
     if service is not None:
         service = PersonalRecipeRetrieval(service, cookbook)
     workspace_binding = WorkspaceBinding(repo, service, cooking_settings=lambda: {
-        key: getattr(settings, key) for key in CookingSettings.model_fields}, journal=journal) if service is not None else None
+        key: getattr(settings, key) for key in CookingSettings.model_fields}, journal=journal,
+        intake_enabled=lambda: "food-journal" in settings.enabled_components) if service is not None else None
     component_registry = None
     try:
         configured_agent, component_registry = build_agent(settings, service, memory=memory, cookbook=cookbook, journal=journal)
@@ -583,7 +584,10 @@ def create_app(config: PlaygroundConfig | None = None, *, service=None, agent=No
         # Keep partial-form field presence; Pydantic defaults must not overwrite untouched values.
         try:
             result = await asyncio.to_thread(workspace_binding.service(session_id).apply_action, body)
-            await asyncio.to_thread(workspace_binding.record_journal, session_id)
+            completed = body.root.type == "complete_meal" and result.get("status") == "ok"
+            await asyncio.to_thread(workspace_binding.record_journal, session_id, register_intake=completed)
+            if completed:
+                result["cooking_intake"] = await asyncio.to_thread(workspace_binding.intake_status, session_id)
             return result
         except ValueError:
             raise HTTPException(422, "这项界面操作无法执行，请检查输入。") from None

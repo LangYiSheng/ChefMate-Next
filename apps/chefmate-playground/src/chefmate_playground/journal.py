@@ -68,13 +68,15 @@ class JournalRepository:
                                "snapshot TEXT NOT NULL, rating INTEGER, notes TEXT NOT NULL DEFAULT '', "
                                "UNIQUE(session_id,meal_id))")
             connection.execute("CREATE INDEX IF NOT EXISTS food_journal_day ON food_journal(day)")
+        from .cooked_intake import CookedMealIntakeRepository
+        self.cooked_intake = CookedMealIntakeRepository(self.food_logs)
 
     def _connect(self):
         connection = sqlite3.connect(self.path, timeout=10)
         connection.row_factory = sqlite3.Row
         return connection
 
-    def sync_session(self, state: dict) -> bool:
+    def sync_session(self, state: dict, *, register_intake=False) -> bool:
         """Record only observed starts/completions after the session transaction commits.
 
         The first completion freezes final recipe and nutrition evidence. Repeated reads,
@@ -99,7 +101,12 @@ class JournalRepository:
                 "WHERE food_journal.status='attempted' AND excluded.status='completed'",
                 (identity, session_id, snapshot["meal_id"], day, snapshot["started_at"], snapshot["completed_at"],
                  snapshot["status"], encoded))
-            return cursor.rowcount > 0
+            changed = cursor.rowcount > 0
+        # Only the actual completion command opts in. Listing history must not
+        # silently register previously cooked shared meals as personal intake.
+        if register_intake and snapshot["status"] == "completed":
+            self.cooked_intake.completed(identity)
+        return changed
 
     @staticmethod
     def _entry(row):

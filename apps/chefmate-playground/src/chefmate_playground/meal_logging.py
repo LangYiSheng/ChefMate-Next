@@ -271,7 +271,7 @@ class FoodLogRepository:
                 return record
             if type(revision) is not int or record["status"] not in {"draft", "saved"} or record["revision"] != revision:
                 raise ValueError("饮食记录版本已变化，请刷新后核对")
-            body = {key: record[key] for key in ("document", "nutrition", "source_image_ids")}
+            body = {key: record[key] for key in ("document", "nutrition", "source_image_ids", "cooked_source") if key in record}
             body["deleted_from"] = record["status"]
             db.execute("UPDATE personal_food_logs SET status='deleted',revision=revision+1,updated_at=?,body=? WHERE id=?",
                        (self._now().isoformat(), _encoded(body), identity))
@@ -285,7 +285,7 @@ class FoodLogRepository:
                 raise KeyError(identity)
             if type(revision) is not int or record["status"] != "deleted" or record["revision"] != revision:
                 raise ValueError("饮食记录版本已变化，请刷新后核对")
-            body = {key: record[key] for key in ("document", "nutrition", "source_image_ids")}
+            body = {key: record[key] for key in ("document", "nutrition", "source_image_ids", "cooked_source") if key in record}
             db.execute("UPDATE personal_food_logs SET status=?,revision=revision+1,updated_at=?,body=? WHERE id=?",
                        (record["deleted_from"], self._now().isoformat(), _encoded(body), identity))
         return self.get(identity)
@@ -467,6 +467,7 @@ def _turn_guard(host):
 
 def make_meal_logging_tools(journal):
     from chefmate_agent import InjectedToolSpec
+    from .cooked_intake import make_cooked_intake_tools
 
     def create(values, context):
         host = context.host_context
@@ -597,7 +598,7 @@ def make_meal_logging_tools(journal):
                 "message": "当前聊天组件会展示营养汇总与饮食列表。只有saved计入个人摄入，draft仍待用户核对；每条最多摘要4种食物，详情可用get_food_log读取。"
                            "汇总覆盖所选日期范围，制作量和个人摄入分开保存。"}
 
-    return [InjectedToolSpec("create_food_log_draft", CHAT_COMPONENT_PRESENTATION + "把用户本轮的饭菜照片或文字整理为个人饮食草稿，用户明确确认后才计入统计。"
+    return [*make_cooked_intake_tools(journal), InjectedToolSpec("create_food_log_draft", CHAT_COMPONENT_PRESENTATION + "把用户本轮的饭菜照片或文字整理为个人饮食草稿，用户明确确认后才计入统计。"
                 "每项营养是用户自己吃的这一份的总量；份量未知时克重和营养留null。视觉/描述估算必须标estimated并写assumptions，不能说精确识别。"
                 "source_kind=image仅可用本轮真实图片。date不确定留null按今天；历史日期需引用本轮date_evidence。不能把多人制作量当个人摄入。",
                 FoodLogDraftRequest, create, effect="write", required_skill="food-journal", side_effects=("保存待用户核对的个人饮食草稿",)),

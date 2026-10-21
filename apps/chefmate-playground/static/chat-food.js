@@ -1,6 +1,6 @@
 import {node} from './ui-components.js';
 import {intakeMetric} from './nutrition-dashboard.js';
-const foodTools=new Set(['create_food_log_draft','revise_food_log_draft','get_food_log','confirm_food_log']);
+const foodTools=new Set(['create_food_log_draft','revise_food_log_draft','get_food_log','confirm_food_log','get_cooked_meal_intake','record_cooked_meal_intake']);
 const macros=[['calories_kcal','热量','kcal'],['protein_g','蛋白质','g'],['fat_g','脂肪','g'],['carbohydrate_g','碳水','g']];
 const meals={breakfast:'早餐',lunch:'午餐',dinner:'晚餐',snack:'加餐',unspecified:'饮食记录'};
 const value=number=>Number.isFinite(number)?String(Math.round(number*10)/10):'—';

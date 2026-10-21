@@ -45,7 +45,8 @@ COMPONENTS = (
                   ("read_long_term_memory", "maintain_memory_summary", "search_personal_history"),
                   pages=("memory",), factories=("memory",), dependencies=("memory",)),
     ComponentSpec("food-journal", "饮食记录", "在对话里拍照记餐、查看营养、修改份量并确认保存。",
-                  ("create_food_log_draft", "search_food_logs", "get_food_log", "revise_food_log_draft", "confirm_food_log"),
+                  ("create_food_log_draft", "search_food_logs", "get_food_log", "revise_food_log_draft", "confirm_food_log",
+                   "get_cooked_meal_intake", "record_cooked_meal_intake"),
                   ui_kinds=("food_log", "nutrition_summary"), pages=("journal",),
                   factories=("journal",), dependencies=("journal",)),
 )
