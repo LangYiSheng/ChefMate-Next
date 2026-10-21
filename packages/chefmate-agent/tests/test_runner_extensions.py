@@ -42,7 +42,8 @@ def image_ref():
 
 
 def test_images_are_native_request_blocks_and_only_metadata_is_persisted():
-    reference=image_ref();model=ScriptedModel([answer("看见了图片。")])
+    reference=image_ref()
+    model=ScriptedModel([answer("看见了图片。")])
     core=ChefMateAgent(Service(),AgentConfig(model="test",supports_images=True),model=model,request_models=REQUESTS)
     result=asyncio.run(core.run_turn([{"role":"user","content":"","images":[reference]}],
                                    image_loader=lambda ref:"data:image/jpeg;base64,/9j/test"))
@@ -61,14 +62,40 @@ def test_images_are_native_request_blocks_and_only_metadata_is_persisted():
 
 
 def test_image_history_budget_prunes_complete_old_turns():
-    core,_=make_core([])
+    core=ChefMateAgent(Service(),AgentConfig(model="test",supports_images=True,max_images=6),
+                       model=ScriptedModel([]),request_models=REQUESTS)
     source=[]
     for label in ("one","two","three"):
         source.append({"role":"user","content":label,"images":[image_ref() for _ in range(3)]})
-        if label!="three":source.append({"role":"assistant","content":"收到"})
+        if label!="three":
+            source.append({"role":"assistant","content":"收到"})
     prepared=core._prepare_history(source)
     assert prepared[0]["content"]=="two"
     assert sum(len(item.get("images",[])) for item in prepared)==6
+
+
+def test_image_limit_counts_history_and_preserves_visible_source_metadata():
+    model = ScriptedModel([answer("收到新图片。")])
+    core = ChefMateAgent(Service(), AgentConfig(model="test", supports_images=True, max_images=5),
+                        model=model, request_models=REQUESTS)
+    source = [{"role": "user", "content": "旧图片", "images": [image_ref() for _ in range(4)]},
+              {"role": "assistant", "content": "旧回答"},
+              {"role": "user", "content": "新图片", "images": [image_ref() for _ in range(4)]}]
+    result = asyncio.run(core.run_turn(source, image_loader=lambda ref: "data:image/jpeg;base64,/9j/test"))
+    assert result.status == "completed"
+    assert len(source) == 3 and len(source[0]["images"]) == 4
+    users = [message for message in model.histories[0] if isinstance(message, HumanMessage)]
+    assert len(users) == 1
+    assert sum(item.get("type") == "image_url" for item in users[0].content) == 4
+
+
+def test_image_limit_rejects_oversized_latest_turn_before_provider_request():
+    model = ScriptedModel([])
+    core = ChefMateAgent(Service(), AgentConfig(model="test", supports_images=True, max_images=1),
+                        model=model, request_models=REQUESTS)
+    result = asyncio.run(core.run_turn([{"role": "user", "content": "看图", "images": [image_ref(), image_ref()]}]))
+    assert result.error.code == "image_limit"
+    assert model.histories == []
 
 
 def test_missing_image_is_reported_before_any_provider_request():

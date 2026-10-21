@@ -35,6 +35,27 @@ def test_model_save_preserves_float_timeout_defaults_and_reloads(tmp_path):
     assert restored.model_timeout_s == 120.0
 
 
+def test_model_image_limit_applies_persists_and_rejects_invalid_values(tmp_path):
+    initial = config(tmp_path)
+    app = create_app(initial, service=Service(), agent=Agent())
+    with TestClient(app) as client:
+        before = client.get("/api/settings").json()
+        assert before["model"]["max_images"] == 3
+        values = {**before["model"], "supports_images": True, "max_images": 7}
+        saved = client.patch("/api/settings", json={"revision": before["revision"],
+                             "section": "model", "values": values})
+        assert saved.status_code == 200
+        assert saved.json()["model"]["max_images"] == 7
+        assert client.get("/api/status").json()["max_images"] == 7
+        assert app.state.manager.agent.config.max_images == 7
+        assert load_overrides(initial).max_images == 7
+        for invalid in (0, 13, 2.5, True):
+            response = client.patch("/api/settings", json={"revision": saved.json()["revision"],
+                                    "section": "model", "values": {**values, "max_images": invalid}})
+            assert response.status_code == 422
+            assert load_overrides(initial).max_images == 7
+
+
 def test_context_budget_saves_applies_and_survives_reload(tmp_path):
     initial = config(tmp_path)
     app = create_app(initial, service=Service(), agent=Agent())

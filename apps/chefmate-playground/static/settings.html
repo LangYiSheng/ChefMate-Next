@@ -5,38 +5,40 @@
     <meta name="viewport" content="width=device-width,initial-scale=1" />
     <title>设置 · ChefMate</title>
     <link rel="icon" href="/static/favicon.svg" />
+    <link rel="stylesheet" href="/static/colors.css" />
     <link rel="stylesheet" href="/static/styles.css" />
     <link rel="stylesheet" href="/static/settings.css" />
     <link rel="stylesheet" href="/static/theme.css" />
+    <link rel="stylesheet" href="/static/shell.css" />
     <script type="module" src="/static/settings.js"></script>
   </head>
   <body>
     <main class="settings-page">
       <nav class="settings-nav" aria-label="设置分类">
         <a class="settings-brand" href="/"><img class="brand-icon" data-chefmate-icon src="/static/brand/pot-c.svg" alt=""><span>ChefMate</span></a>
-        <a class="back-link" href="/">← 返回对话</a>
+        <a class="back-link" href="/"><span data-icon="arrow-left" aria-hidden="true"></span> 返回对话</a>
         <h2>个人偏好</h2>
         <button type="button" data-section="display">
-          ◐ <span>界面显示</span>
+          <span data-icon="sun-moon" aria-hidden="true"></span> <span>界面显示</span>
         </button>
         <h2>模型与能力</h2>
         <button type="button" data-section="model">
-          ◎ <span>模型连接</span>
+          <span data-icon="plug" aria-hidden="true"></span> <span>模型连接</span>
         </button>
         <button type="button" data-section="skills">
-          ✳ <span>厨房技能</span>
+          <span data-icon="chef-hat" aria-hidden="true"></span> <span>厨房技能</span>
         </button>
         <h2>运行与数据</h2>
         <button type="button" data-section="context">
-          ≋ <span>上下文预算</span>
+          <span data-icon="layers" aria-hidden="true"></span> <span>上下文预算</span>
         </button>
         <button type="button" data-section="runtime">
-          ⌘ <span>执行设置</span>
+          <span data-icon="sliders-horizontal" aria-hidden="true"></span> <span>执行设置</span>
         </button>
         <button type="button" data-section="data">
-          ◫ <span>数据与状态</span>
+          <span data-icon="database" aria-hidden="true"></span> <span>数据与状态</span>
         </button>
-        <button type="button" data-section="developer">⌁ <span>开发者</span></button>
+        <button type="button" data-section="developer"><span data-icon="code-xml" aria-hidden="true"></span> <span>开发者</span></button>
         <small>你的厨房，按你的习惯。</small>
       </nav>
       <section class="settings-workspace">
@@ -45,7 +47,7 @@
             <h1 id="section-title">模型连接</h1>
             <p id="section-description"></p>
           </div>
-          <a href="/" aria-label="返回工作台">×</a>
+          <a href="/" aria-label="返回工作台" class="icon-button" data-icon="x"></a>
         </header>
         <div class="settings-content">
           <p id="settings-message" role="status" hidden></p>

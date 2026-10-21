@@ -1,5 +1,6 @@
 import { COMPONENT_KINDS, STAGES, EXECUTION_STAGES, clockText, remainingSeconds, splitTerms } from './ui-protocol.js';
 import { pageWindow } from './presentation.js';
+import { icon } from './icons.js';
 
 export function node(tag, className, text) {
   const item = document.createElement(tag);
@@ -9,6 +10,10 @@ export function node(tag, className, text) {
 }
 function button(text, callback, disabled = false, className = 'ui-button') {
   const item = node('button', className, text); item.type = 'button'; item.disabled = disabled;
+  const glyph = ({ '上一页': 'chevron-left', '下一页': 'chevron-right', '上一步': 'chevron-left', '下一步': 'chevron-right',
+    '全屏查看': 'maximize', '查看做法': 'book-open', '暂停': 'pause', '继续': 'play', '结束计时': 'square',
+    '移除': 'trash-2', '完成这一步': 'check', '取消完成': 'undo-2' })[text];
+  if (glyph) item.prepend(icon(glyph));
   item.addEventListener('click', () => Promise.resolve(callback()).catch(error => {
     console.warn('界面操作未完成：', error?.message || '请重试。');
   })); return item;
@@ -53,9 +58,13 @@ export function renderView(view, context) {
   const card = node('section', `ui-component ui-${view.kind}`);
   card.dataset.viewId = view.id; card.dataset.viewKind = view.kind;
   const heading = node('div', 'ui-component-heading');
-  heading.append(node('h3', '', view.title || '任务内容'));
+  const title = node('h3', '', view.title || '任务内容');
+  const glyph = ({ preference_form: 'list-checks', recipe_choices: 'utensils', recipe_detail: 'book-open',
+    meal_plan: 'chef-hat', shopping_list: 'shopping-bag', prep_checklist: 'list-checks',
+    cooking_guide: 'chef-hat', timers: 'timer', task_progress: 'circle-check' })[view.kind];
+  if (glyph) title.prepend(icon(glyph));
+  heading.append(title);
   if (context.historical) heading.append(badge('历史记录', 'muted'));
-  else if (context.draft) heading.append(badge('待确认', 'muted'));
   card.append(heading);
   if (!context.historical && !context.focused && (['prep_checklist','cooking_guide','shopping_list'].includes(view.kind)
       || view.kind==='recipe_detail' && context.viewState?.detailSection==='steps')) {

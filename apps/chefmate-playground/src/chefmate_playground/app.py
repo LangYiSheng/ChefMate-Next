@@ -32,7 +32,7 @@ class SettingsRequest(BaseModel):
 class TurnRequest(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
     message: str = Field(default="", max_length=8000)
-    images: list[str] = Field(default_factory=list, max_length=3)
+    images: list[str] = Field(default_factory=list, max_length=12)
     retry: bool = False
     request_id: str | None = Field(default=None, min_length=1, max_length=100)
     ui_snapshot: UISnapshot | None = None
@@ -188,6 +188,7 @@ def create_app(config: PlaygroundConfig | None = None, *, service=None, agent=No
             "ready": bool(database["ready"] and agent is not None), "configured": agent is not None,
             "model": settings.model or None, "database": database,
             "supports_images": settings.supports_images,
+            "max_images": settings.max_images,
             "active_sessions": len(manager.active), "error": setup_error,
         }
 
@@ -284,6 +285,8 @@ def create_app(config: PlaygroundConfig | None = None, *, service=None, agent=No
             raise HTTPException(503, "智能体尚未配置，请检查应用 .env 中的数据库、模型和 API Key。")
         if body.images and not settings.supports_images:
             raise HTTPException(422, "当前模型没有开启图片能力。")
+        if len(body.images) > settings.max_images:
+            raise HTTPException(422, f"当前模型每次请求最多接受 {settings.max_images} 张图片，请移除多余图片。")
         try:
             active, replay = await manager.begin(session_id, body.message, retry=body.retry, request_id=body.request_id,
                                                  ui_snapshot=body.ui_snapshot.model_dump(mode="json")

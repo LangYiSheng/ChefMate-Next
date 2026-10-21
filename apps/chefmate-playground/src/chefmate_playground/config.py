@@ -28,10 +28,15 @@ class PlaygroundConfig:
     max_tool_result_chars: int = 60000
     stream_tool_calls: bool = False
     supports_images: bool = False
+    max_images: int = 3
     api_format: str = "chat_completions"
     port: int = 18765
     sessions_database: Path = APP_ROOT / ".runtime" / "sessions.db"
     enabled_skills: tuple[str, ...] = ("meal-planning", "pantry-preparation", "cooking-guide")
+
+    def __post_init__(self):
+        if type(self.max_images) is not int or not 1 <= self.max_images <= 12:
+            raise ValueError("模型图片上限必须是 1 到 12 之间的整数")
 
     @property
     def model_configured(self) -> bool:
@@ -66,6 +71,7 @@ class PlaygroundConfig:
             max_tool_result_chars=int(values.get("CHEFMATE_AGENT_MAX_TOOL_RESULT_CHARS", "60000")),
             stream_tool_calls=(values.get("CHEFMATE_AGENT_STREAM_TOOL_CALLS", "false") or "false").lower() == "true",
             supports_images=(values.get("CHEFMATE_MODEL_SUPPORTS_IMAGES", "false") or "false").lower() == "true",
+            max_images=int(values.get("CHEFMATE_MODEL_MAX_IMAGES", "3")),
             port=int(values.get("CHEFMATE_PLAYGROUND_PORT", "18765")),
             enabled_skills=skill_names,
         )

@@ -1,6 +1,11 @@
 import { node } from "./ui-components.js";
 import { BRAND_ICONS, iconPath, applyBranding } from "./branding.js";
+import { icon } from './icons.js';
 applyBranding();
+const embedded = window.parent !== window && new URLSearchParams(location.search).get('embedded') === '1';
+document.body.classList.toggle('settings-embedded', embedded);
+document.querySelectorAll('[data-icon]').forEach(node => node.replaceChildren(icon(node.dataset.icon)));
+function notifyParent(type) { if (embedded) window.parent.postMessage({ type }, location.origin); }
 
 const $ = (id) => document.getElementById(id);
 const names = {
@@ -167,6 +172,9 @@ function render() {
     });
     heading("连接方式");
     field("支持图片输入", "supports_images", {type:"checkbox",note:"模型能看图片时开启；聊天输入框会出现上传图片入口。",hint:"照片会自动压缩，可发送食材、包装标签或做菜现场。不支持图片的模型请关闭。"});
+    field("同时接收的图片上限", "max_images", {type:"number", min:1, max:12,
+      note:"按模型实际支持的数量设置，默认 3 张。",
+      hint:"每次请求共 1–12 张，包含历史图片。超出时会移除最早的完整历史轮次，聊天记录仍保留。"});
     field("请求协议", "api_format", {
       options: [
         ["chat_completions", "OpenAI · Chat Completions"],
@@ -392,6 +400,7 @@ async function save() {
       }
     }
     dirty.delete(section);
+    notifyParent('chefmate:settings-saved');
     if (current === section) {
       render();
       message("设置已保存。接下来的对话使用新设置。", true);
@@ -453,7 +462,9 @@ function confirmInPage(description,action) {
 }
 $("cancel-confirm").addEventListener("click",()=>{
   pendingConfirmation=null;$("settings-confirm").close();
+  notifyParent('chefmate:close-cancelled');
 });
+$("settings-confirm").addEventListener('cancel',()=>{pendingConfirmation=null;notifyParent('chefmate:close-cancelled');});
 $("accept-confirm").addEventListener("click",()=>{
   const action=pendingConfirmation;pendingConfirmation=null;
   $("settings-confirm").close();action?.();
@@ -467,11 +478,21 @@ $("reload-settings").addEventListener("click", () => {
   if(dirty.has(section)) confirmInPage("放弃当前页未保存的修改，读取最新配置？其他分类的草稿会保留。",reload);
   else reload();
 });
+function requestClose() {
+  const leave = () => embedded ? notifyParent('chefmate:close-settings') : location.assign('/');
+  if (dirty.size) confirmInPage("返回对话会放弃尚未保存的设置。可以先保存，或者继续返回。", () => {
+    dirty.clear(); drafts.clear(); draftRevisions.clear(); loaded=null;
+    render(); updateFooter(); leave(); load();
+  });
+  else leave();
+}
+window.addEventListener('message', event => {
+  if (embedded && event.origin === location.origin && event.source === parent && event.data?.type === 'chefmate:request-close') requestClose();
+});
 document.querySelectorAll('a[href="/"]').forEach(link=>{
   link.addEventListener('click',event=>{
-    if(!dirty.size)return;
     event.preventDefault();
-    confirmInPage("返回对话会放弃尚未保存的设置。可以先保存，或者继续返回。",()=>location.assign('/'));
+    requestClose();
   });
 });
 load();

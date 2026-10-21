@@ -1,0 +1,22 @@
+# ChefMate 视觉规范
+
+参考 LanCher Code WebUI 的浅灰外框、圆角工作区和细边界；保留厨房产品的低饱和绿色。颜色统一定义在 `apps/chefmate-playground/static/colors.css`，聊天、设置、工作流组件与做菜模式共用。
+
+| 变量 | 用途 |
+| --- | --- |
+| `--color-background` | 页面外框、会话侧栏 |
+| `--color-canvas` | 主工作区、设置、预览弹窗 |
+| `--color-surface` / `--color-hover` | 输入框、轻量内容、悬停态 |
+| `--color-border` / `--color-border-strong` | 细边框、聚焦与拖动边界 |
+| `--color-text` / `--color-muted` / `--color-subtle` | 正文、辅助说明、低优先级提示 |
+| `--color-accent` / `--color-accent-hover` / `--color-accent-soft` | 主操作、悬停、选中背景 |
+| `--color-success` / `--color-warning` / `--color-danger` | 成功、待连接和错误；同时配文字说明 |
+| `--color-overlay` / `--color-shadow` | 图片预览遮罩、轻阴影 |
+
+常用布局采用 8、12、16、24、32px 的间距。桌面外框留 14px，主工作区圆角 18px，正文区域最大约 900px；移动端取消外框留白，正文左右 20px、输入区左右 16px。输入字段在手机保持 16px 字号，避免聚焦放大。交互内容使用平铺布局，长内容由所在主区域滚动。
+
+侧栏宽度 208–360px，默认 248px，提供拖动和键盘操作。760px 以下使用抽屉；折叠偏好不会让手机失去导航入口。设置保留左侧会话导航并占用右侧主工作区，未保存修改通过页内对话框处理。
+
+图标使用本地 Lucide SVG sprite，入口是 `static/icons.js`；添加图标时同步白名单、sprite 与许可证来源。品牌标识保持 ChefMate 的自有 SVG。图标按钮提供可访问名称，装饰图标从辅助技术中隐藏。
+
+消息图片为正方形裁切缩略图，完整图片通过页内模态预览查看；支持 Esc、方向键、按钮导航和键盘焦点恢复。确认按钮使用实色强调，放弃按钮使用轻边框；无须额外重复“尚未确认”。动画尊重系统减少动态效果设置。

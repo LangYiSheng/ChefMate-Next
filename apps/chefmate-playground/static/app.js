@@ -1,10 +1,13 @@
-import { WorkspaceController } from './workspace.js';
+import { WorkspaceController, ConfirmationQueue, visibleMessageViews, recoverRunningTurn } from './workspace.js';
 import { renderView } from './ui-components.js';
-import { messageViews, legacyRecipeItems } from './ui-protocol.js';
+import { legacyRecipeItems } from './ui-protocol.js';
 import { STAGE_NAMES, VIEW_LABELS, TOOL_NAMES, viewSummary, activityRows, latestActivity, conversationLabel, snapshotStatus } from './presentation.js';
 import {brandImage,applyBranding} from './branding.js';
 import {CookingFocus} from './focus.js';
-import {compressImage,imageURL,MAX_IMAGES} from './image-input.js';
+import {compressImage,imageURL} from './image-input.js';
+import {imageThumbnail} from './image-preview.js';
+import {icon} from './icons.js';
+import {initShell} from './shell.js';
 applyBranding();
 
 const $ = (id) => document.getElementById(id);
@@ -25,7 +28,7 @@ const state = {
   detailAbort: null, detailOpen: false, sidebarOpen: false, tab: 'query',
   selectedRecipe: null, remotePoll: null, renderFrame: null, creating: false, preparing: false, initializing:true, skills: [], skillsEpoch: 0,
   traceMode: readTraceMode(), developer: readDeveloper(), uiPreferences: readUIPreferences(),
-  imageDrafts:new Map(),imageUploads:new Map(),
+  imageDrafts:new Map(),imageUploads:new Map(),confirmationQueue:new ConfirmationQueue(),
 };
 function readDeveloper() { try { return JSON.parse(localStorage.getItem('chefmate:developer-settings') || '{}').enabled === true; } catch { return false; } }
 function readTraceMode() { try { return JSON.parse(localStorage.getItem('chefmate:developer-settings') || '{}').trace_mode === 'detailed' ? 'detailed' : 'compact'; } catch { return 'compact'; } }
@@ -61,6 +64,7 @@ const workspace = new WorkspaceController({
     if (!editing || workspace.entries.get(state.currentId)?.saving) scheduleRender(state.currentId);
   },
   openPanel: (tab) => { setDetails(true); setTab(tab); },
+  onConfirm: (sessionId, message) => { state.confirmationQueue.enqueue(sessionId,message); continueConfirmations(); },
 });
 const cookingFocus=new CookingFocus(workspace,{session:currentSession,onChange:updateComposer});
 workspace.onFocus=(view,id)=>{setSidebar(false);setDetails(false);cookingFocus.open(view,id);};
@@ -128,11 +132,18 @@ async function api(path, options = {}) {
 function currentSession() { return state.cache.get(state.currentId); }
 function hasRetry(message) { return message.retryMessage!=null && (Boolean(message.retryMessage) || Boolean(message.retryImages?.length)); }
 function renderComposerActions() {
-  const actions=workspace.composerActions(state.currentId);
+  const pending=state.confirmationQueue.get(state.currentId),sessionId=state.currentId;
+  const actions=pending ? [
+    {label:pending.status==='failed'?'重试继续':'准备继续…',tone:'primary',disabled:pending.status!=='failed',
+      context:pending.status==='failed' ? '确认已保存，下一轮尚未开始。' : '确认已保存，正在准备下一轮…',
+      run:()=>{state.confirmationQueue.retry(sessionId);continueConfirmations();}},
+    {label:'暂不继续',tone:'secondary',allowOffline:true,disabled:pending.status==='preparing',
+      run:()=>{state.confirmationQueue.delete(sessionId);updateComposer();}},
+  ] : workspace.composerActions(sessionId);
   ui['composer-choices'].hidden=!actions.length;ui['composer-choices'].replaceChildren();
   if(actions[0]?.context)ui['composer-choices'].append(element('span','choice-context',actions[0].context));
   for(const action of actions) {
-    const button=element('button','composer-choice',action.label);button.type='button';button.disabled=Boolean(action.disabled || busy());
+    const button=element('button',`composer-choice ${action.tone || 'primary'}`,action.label);button.type='button';button.disabled=Boolean(action.disabled || busy() || state.preparing || (!state.status?.ready && !action.allowOffline));
     button.addEventListener('click',()=>Promise.resolve(action.run()).catch(error=>toast(error.message || '操作没有保存，请复核。')));
     ui['composer-choices'].append(button);
   }
@@ -141,9 +152,9 @@ function renderImageDrafts() {
   const id=state.currentId,images=state.imageDrafts.get(id) || [],uploading=state.imageUploads.get(id) || 0;
   ui['image-drafts'].hidden=!images.length;ui['image-drafts'].replaceChildren();
   ui['image-status'].hidden=!uploading;ui['image-status'].textContent=uploading?'正在压缩并上传图片…':'';
-  for(const image of images) {
-    const tile=element('div','attachment-draft'),preview=element('img');preview.src=imageURL(id,image);preview.alt=image.name;
-    const remove=element('button','','×');remove.type='button';remove.setAttribute('aria-label',`移除图片：${image.name}`);remove.disabled=busy(id) || state.preparing;
+  for(const [index,image] of images.entries()) {
+    const tile=element('div','attachment-draft'),preview=imageThumbnail(id,image,images,index);
+    const remove=element('button');remove.append(icon('x'));remove.type='button';remove.setAttribute('aria-label',`移除图片：${image.name}`);remove.disabled=busy(id) || state.preparing;
     remove.addEventListener('click',async()=>{
       try {
         await api(imageURL(id,image),{method:'DELETE'});
@@ -161,7 +172,7 @@ async function uploadImages(files) {
   if(!id)return;
   if(state.imageUploads.has(id)){toast('图片正在处理，请稍等再添加。');return;}
   const current=state.imageDrafts.get(id) || [];
-  if(current.length+files.length>MAX_IMAGES){toast('每条消息最多三张图片。');return;}
+  if(current.length+files.length>maxImages()){toast(`当前模型每次最多接收 ${maxImages()} 张图片。`);return;}
   state.imageUploads.set(id,files.length);updateComposer();
   try {
     for(const file of files) {
@@ -188,6 +199,18 @@ function updateConversationState() {
   }
 }
 function busy(id = state.currentId) { return state.runs.has(id) || Boolean(state.cache.get(id)?.running); }
+function maxImages() { return Math.max(1, Math.min(12, Number(state.status?.max_images) || 3)); }
+function continueConfirmations() {
+  if(state.initializing || state.creating || state.preparing || !state.status?.ready)return;
+  for(const [sessionId,pending] of state.confirmationQueue.items) {
+    if(busy(sessionId) || pending.status!=='queued')continue;
+    // An action can finish while another conversation is preparing a turn.
+    // Keep its continuation until that short preparation lock is released.
+    void state.confirmationQueue.start(sessionId,(message,onPrepared)=>
+      sendMessage(message,false,null,{sessionId,fromComposer:false,onPrepared})).finally(updateComposer);
+    break;
+  }
+}
 function blankTitle(title) { return !title || ['新会话', '新对话'].includes(title); }
 function resizeInput() {
   ui['composer-input'].style.height = 'auto';
@@ -202,10 +225,10 @@ function updateComposer() {
   ui['stop-button'].hidden = !running;
   ui['stop-button'].disabled = Boolean(localRun?.cancelling);
   const imageDraft=state.imageDrafts.get(state.currentId) || [],uploading=state.imageUploads.get(state.currentId) || 0;
-  ui['send-button'].disabled = state.initializing || !ready || state.creating || state.preparing || uploading ||
-    (!ui['composer-input'].value.trim() && !imageDraft.length) || (imageDraft.length && !state.status?.supports_images) || !workspace.canSubmit(state.currentId);
+  ui['send-button'].disabled = state.initializing || !ready || state.creating || state.preparing || uploading || Boolean(state.confirmationQueue.get(state.currentId)) ||
+    (!ui['composer-input'].value.trim() && !imageDraft.length) || (imageDraft.length && !state.status?.supports_images) || imageDraft.length>maxImages() || !workspace.canSubmit(state.currentId);
   ui['attach-image'].hidden=!state.status?.supports_images;
-  ui['attach-image'].disabled=state.initializing || !ready || running || state.creating || state.preparing || uploading || imageDraft.length>=MAX_IMAGES;
+  ui['attach-image'].disabled=state.initializing || !ready || running || state.creating || state.preparing || uploading || imageDraft.length>=maxImages();
   renderImageDrafts();renderComposerActions();cookingFocus.refresh();
   ui['composer-input'].disabled = state.creating;
   ui['turn-status'].hidden = !running;
@@ -215,6 +238,7 @@ function updateComposer() {
   ui['workspace-context'].hidden = !taskLabel || taskLabel === '当前内容已保存';
   ui['workspace-context'].textContent = taskLabel;
   ui['workspace-context'].classList.toggle('unsaved', workspace.unsaved(state.currentId));
+  queueMicrotask(continueConfirmations);
 }
 
 function renderStatus() {
@@ -263,7 +287,7 @@ function renderSessions() {
     link.addEventListener('click', () => openSession(session.id));
     row.append(link);
     if (session.running || state.runs.has(session.id)) row.append(element('span', 'session-running'));
-    const remove = element('button', 'session-delete', '×');
+    const remove = element('button', 'session-delete');remove.append(icon('trash-2'));
     remove.type = 'button';
     remove.setAttribute('aria-label', `删除会话：${session.title || '新会话'}`);
     remove.title = '删除会话';
@@ -276,7 +300,7 @@ function renderSessions() {
         remove.textContent = '确认';
         remove.classList.add('confirm-delete');
         remove.setAttribute('aria-label', `确认删除会话：${session.title || '新会话'}`);
-        armTimer = setTimeout(() => { armed = false; remove.textContent = '×'; remove.classList.remove('confirm-delete'); }, 3500);
+        armTimer = setTimeout(() => { armed = false; remove.replaceChildren(icon('trash-2')); remove.classList.remove('confirm-delete'); }, 3500);
         return;
       }
       clearTimeout(armTimer);
@@ -285,6 +309,7 @@ function renderSessions() {
         await api(`/api/sessions/${encodeURIComponent(session.id)}`, { method: 'DELETE' });
         state.cache.delete(session.id);
         state.drafts.delete(session.id);
+        state.confirmationQueue.delete(session.id);
         workspace.remove(session.id);
         if (state.currentId === session.id) selectBlank();
         await loadSessions();
@@ -395,6 +420,7 @@ async function openSession(id) {
   const epoch = ++state.selectionEpoch;
   state.currentId = id;
   try { localStorage.setItem('chefmate:active-session',id); } catch { /* In-memory selection remains usable. */ }
+  workspace.setRunning(id,true);
   workspace.select(id);
   state.skills = [];
   loadSkills(id);
@@ -412,6 +438,7 @@ async function openSession(id) {
       const session = normalizeSession(await api(`/api/sessions/${encodeURIComponent(id)}`));
       if (state.runs.has(id)) return;
       state.cache.set(id, session);
+      workspace.setRunning(id,session.running);
       if (epoch !== state.selectionEpoch || id !== state.currentId) return;
       renderConversation(true);
       renderQueryPanel();
@@ -429,6 +456,7 @@ function pollRemoteSession(id, epoch) {
       const session = normalizeSession(await api(`/api/sessions/${encodeURIComponent(id)}`));
       if (id !== state.currentId || epoch !== state.selectionEpoch || state.runs.has(id)) return;
       state.cache.set(id, session);
+      workspace.setRunning(id,session.running);
       renderConversation();
       renderQueryPanel();
       updateComposer();
@@ -549,14 +577,14 @@ function toolCallNode(call) {
 function executionTrace(message) {
   if (message.streaming && !state.developer) {
     const line = element('div','execution-trace trace-summary');
-    line.append(element('span','trace-orbit active','◌'), element('span','trace-current',safeText(latestActivity(message))));
+    line.append(icon('loader-circle','trace-orbit active'), element('span','trace-current',safeText(latestActivity(message))));
     return line;
   }
   const rows = activityRows(message);
   const trace = element(message.streaming || state.traceMode==='detailed' ? 'section' : 'details', `execution-trace ${state.traceMode}`);
   trace.setAttribute('aria-label','执行过程');
   const summary = element(trace.tagName==='DETAILS' ? 'summary' : 'div','trace-summary');
-  summary.append(element('span',message.streaming ? 'trace-orbit active' : 'trace-orbit',message.streaming ? '◌' : message.error ? '!' : message.cancelled ? '◇' : '✓'),
+  summary.append(icon(message.streaming ? 'loader-circle' : message.error ? 'circle-alert' : message.cancelled ? 'square' : 'circle-check',message.streaming ? 'trace-orbit active' : 'trace-orbit'),
     element('span','trace-current',safeText(message.streaming ? latestActivity(message) : '执行过程')));
   trace.append(summary);
   if (message.usage?.model_calls) {
@@ -568,7 +596,7 @@ function executionTrace(message) {
     const timeline = element('ol','trace-timeline');
     for (const row of rows) {
       const item = element('li',`trace-row ${row.state || 'note'}`);
-      item.append(element('span','trace-marker',row.state==='running' ? '◌' : row.state==='failed' ? '!' : '✓'));
+      item.append(icon(row.state==='running' ? 'loader-circle' : row.state==='failed' ? 'circle-alert' : 'check','trace-marker'));
       const copy = element('div','trace-copy');
       if (row.kind === 'note') {
         const note = element('details','trace-note');
@@ -605,7 +633,7 @@ function recipeButton(recipe, snapshot) {
   const names = matchedNames(recipe);
   const meta = [timeLabel(recipe.total_time_min), labels[recipe.difficulty] || recipe.difficulty, names.length ? `匹配 ${names.join('、')}` : ''].filter(Boolean);
   copy.append(element('span', 'recipe-result-meta', meta.join(' · ')));
-  button.append(copy, element('span', 'recipe-result-arrow', '›'));
+  button.append(copy, icon('chevron-right','recipe-result-arrow'));
   button.disabled = !recipeId(recipe);
   const expectedSnapshot = snapshot ? { ...snapshot } : null;
   button.addEventListener('click', () => openRecipe(recipeId(recipe), expectedSnapshot, true));
@@ -622,21 +650,19 @@ function renderConversation(forceScroll = false) {
   ui.messages.hidden = !messages.length;
   ui.messages.replaceChildren();
   const lastViewMessage = new Map();
-  messages.forEach((message,index) => messageViews(message).forEach(view => lastViewMessage.set(view.id,index)));
+  const shownViews = visibleMessageViews;
+  messages.forEach((message,index) => shownViews(message).forEach(view => lastViewMessage.set(view.id,index)));
   for (let index = 0; index < messages.length; index++) {
     const message = messages[index];
     if (message.role === 'user') {
       const node = element('article', 'message user');
       node.setAttribute('aria-label', '你的消息');
-      if(message.content)node.append(element('div', 'user-bubble', message.content));
       if(message.images?.length) {
         const images=element('div','message-images');
-        for(const image of message.images) {
-          const link=element('a');link.href=imageURL(state.currentId,image);link.target='_blank';link.rel='noopener';
-          const preview=element('img');preview.src=link.href;preview.alt=image.name;preview.loading='lazy';
-          link.append(preview);images.append(link);
-        }node.append(images);
+        for(const [imageIndex,image] of message.images.entries()) images.append(imageThumbnail(state.currentId,image,message.images,imageIndex));
+        node.append(images);
       }
+      if(message.content)node.append(element('div', 'user-bubble', message.content));
       ui.messages.append(node);
       continue;
     }
@@ -649,7 +675,7 @@ function renderConversation(forceScroll = false) {
     const processOnly = message.streaming && !message.resultComplete || Boolean(message.error || message.cancelled);
     if (message.content && !processOnly) body.append(markdown(message.content));
     node.append(body);
-    const typedViews = messageViews(message);
+    const typedViews = shownViews(message);
     if (typedViews.length) {
       const components = element('div', 'message-components');
       const relevant = typedViews.filter(view=>view.kind!=='task_progress');
@@ -659,13 +685,13 @@ function renderConversation(forceScroll = false) {
         const live = inlineIds.has(view.id) && workspace.renderInline(view,state.currentId,()=>scheduleRender(state.currentId));
         if (live) { live.classList.add('inline-component'); components.append(live); continue; }
         const receipt = element('button','view-receipt'); receipt.type='button';
-        receipt.append(element('span','view-receipt-icon',({recipe_choices:'◫',preference_form:'☷',cooking_guide:'▶',timers:'◷'})[view.kind] || '◇'),
-          element('span','view-receipt-copy',view.title || VIEW_LABELS[view.kind]),element('small','',viewSummary(view)),element('span','','↗'));
+        const glyph=icon(({recipe_choices:'layout-grid',preference_form:'list-filter',cooking_guide:'cooking-pot',timers:'timer'})[view.kind] || 'list');glyph.classList.add('view-receipt-icon');
+        receipt.append(glyph,element('span','view-receipt-copy',view.title || VIEW_LABELS[view.kind]),element('small','',viewSummary(view)),icon('arrow-up-right'));
         receipt.addEventListener('click',()=>workspace.openCurrent(view.kind)); components.append(receipt);
       }
       node.append(components);
     }
-    const recipeItems = legacyRecipeItems(message, typedViews);
+    const recipeItems = message.streaming ? [] : legacyRecipeItems(message, typedViews);
     if (recipeItems.length) {
       const recipes = element('div', 'recipe-results');
       for (const recipe of recipeItems) recipes.append(recipeButton(recipe, message.snapshot));
@@ -827,14 +853,17 @@ function applyEvent(run, event) {
   scheduleRender(run.sessionId);
 }
 
-async function sendMessage(text, retry = false, replacedMessage = null) {
+async function sendMessage(text, retry = false, replacedMessage = null, options = {}) {
   const input = text.trim();
-  const draftImages=replacedMessage?.retryImages || state.imageDrafts.get(state.currentId) || [];
-  if (state.initializing || (!input && !draftImages.length) || busy() || state.creating || state.preparing || state.imageUploads.get(state.currentId)) return;
+  const targetId=options.sessionId ?? state.currentId,fromComposer=options.fromComposer !== false;
+  if(fromComposer && state.confirmationQueue.get(targetId)) {toast('确认已保存，请先重试继续，或选择“暂不继续”后再发送。');return;}
+  const draftImages=replacedMessage?.retryImages || (fromComposer ? state.imageDrafts.get(targetId) : []) || [];
+  if (state.initializing || (!input && !draftImages.length) || busy(targetId) || state.creating || state.preparing || (fromComposer && state.imageUploads.get(targetId))) return;
   if(draftImages.length && !state.status?.supports_images){toast('当前模型没有开启图片能力。');return;}
+  if(draftImages.length>maxImages()){toast(`当前模型每次最多接收 ${maxImages()} 张图片，请减少图片后发送。`);return;}
   if (!state.status?.ready) { toast('请先完成模型与数据库连接。'); return; }
   if (input.length > 8000) { toast('消息最多 8000 个字符，请缩短后发送。'); return; }
-  let id = state.currentId;
+  let id = targetId;
   if (!id) {
     const epoch = state.selectionEpoch;
     state.creating = true;
@@ -858,8 +887,9 @@ async function sendMessage(text, retry = false, replacedMessage = null) {
   let uiSnapshot;
   state.preparing = true; updateComposer();
   try { uiSnapshot = await workspace.prepareTurn(id); }
-  catch (error) { toast(error.message); updateComposer(); return; }
+  catch (error) { toast(error.message); updateComposer(); return {error:error.message}; }
   finally { state.preparing = false; updateComposer(); }
+  options.onPrepared?.();
   state.cache.set(id, session);
   if (replacedMessage && session.messages.at(-1) === replacedMessage) {
     session.messages.pop();
@@ -874,14 +904,15 @@ async function sendMessage(text, retry = false, replacedMessage = null) {
   assistant.retryImages=draftImages;
   session.messages.push(assistant);
   session.running = true;
+  workspace.setRunning(id,true);
   if (blankTitle(session.title)) session.title = input.slice(0, 26) || '图片对话';
   const controller = new AbortController();
   const run = { sessionId: id, controller, message: assistant, input, requestId: crypto.randomUUID(),
     status: '正在理解需求…', done: false, resultReceived: false, httpRejected: false };
   state.runs.set(id, run);
-  state.drafts.delete(id);
+  if(fromComposer)state.drafts.delete(id);
   if (id === state.currentId) {
-    ui['composer-input'].value = '';
+    if(fromComposer)ui['composer-input'].value = '';
     resizeInput();
     renderConversation(true); renderQueryPanel(); updateComposer();
   }
@@ -897,7 +928,7 @@ async function sendMessage(text, retry = false, replacedMessage = null) {
       const payload = await response.json().catch(() => null);
       throw new Error(safeText(typeof payload?.detail === 'string' ? payload.detail : payload?.message || `请求失败（${response.status}）。`));
     }
-    state.imageDrafts.delete(id);updateComposer();
+    if(fromComposer)state.imageDrafts.delete(id);updateComposer();
     await readEvents(response, (event) => applyEvent(run, event));
     if (!run.resultReceived && !run.failed && !assistant.cancelled && (!run.done || run.terminalStatus === 'completed')) throw new Error('连接在结果返回前中断，正在恢复执行状态。');
     if (assistant.cancelled) assistant.retryMessage = input;
@@ -920,12 +951,12 @@ async function sendMessage(text, retry = false, replacedMessage = null) {
       }
     } catch {
       if (!run.httpRejected && !run.done && !run.resultReceived) {
-        session.running = true;
-        session.recoveryStatus = '连接中断，正在恢复执行状态…';
+        recoverRunningTurn(session,assistant);
         recovered = session;
       } else if (run.httpRejected) assistant.retryAsNew = true;
     }
     state.runs.delete(id);
+    workspace.setRunning(id,Boolean(recovered?.running));
     if (id === state.currentId) {
       renderConversation(); renderQueryPanel(); updateComposer();
       if (recovered?.running) pollRemoteSession(id, state.selectionEpoch);
@@ -1023,7 +1054,7 @@ function renderQueryPanel() {
   }
   if (!latest?.tool_calls?.length) {
     const empty = element('div', 'panel-empty');
-    empty.append(element('div', 'panel-empty-symbol', '⌕'), element('div', '', '查询开始后，这里会保留食材候选、筛选条件和返回依据。'));
+    empty.append(icon('search','panel-empty-symbol'), element('div', '', '查询开始后，这里会保留食材候选、筛选条件和返回依据。'));
     ui['query-content'].append(empty); return;
   }
   const section = panelSection('本轮查询');
@@ -1037,7 +1068,7 @@ function renderQueryPanel() {
 function renderRecipeEmpty() {
   ui['recipe-content'].replaceChildren();
   const empty = element('div', 'panel-empty');
-  empty.append(element('div', 'panel-empty-symbol', '☷'), element('div', '', '点击回复中的菜谱，查看食材用量、完整步骤和营养信息。'));
+  empty.append(icon('book-open','panel-empty-symbol'), element('div', '', '点击回复中的菜谱，查看食材用量、完整步骤和营养信息。'));
   ui['recipe-content'].append(empty);
 }
 
@@ -1181,6 +1212,7 @@ for (const name of panelTabs) {
 }
 ui['drawer-backdrop'].addEventListener('click', () => { setSidebar(false); setDetails(false); ui['composer-input'].focus(); });
 document.addEventListener('keydown', (event) => {
+  if(document.querySelector('dialog[open]'))return;
   if (event.key === 'Escape') { setSidebar(false); setDetails(false); ui['composer-input'].focus(); }
   // Overlay drawers keep keyboard focus in the open surface.
   if (event.key === 'Tab') {
@@ -1210,4 +1242,5 @@ async function initialize() {
   state.initializing=false;
   updateComposer();
 }
+initShell({onSettingsClose:()=>{refreshDisplayPreferences();loadStatus();}});
 initialize();

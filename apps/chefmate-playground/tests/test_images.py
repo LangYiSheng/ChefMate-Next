@@ -19,12 +19,16 @@ class ImageAgent:
 
 
 def picture(size=(2800,1400), fmt="PNG"):
-    image=Image.new("RGBA",size,(255,0,0,0));output=BytesIO();image.save(output,fmt);return output.getvalue()
+    image = Image.new("RGBA", size, (255, 0, 0, 0))
+    output = BytesIO()
+    image.save(output, fmt)
+    return output.getvalue()
 
 
-def make_app(tmp_path, supports=True):
+def make_app(tmp_path, supports=True, max_images=3):
     agent=ImageAgent()
-    return create_app(PlaygroundConfig(supports_images=supports,sessions_database=tmp_path/"sessions.db"),agent=agent),agent
+    return create_app(PlaygroundConfig(supports_images=supports,max_images=max_images,
+                                      sessions_database=tmp_path/"sessions.db"),agent=agent),agent
 
 
 def test_image_compression_native_turn_metadata_and_session_ownership(tmp_path):
@@ -81,3 +85,20 @@ def test_atomic_session_delete_returns_the_latest_attachment_state(tmp_path):
     removed=repository.delete(state['id'])
     assert removed['image_uploads']==[{'id':'new-image'}]
     assert repository.get(state['id']) is None
+
+
+def test_configured_image_limit_rejects_before_turn_and_allows_more_than_three(tmp_path):
+    for limit in (2, 5):
+        app, agent = make_app(tmp_path / str(limit), max_images=limit)
+        with TestClient(app) as client:
+            uri = "/api/sessions/" + client.post("/api/sessions").json()["id"]
+            image_ids = [client.post(uri + "/images", content=picture((20, 20))).json()["id"]
+                         for _ in range(limit + 1)]
+            rejected = client.post(uri + "/turn", json={"message": "看图", "images": image_ids})
+            assert rejected.status_code == 422
+            assert str(limit) in rejected.json()["detail"]
+            assert agent.received is None
+            assert client.get(uri).json()["messages"] == []
+            accepted = client.post(uri + "/turn", json={"message": "看图", "images": image_ids[:limit]})
+            assert '"status": "completed"' in accepted.text
+            assert len(agent.received[-1]["images"]) == limit

@@ -1,0 +1,35 @@
+/* ChefMate palette. Change semantic tokens here to recolor every surface. */
+:root {
+  --color-background: #f2f4f2;
+  --color-canvas: #ffffff;
+  --color-surface: #f7f9f7;
+  --color-hover: #edf1ed;
+  --color-border: #e1e7e1;
+  --color-border-strong: #c7d2c8;
+  --color-text: #29352e;
+  --color-muted: #6f7e73;
+  --color-subtle: #8e9c91;
+  --color-accent: #4e6d58;
+  --color-accent-hover: #3c5946;
+  --color-accent-soft: #e6eee7;
+  --color-success: #4a7c59;
+  --color-warning: #91713e;
+  --color-warning-soft: #fbf7ef;
+  --color-danger: #ad5248;
+  --color-danger-soft: #fcf2ef;
+  --color-overlay: #17281e80;
+  --color-shadow: #17281e12;
+  --text: var(--color-text);
+  --muted: var(--color-muted);
+  --subtle: var(--color-subtle);
+  --accent: var(--color-accent);
+  --line: var(--color-border);
+  --border: var(--color-border);
+  --surface: var(--color-surface);
+  --soft: var(--color-surface);
+  --sidebar-bg: var(--color-background);
+  --selection: var(--color-accent-soft);
+  --radius-control: 9px;
+  --radius-panel: 14px;
+  --radius-shell: 18px;
+}

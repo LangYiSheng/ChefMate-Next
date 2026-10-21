@@ -1,21 +1,55 @@
-import { clone, changedValues, makeAction, remainingSeconds, clockText, EXECUTION_STAGES } from './ui-protocol.js';
+import { clone, changedValues, makeAction, remainingSeconds, clockText, EXECUTION_STAGES, messageViews } from './ui-protocol.js';
 import { viewChoices, VIEW_LABELS, STAGE_NAMES } from './presentation.js';
 import { node, renderView } from './ui-components.js';
+import { icon } from './icons.js';
 
 const keyFor = (id) => `chefmate:workspace-drafts:${id}`;
 function readDrafts(id) { try { return JSON.parse(localStorage.getItem(keyFor(id)) || '{}'); } catch { return {}; } }
 function writeDrafts(id, value) { try { localStorage.setItem(keyFor(id), JSON.stringify(value)); } catch { /* 无存储权限时仍保留内存草稿。 */ } }
 
+// Confirmation is already persisted when queued. Retrying its continuation
+// must never reapply the action or silently drop the intended user message.
+export class ConfirmationQueue {
+  constructor() { this.items=new Map(); }
+  get(id) { return this.items.get(id); }
+  delete(id) { return this.items.delete(id); }
+  enqueue(id,message) { this.items.set(id,{message,status:'queued',error:''}); }
+  retry(id) { const item=this.get(id);if(item?.status==='failed'){item.status='queued';item.error='';} }
+  async start(id,send) {
+    const item=this.get(id);
+    if(!item || item.status!=='queued')return;
+    item.status='preparing';
+    const prepared=()=>{if(this.get(id)===item)this.delete(id);};
+    try {
+      const result=await send(item.message,prepared);
+      if(this.get(id)===item){item.status='failed';item.error=result?.error || '暂时无法开始下一轮，请重试。';}
+    } catch(error) {
+      if(this.get(id)===item){item.status='failed';item.error=error.message || '暂时无法开始下一轮，请重试。';}
+    }
+  }
+}
+
+export function visibleMessageViews(message) {
+  return message.streaming || message.recovering ? [] : messageViews(message);
+}
+export function recoverRunningTurn(session,message) {
+  session.running=true;
+  session.recoveryStatus='连接中断，正在恢复执行状态…';
+  message.streaming=true;message.recovering=true;
+  delete message.error;
+}
+
 export class WorkspaceController {
-  constructor({ api, notify, onChange, openPanel }) {
+  constructor({ api, notify, onChange, openPanel, onConfirm = async () => {} }) {
     this.api = api; this.notify = notify; this.onChange = onChange; this.openPanel = openPanel;
+    this.onConfirm = onConfirm;
     this.entries = new Map(); this.activeId = null; this.container = null;
     this.timer = setInterval(() => this.tick(), 1000);
   }
   entry(id) {
     if (!this.entries.has(id)) this.entries.set(id, { snapshot: null, views: [], drafts: id ? readDrafts(id) : {},
       generation: 0, loading: false, saving: false, error: '', conflict: null, failedRequest: null,
-      activeKind: null, viewState: {} });
+      activeKind: null, viewState: {}, presentationPending: false, pendingResponse: null, confirming: false });
     return this.entries.get(id);
   }
   select(id) { this.activeId = id; this.render(); if (id) this.load(id).catch(() => {}); this.onChange(); }
@@ -40,10 +74,33 @@ export class WorkspaceController {
       if (generation === entry.generation) { entry.loading = false; this.refresh(id); }
     }
   }
-  receive(id, response) {
+  setRunning(id, running) {
+    const entry = this.entry(id);
+    entry.presentationPending = Boolean(running);
+    if (!running && entry.pendingResponse) {
+      const response = entry.pendingResponse;
+      entry.pendingResponse = null;
+      this.receive(id, response);
+    }
+  }
+  receive(id, response, { immediate = false, userViewKind = null } = {}) {
     const entry = this.entry(id); const snapshot = response?.workspace || response?.ui_snapshot;
     if (!snapshot || !Number.isInteger(snapshot.revision)) return false;
     if (entry.snapshot && snapshot.revision < entry.snapshot.revision) return false;
+    // Model tools save their work before the final answer. Keep those new views
+    // out of the UI until the turn ends, including workspace reads on reconnect.
+    // Direct user actions still receive their own confirmed state immediately.
+    if (entry.presentationPending) {
+      const pendingRevision = (entry.pendingResponse?.workspace || entry.pendingResponse?.ui_snapshot)?.revision ?? -1;
+      if (snapshot.revision >= pendingRevision) entry.pendingResponse = clone(response);
+      if(!immediate)return false;
+      // An action response also includes every model-created view. Only expose
+      // updates to views already on screen and a detail explicitly opened by
+      // the user; the complete response stays queued until the turn settles.
+      const visibleIds=new Set(entry.views.map(view=>view.id));
+      const updates=(response.views || []).filter(view=>visibleIds.has(view.id) || view.kind===userViewKind);
+      response={...response,views:[...entry.views.filter(view=>!updates.some(update=>update.id===view.id)),...updates]};
+    }
     const previousStage = entry.snapshot?.stage;
     const oldIds = new Set(entry.views.map(view=>view.id));
     entry.snapshot = clone(snapshot);
@@ -86,16 +143,20 @@ export class WorkspaceController {
       const view=entry.views.find(item=>item.id===viewId);
       if(!view || !view.editable)continue;
       if(draft.kind==='preference_form') {
-        actions.push({label:draft.conflict?'复核后保存条件':'保存条件',context:'条件已修改',disabled:entry.saving,
+        actions.push({label:draft.conflict?'复核后保存条件':'保存条件',context:'条件已修改',tone:'primary',disabled:entry.saving || entry.confirming,
           run:async()=>{
             for(const form of document.querySelectorAll(`[data-view-id="${view.id}"] form`)) if(!form.reportValidity())return;
-            await this.savePreferences(view,draft.values,id);
+            return this.confirmAndContinue(id,()=>this.savePreferences(view,draft.values,id),'我已确认这些偏好，请按保存的条件继续帮我选菜。');
           }});
       } else if(draft.kind==='recipe_choices') {
         const locked=['prep','cooking','completed'].includes(entry.snapshot?.stage);
         actions.push({label:draft.conflict?'复核后确认菜品':'确认菜品',context:`已选${draft.selectedIds?.length || 0}道菜`,
-          disabled:entry.saving || locked || !draft.selectedIds?.length || draft.selectedIds.length>4,
-          run:()=>this.saveSelection(view,draft.selectedIds,id)});
+          tone:'primary',disabled:entry.saving || entry.confirming || locked || !draft.selectedIds?.length || draft.selectedIds.length>4,
+          run:()=>{
+            const names=(view.data.recipes || []).filter(recipe=>draft.selectedIds.includes(recipe.recipe_id)).map(recipe=>recipe.name);
+            const message=names.length ? `我已确认菜品：${names.join('、')}。请按当前餐单继续安排。` : '我已确认选好的菜品，请按当前餐单继续安排。';
+            return this.confirmAndContinue(id,()=>this.saveSelection(view,draft.selectedIds,id),message);
+          }});
       } else if(draft.kind==='meal_plan') {
         actions.push({label:'更新份量',context:'份量已修改',disabled:entry.saving || !['planning','shopping','prep'].includes(entry.snapshot?.stage),
           run:async()=>{
@@ -119,9 +180,18 @@ export class WorkspaceController {
             writeDrafts(id,entry.drafts);this.refresh(id);
           }});
       } else continue;
-      actions.push({label:'放弃修改',disabled:entry.saving,run:()=>this.discardDraft(view,id)});
+      actions.push({label:'放弃修改',tone:'secondary',disabled:entry.saving || entry.confirming,run:()=>this.discardDraft(view,id)});
     }
     return actions;
+  }
+  async confirmAndContinue(id, save, message) {
+    const entry=this.entry(id);
+    if(entry.confirming || entry.saving)return;
+    entry.confirming=true;this.refresh(id);
+    try {
+      await save();
+      await this.onConfirm(id,message);
+    } finally { entry.confirming=false;this.refresh(id); }
   }
   setServingsDraft(view,recipeId,value,id=this.activeId) {
     const entry=this.entry(id),draft=entry.drafts[view.id] ||= {kind:'meal_plan',servings:{},
@@ -144,8 +214,7 @@ export class WorkspaceController {
     if (entry?.failedRequest) return '同步状态未知，请先检查当前任务';
     if (entry?.conflict) return '任务已变化，操作待复核';
     if (Object.values(entry?.drafts || {}).some((draft) => draft.conflict)) return '任务已变化，表单待复核';
-    if (Object.values(entry?.drafts || {}).some((draft) => draft.kind === 'recipe_choices')) return '菜谱选择尚未确认';
-    if (Object.keys(entry?.drafts || {}).length) return '条件尚未保存';
+    if (Object.keys(entry?.drafts || {}).length) return '';
     if (entry?.snapshot) return '当前内容已保存';
     return entry?.error ? '任务暂时不可用' : '正在读取任务…';
   }
@@ -220,7 +289,7 @@ export class WorkspaceController {
     entry.saving = true; entry.error = ''; entry.conflict = null; this.refresh(id);
     try {
       const response = await this.api(`/api/sessions/${encodeURIComponent(id)}/actions`, { method: 'POST', body: JSON.stringify(request) });
-      this.receive(id, response);
+      this.receive(id, response, { immediate: true, userViewKind: type==='open_recipe_detail' ? 'recipe_detail' : null });
       if (response.status !== 'ok') {
         const stale = ['revision_conflict', 'stale_view'].includes(response.status);
         if (stale) {
@@ -237,7 +306,7 @@ export class WorkspaceController {
       writeDrafts(id, entry.drafts); this.notify('已同步到当前任务。'); return response;
     } catch (error) {
       if (error.status === 409 || error.data?.status === 'revision_conflict') {
-        this.receive(id, error.data);
+        this.receive(id, error.data, { immediate: true });
         entry.conflict = { request, kind: view?.kind, clearDraft: options.clearDraft };
         entry.failedRequest = null;
         entry.error = '任务已变化，请复核当前内容后再操作。';
@@ -317,7 +386,7 @@ export class WorkspaceController {
     let content;
     if(detail) {
       content=renderView(detail,this.context(detail,sessionId));
-      const back=node('button','ui-text-button','← 返回选择');back.type='button';
+      const back=node('button','ui-text-button');back.append(icon('arrow-left'),document.createTextNode('返回选择'));back.type='button';
       back.addEventListener('click',()=>{entry.inlineDetail=null;onChange();});content.prepend(back);
     } else content=renderView(current,context);
     if(entry.error) {

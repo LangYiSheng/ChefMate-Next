@@ -20,6 +20,7 @@ class AgentConfig(BaseModel):
     )
     use_responses_api: bool = False
     supports_images: bool = False
+    max_images: int = Field(default=3, ge=1, le=12, strict=True)
     max_output_tokens: int = Field(default=4096, ge=128, le=16384)
     model_timeout_s: float = Field(default=120, gt=0, le=300)
     max_model_retries: int = Field(default=0, ge=0, le=2)

@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { makeAction, messageViews, remainingSeconds, clockText, changedValues, viewsFrom, canChangeStage, visibleWorkspaceViews, legacyRecipeItems } from '../ui-protocol.js';
-import { WorkspaceController } from '../workspace.js';
+import { WorkspaceController, ConfirmationQueue, visibleMessageViews, recoverRunningTurn } from '../workspace.js';
 
 const preference = (revision, id = 'preferences') => ({ id, kind: 'preference_form', title: '偏好', revision, editable: true,
   data: { fields: [], values: { ingredient_terms: ['虾'], servings: 2 } } });
@@ -242,4 +242,94 @@ test('inline callback remains bound to the original conversation after switching
   await context.savePreferences(preference(0),{ingredient_terms:['虾'],servings:4});
   assert.deepEqual(paths,['/api/sessions/session/actions']);
   assert.equal(item.snapshot('other'),undefined);
+});
+
+test('model workspace updates wait for turn completion while existing views remain available', t => {
+  const item=controller(t);item.receive('session',response(0));
+  item.setRunning('session',true);
+  item.receive('session',response(2,'model-form'));
+  item.receive('session',response(1,'older-read'));
+  assert.equal(item.snapshot().revision,0);
+  assert.equal(item.entry('session').views[0].id,'preferences');
+  item.setRunning('session',false);
+  assert.equal(item.snapshot().revision,2);
+  assert.equal(item.entry('session').views[0].id,'model-form');
+  assert.equal(item.entry('session').pendingResponse,null);
+});
+
+test('reconnected running turn hides partial forms and cancellation releases committed views', t => {
+  const item=controller(t);item.setRunning('session',true);
+  item.receive('session',response(3,'partial'));
+  assert.deepEqual(item.entry('session').views,[]);
+  // The caller settles the presentation for success, failure and cancellation.
+  item.setRunning('session',false);
+  assert.equal(item.entry('session').views[0].id,'partial');
+  item.setRunning('session',true);item.receive('session',response(4,'queued'));
+  item.receive('session',response(5,'user-action'),{immediate:true});
+  assert.equal(item.snapshot().revision,5);
+  assert.equal(item.entry('session').views[0].id,'partial');
+  item.setRunning('session',false);
+  assert.equal(item.entry('session').views[0].id,'user-action');
+});
+
+test('confirming dishes saves once before continuing in the original session', async t => {
+  const order=[];let finishSave;
+  const choice={id:'choices',kind:'recipe_choices',revision:0,editable:true,data:{recipes:[{recipe_id:'a',name:'清蒸虾'}]}};
+  const item=controller(t,async(path,options)=>{
+    order.push(JSON.parse(options.body).type);
+    return new Promise(resolve=>{finishSave=()=>resolve({...response(1),workspace:{revision:1,stage:'planning',selected_recipe_ids:['a']},views:[{...choice,revision:1}]});});
+  });
+  item.onConfirm=async(id,message)=>{
+    assert.equal(item.snapshot(id).revision,1);assert.equal(item.unsaved(id),false);
+    order.push({id,message});
+  };
+  item.receive('session',{...response(0),views:[choice]});item.setSelectionDraft(choice,['a']);
+  const [confirm,discard]=item.composerActions();
+  assert.equal(confirm.tone,'primary');assert.equal(discard.tone,'secondary');assert.equal(item.syncLabel(),'');
+  const first=confirm.run();await confirm.run();item.activeId='other';finishSave();await first;
+  assert.equal(order.length,2);assert.equal(order[0],'select_recipes');
+  assert.equal(order[1].id,'session');assert.match(order[1].message,/清蒸虾/);
+});
+
+test('failed confirmation retains its draft and never starts a model turn', async t => {
+  globalThis.document ||= {querySelectorAll:()=>[]};
+  const item=controller(t,async()=>{const error=new Error('invalid');error.status=422;throw error;});
+  let continued=false;item.onConfirm=async()=>{continued=true;};
+  item.receive('session',response(0));item.setDraft(preference(0),{ingredient_terms:['虾'],servings:3});
+  await assert.rejects(item.composerActions()[0].run(),/invalid/);
+  assert.equal(continued,false);assert.equal(item.entry('session').confirming,false);
+  assert.equal(item.entry('session').drafts.preferences.values.servings,3);
+});
+
+test('a failed continuation keeps its message and only explicit retry starts it once', async () => {
+  const queue=new ConfirmationQueue();let calls=0;
+  queue.enqueue('original','我已确认清蒸虾，请继续安排。');
+  await queue.start('original',async()=>{calls++;return {error:'workspace offline'};});
+  assert.equal(queue.get('original').status,'failed');
+  assert.equal(queue.get('original').error,'workspace offline');
+  await queue.start('original',async()=>{calls++;});
+  assert.equal(calls,1);
+  queue.retry('original');let finishPreparation;
+  const pending=queue.start('original',async(message,prepared)=>{
+    calls++;assert.match(message,/清蒸虾/);
+    await new Promise(resolve=>{finishPreparation=resolve;});prepared();
+  });
+  await queue.start('original',async()=>{calls++;});
+  assert.equal(queue.get('original').status,'preparing');
+  finishPreparation();await pending;
+  assert.equal(calls,2);assert.equal(queue.get('original'),undefined);
+});
+
+test('unknown recovery keeps model components hidden until a confirmed terminal status', t => {
+  const item=controller(t),view=preference(2,'new-form');
+  const message={streaming:false,error:'connection interrupted',actions:[{kind:'show_component',component:view}]};
+  const session={running:false,messages:[message]};
+  recoverRunningTurn(session,message);item.setRunning('session',session.running);
+  item.receive('session',response(2,'new-form'));
+  assert.equal(session.running,true);assert.equal(message.error,undefined);
+  assert.deepEqual(visibleMessageViews(message),[]);assert.deepEqual(item.entry('session').views,[]);
+  // A completed polling response replaces the temporary recovery message.
+  const completed={actions:message.actions};item.setRunning('session',false);
+  assert.equal(visibleMessageViews(completed)[0].id,'new-form');
+  assert.equal(item.entry('session').views[0].id,'new-form');
 });

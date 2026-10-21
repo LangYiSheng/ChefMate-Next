@@ -1,5 +1,6 @@
 import {renderView,node} from './ui-components.js';
 import {conversationLabel,snapshotStatus} from './presentation.js';
+import {icon} from './icons.js';
 
 export class CookingFocus {
   constructor(workspace,{session,onChange}) {
@@ -35,6 +36,7 @@ export class CookingFocus {
   updateTalking() {
     this.composer.hidden=!this.talking;this.prompts.hidden=!this.talking;
     this.talk.textContent=this.talking?'收起交流，专心做菜':'问问助手';
+    this.talk.prepend(icon(this.talking?'chevron-down':'message-circle'));
     this.prompts.replaceChildren();
     for(const text of ['这一步需要注意什么？','我缺少一种食材，帮我调整','当前做法可以再简单一点吗？']) {
       const button=node('button','composer-choice',text);button.type='button';

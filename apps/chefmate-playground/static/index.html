@@ -4,13 +4,15 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="light">
-  <meta name="theme-color" content="#f8f8f6">
+  <meta name="theme-color" content="#f2f4f2">
   <title>ChefMate · 菜谱助手</title>
   <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/static/colors.css">
   <link rel="stylesheet" href="/static/styles.css">
   <link rel="stylesheet" href="/static/workspace.css">
   <link rel="stylesheet" href="/static/experience.css">
   <link rel="stylesheet" href="/static/theme.css">
+  <link rel="stylesheet" href="/static/shell.css">
   <script type="module" src="/static/app.js"></script>
 </head>
 <body>
@@ -22,26 +24,27 @@
           <img class="brand-icon" data-chefmate-icon src="/static/brand/pot-c.svg" alt="">
           <span>ChefMate</span>
         </a>
-        <button class="icon-button mobile-only" id="close-sidebar" type="button" aria-label="收起会话导航">×</button>
+        <button class="icon-button desktop-only" id="collapse-sidebar" type="button" aria-label="收起侧栏" aria-controls="sidebar" aria-expanded="true" data-icon="panel-left-close"></button>
+        <button class="icon-button mobile-only" id="close-sidebar" type="button" aria-label="收起会话导航" data-icon="x"></button>
       </div>
-      <button class="new-chat" id="new-chat" type="button"><span aria-hidden="true">＋</span> 新会话</button>
+      <button class="new-chat" id="new-chat" type="button"><span data-icon="plus" aria-hidden="true"></span><span class="new-chat-label">新会话</span></button>
       <div class="sidebar-heading">最近会话</div>
       <nav class="sessions" id="sessions" aria-label="最近会话"></nav>
-      <div class="sidebar-footer"><a class="settings-link" href="/settings"><span aria-hidden="true">⚙</span><span>设置</span></a></div>
+      <div class="sidebar-footer"><a class="settings-link" href="/settings"><span data-icon="settings" aria-hidden="true"></span><span>设置</span></a></div>
+      <div id="sidebar-resize" class="sidebar-resize" role="separator" aria-label="调整侧栏宽度" aria-orientation="vertical" aria-valuemin="208" aria-valuemax="360" aria-valuenow="248" tabindex="0"></div>
     </aside>
 
     <main class="main">
       <header class="topbar">
         <div class="topbar-title">
-          <button class="icon-button mobile-only" id="open-sidebar" type="button" aria-label="展开会话导航" aria-controls="sidebar" aria-expanded="false">☰</button>
+          <button class="icon-button expand-sidebar desktop-only" id="expand-sidebar" type="button" aria-label="展开侧栏" aria-controls="sidebar" data-icon="panel-left-open"></button>
+          <button class="icon-button mobile-only" id="open-sidebar" type="button" aria-label="展开会话导航" aria-controls="sidebar" aria-expanded="false" data-icon="panel-left"></button>
           <span id="chat-title">菜谱助手</span>
           <span class="conversation-stage" id="conversation-stage" hidden></span>
         </div>
         <div class="topbar-actions">
           <button class="status-pill" id="status-button" type="button" aria-label="查看连接状态" hidden><span class="status-dot" id="status-dot" aria-hidden="true"></span><span id="status-label">连接中</span></button>
-          <button class="icon-button panel-toggle" id="toggle-details" type="button" aria-label="展开查询与菜谱详情" aria-controls="detail-panel" aria-expanded="false">
-            <svg width="19" height="19" viewBox="0 0 24 24" fill="none" aria-hidden="true"><rect x="3.5" y="4.5" width="17" height="15" rx="2.5" stroke="currentColor" stroke-width="1.5"/><path d="M15 5v14" stroke="currentColor" stroke-width="1.5"/></svg>
-          </button>
+          <button class="icon-button panel-toggle" id="toggle-details" type="button" aria-label="展开查询与菜谱详情" aria-controls="detail-panel" aria-expanded="false" data-icon="panel-right"></button>
         </div>
       </header>
 
@@ -52,9 +55,9 @@
           <h1>今天想吃什么？</h1>
           <p>说说食材、时间和人数，<br class="welcome-break">一起选菜、备菜，把这顿饭做好。</p>
           <div class="suggestions">
-            <button type="button" data-prompt="我想吃虾，半小时以内，有哪些做法？"><span>我想吃虾</span><small>半小时以内，有哪些做法？</small><span class="suggestion-arrow" aria-hidden="true">↗</span></button>
-            <button type="button" data-prompt="我有炒锅和炉灶，推荐几道新手能做的菜。"><span>做一点简单的</span><small>用炒锅，新手也能做</small><span class="suggestion-arrow" aria-hidden="true">↗</span></button>
-            <button type="button" data-prompt="找几道高蛋白菜谱，说明每份蛋白质和数据是否估算。"><span>看看高蛋白选择</span><small>每份营养，附上数据依据</small><span class="suggestion-arrow" aria-hidden="true">↗</span></button>
+            <button type="button" data-prompt="我想吃虾，半小时以内，有哪些做法？"><span>我想吃虾</span><small>半小时以内，有哪些做法？</small><span class="suggestion-arrow" data-icon="arrow-up-right" aria-hidden="true"></span></button>
+            <button type="button" data-prompt="我有炒锅和炉灶，推荐几道新手能做的菜。"><span>做一点简单的</span><small>用炒锅，新手也能做</small><span class="suggestion-arrow" data-icon="arrow-up-right" aria-hidden="true"></span></button>
+            <button type="button" data-prompt="找几道高蛋白菜谱，说明每份蛋白质和数据是否估算。"><span>看看高蛋白选择</span><small>每份营养，附上数据依据</small><span class="suggestion-arrow" data-icon="arrow-up-right" aria-hidden="true"></span></button>
           </div>
         </section>
         <div class="messages" id="messages"></div>
@@ -70,17 +73,16 @@
           <label class="visually-hidden" for="composer-input">告诉 ChefMate 你想吃什么</label>
           <textarea id="composer-input" rows="1" placeholder="告诉我想吃什么，也可以补充条件…" maxlength="8000" autocomplete="off"></textarea>
           <div class="composer-bottom">
-            <button class="attach-button" id="attach-image" type="button" aria-label="上传图片" title="上传图片 · 自动压缩" hidden>＋</button>
+            <button class="attach-button" id="attach-image" type="button" aria-label="上传图片" title="上传图片 · 自动压缩" hidden data-icon="image-plus"></button>
             <input type="file" id="image-input" accept="image/jpeg,image/png,image/webp" multiple hidden>
             <span class="composer-hint">Enter 发送 · Shift + Enter 换行</span>
-            <button class="send-button" id="send-button" type="submit" aria-label="发送消息" disabled>
-              <svg width="19" height="19" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 19V5m0 0-6 6m6-6 6 6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
-            </button>
-            <button class="send-button stop-button" id="stop-button" type="button" aria-label="停止本次执行" hidden><span aria-hidden="true"></span></button>
+            <button class="send-button" id="send-button" type="submit" aria-label="发送消息" disabled data-icon="arrow-up"></button>
+            <button class="send-button stop-button" id="stop-button" type="button" aria-label="停止本次执行" hidden data-icon="square"></button>
           </div>
         </form>
         <p class="composer-note" id="composer-note">依据当前菜谱库回答，营养估算会明确标注。</p>
       </div>
+      <section id="settings-host" class="settings-host" aria-label="工作台设置" hidden><iframe id="settings-frame" title="ChefMate 设置"></iframe></section>
     </main>
 
     <aside class="detail-panel" id="detail-panel" aria-label="厨房工作区" hidden>
@@ -91,7 +93,7 @@
           <button type="button" class="panel-tab" id="recipe-tab" role="tab" aria-selected="false" aria-controls="recipe-content">菜谱详情</button>
           <button type="button" class="panel-tab" id="skills-tab" role="tab" aria-selected="false" aria-controls="skills-content">技能</button>
         </div>
-        <button class="icon-button" id="close-details" type="button" aria-label="收起详情面板">×</button>
+        <button class="icon-button" id="close-details" type="button" aria-label="收起详情面板" data-icon="x"></button>
       </div>
       <div class="panel-content workspace-content" id="workspace-content" role="tabpanel" aria-labelledby="workspace-tab"></div>
       <div class="panel-content" id="query-content" role="tabpanel" aria-labelledby="query-tab" hidden></div>

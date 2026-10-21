@@ -1,12 +1,12 @@
 :root {
-  --text: #343735;
-  --muted: #888c87;
-  --accent: #4c6353;
-  --line: #e6e8e3;
-  --surface: #fbfcfa;
+  --text:var(--color-text);
+  --muted:var(--color-muted);
+  --accent:var(--color-accent);
+  --line:var(--color-border);
+  --surface:var(--color-surface);
 }
 body {
-  background: #fafbf8;
+  background: var(--color-surface);
   color: var(--text);
   font-family: Inter, "Segoe UI", "Microsoft YaHei", sans-serif;
   font-size: 14px;
@@ -41,7 +41,7 @@ a {
   align-items: stretch;
   border-right: 1px solid var(--line);
   min-width: 0;
-  background: #f4f5f1;
+  background: var(--color-surface);
 }
 .settings-brand {
   font-size: 21px;
@@ -55,13 +55,13 @@ a {
 }
 .back-link {
   font-size: 12px;
-  color: #777d74;
+  color: var(--color-muted);
   margin: 26px 10px 6px;
 }
 .settings-nav h2 {
   font-size: 11px;
   font-weight: 400;
-  color: #9a9f94;
+  color: var(--color-subtle);
   margin: 30px 10px 11px;
 }
 .settings-nav > button {
@@ -72,22 +72,22 @@ a {
   display: flex;
   gap: 12px;
   align-items: center;
-  color: #787e72;
+  color: var(--color-muted);
   border-radius: 8px;
   cursor: pointer;
   margin: 1px 0;
 }
 .settings-nav > button[aria-current="page"] {
-  color: #394637;
-  background: #e8ece3;
+  color: var(--color-accent-hover);
+  background: var(--color-accent-soft);
 }
 .settings-nav > button:hover {
-  background: #edf0e8;
+  background: var(--color-hover);
 }
 .settings-nav > small {
   margin: auto 10px 0;
   font-size: 10px;
-  color: #969d8d;
+  color: var(--color-subtle);
   padding-top: 30px;
 }
 .settings-workspace {
@@ -115,7 +115,7 @@ a {
 }
 .settings-header > a {
   font-size: 25px;
-  color: #999f95;
+  color: var(--color-subtle);
   line-height: 1;
   padding: 4px 8px;
 }
@@ -172,8 +172,8 @@ a {
 .setting-control select {
   min-width: 0;
   width: 100%;
-  border: 1px solid #dfe3da;
-  background: #fff;
+  border: 1px solid var(--color-border);
+  background: var(--color-canvas);
   border-radius: 7px;
   padding: 10px 12px;
   color: var(--text);
@@ -182,11 +182,11 @@ a {
 }
 .setting-control input:focus,
 .setting-control select:focus {
-  border-color: #94a98b;
-  box-shadow: 0 0 0 2px #e9eee5;
+  border-color: var(--color-subtle);
+  box-shadow: 0 0 0 2px var(--color-accent-soft);
 }
 .setting-control input[type="checkbox"] {
-  accent-color: #697e5b;
+  accent-color: var(--color-muted);
   width: 17px;
   height: 17px;
   margin: 9px 0;
@@ -216,7 +216,7 @@ a {
 }
 .primary-button {
   border: 0;
-  background: #566a48;
+  background: var(--color-accent);
   color: white;
   border-radius: 7px;
   font-size: 12px;
@@ -231,14 +231,14 @@ a {
   padding: 6px 0;
   border: 0;
   background: transparent;
-  color: #697e5b;
+  color: var(--color-muted);
   font-size: 12px;
   cursor: pointer;
 }
 .secondary-button {
-  border: 1px solid #dfe4d8;
+  border: 1px solid var(--color-border);
   background: transparent;
-  color: #637754;
+  color: var(--color-accent);
   font-size: 12px;
   border-radius: 7px;
   padding: 9px 13px;
@@ -248,8 +248,8 @@ a {
   opacity: 0.4;
 }
 .settings-error {
-  color: #a55542;
-  background: #fbf0ec;
+  color: var(--color-danger);
+  background: var(--color-danger-soft);
   padding: 13px 16px;
   border-radius: 7px;
   line-height: 1.7;
@@ -257,7 +257,7 @@ a {
   margin: 0 0 15px;
 }
 .settings-success {
-  color: #526c42;
+  color: var(--color-accent);
   font-size: 12px;
   line-height: 1.7;
   padding: 10px 0;
@@ -277,20 +277,20 @@ a {
   border-bottom: 1px solid var(--line);
 }
 .status-row span:last-child {
-  color: #788b69;
+  color: var(--color-muted);
   text-align: right;
   overflow-wrap: anywhere;
 }
 .display-preview {
-  border-left: 2px solid #a5b598;
+  border-left: 2px solid var(--color-subtle);
   padding: 7px 15px;
   font-size: 12px;
-  color: #88927f;
+  color: var(--color-subtle);
   line-height: 2;
   margin: 18px 0;
 }
-#settings-confirm{max-width:min(430px,90vw);border:1px solid #dfe3da;border-radius:12px;padding:25px;background:#fbfcfa;color:var(--text);box-shadow:0 20px 70px #25321a24}
-#settings-confirm::backdrop{background:#20281b33}
+#settings-confirm{max-width:min(430px,90vw);border:1px solid var(--color-border);border-radius:12px;padding:25px;background:var(--color-surface);color:var(--text);box-shadow:0 20px 70px color-mix(in srgb,var(--color-text) 14%,transparent)}
+#settings-confirm::backdrop{background:color-mix(in srgb,var(--color-text) 20%,transparent)}
 #settings-confirm h2{font-size:17px;font-weight:550;margin:0 0 12px}
 #settings-confirm p{font-size:13px;line-height:1.8;color:var(--muted);margin:0 0 23px}
 #settings-confirm>div{display:flex;justify-content:flex-end;gap:10px}

@@ -763,8 +763,8 @@ class ChefMateAgent:
                 clean["ui_context"] = self._validate_ui_context(message["ui_context"])
             if role == "user" and message.get("images") is not None:
                 images = message["images"]
-                if not isinstance(images, list) or len(images) > 3:
-                    raise _AgentFailure("invalid_history", "每条消息最多支持三张图片。")
+                if not isinstance(images, list) or len(images) > 12:
+                    raise _AgentFailure("invalid_history", "图片记录无效或超过系统上限。")
                 clean["images"] = [ImageReference.model_validate(item).model_dump(mode="json") for item in images]
             if role == "assistant" and message.get("tool_calls"):
                 clean["tool_calls"] = []
@@ -791,9 +791,12 @@ class ChefMateAgent:
             normalized.append(clean)
         if pending or normalized[-1]["role"] != "user":
             raise _AgentFailure("invalid_history", "历史必须以本轮用户消息结束，且工具结果必须完整。")
+        if self.config.supports_images and len(normalized[-1].get("images", [])) > self.config.max_images:
+            raise _AgentFailure("image_limit", f"当前模型每次请求最多接受 {self.config.max_images} 张图片，请移除多余图片。")
         # Drop complete older human turns only; never split an assistant/tool batch.
         while (len(_dump(normalized)) > self.config.max_history_chars
-               or sum(len(message.get("images", [])) for message in normalized) > 6):
+               or self.config.supports_images
+               and sum(len(message.get("images", [])) for message in normalized) > self.config.max_images):
             next_user = next((i for i in range(1, len(normalized)) if normalized[i]["role"] == "user"), None)
             if next_user is None:
                 raise _AgentFailure("history_limit", "本轮对话超过上下文预算，请开始新会话。")
