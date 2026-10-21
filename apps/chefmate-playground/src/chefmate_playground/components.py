@@ -44,8 +44,9 @@ COMPONENTS = (
     ComponentSpec("personal-memory", "长期记忆", "维护口味偏好并按需查找历史。",
                   ("read_long_term_memory", "maintain_memory_summary", "search_personal_history"),
                   pages=("memory",), factories=("memory",), dependencies=("memory",)),
-    ComponentSpec("food-journal", "饮食记录", "用照片或文字记餐，核对后汇入个人营养记录。",
-                  ("create_food_log_draft", "search_food_logs", "get_food_log", "revise_food_log_draft"), pages=("journal",),
+    ComponentSpec("food-journal", "饮食记录", "在对话里拍照记餐、查看营养、修改份量并确认保存。",
+                  ("create_food_log_draft", "search_food_logs", "get_food_log", "revise_food_log_draft", "confirm_food_log"),
+                  ui_kinds=("food_log", "nutrition_summary"), pages=("journal",),
                   factories=("journal",), dependencies=("journal",)),
 )
 DEFAULT_COMPONENTS = tuple(item.id for item in COMPONENTS)

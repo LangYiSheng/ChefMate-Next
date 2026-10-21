@@ -1,4 +1,4 @@
-/* The same native control treatment is shared by settings and kitchen editors. */
+/* Shared controls for settings, conversation forms and kitchen editors. */
 /* Compact workflow fields keep their own dimensions and checklist semantics. */
 .ui-input{background:var(--color-surface);border:1px solid transparent;border-radius:11px;color:var(--color-text);transition:background .15s,border-color .15s}
 .ui-input:hover{background:var(--color-hover)}
@@ -13,8 +13,12 @@
 .control-surface .control-input:disabled{cursor:not-allowed}
 .control-multiline{align-items:stretch}
 .control-multiline textarea.control-input{display:block;resize:vertical;min-height:130px}
-.control-select select.control-input{appearance:none;-webkit-appearance:none;padding-right:42px;cursor:pointer;white-space:normal}
+.control-select select.control-select-native{position:absolute!important;inset:0 auto auto 0;width:1px!important;height:1px!important;min-height:0!important;margin:0!important;padding:0!important;border:0!important;overflow:hidden;clip-path:inset(50%);opacity:0;pointer-events:none}
+.control-select-trigger{display:flex;align-items:center;position:relative;min-width:0;width:100%;min-height:44px;padding:11px 42px 11px 14px;border:0;border-radius:10px;background:transparent;color:var(--color-text);font:inherit;font-size:14px;line-height:1.6;text-align:left;cursor:pointer}
+.control-select-trigger:focus{outline:0}.control-select-trigger:disabled{cursor:not-allowed}.control-select-value{display:block;min-width:0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}.control-select-trigger[aria-expanded="true"] .control-select-arrow{transform:translateY(3px) rotate(225deg)}
 .control-select-arrow{position:absolute;right:18px;top:calc(50% - 4px);width:7px;height:7px;border-right:1.5px solid var(--color-muted);border-bottom:1.5px solid var(--color-muted);transform:rotate(45deg);pointer-events:none}
+.control-select-popover{position:fixed;inset:auto;margin:0;padding:5px;z-index:1000;box-sizing:border-box;max-width:calc(100vw - 16px);border:1px solid var(--color-border);border-radius:12px;background:var(--color-canvas);color:var(--color-text);box-shadow:0 10px 32px var(--color-shadow);overflow:auto;overscroll-behavior:contain;scrollbar-width:thin;font:inherit;font-size:14px;line-height:1.5}
+.control-select-popover[hidden]{display:none!important}.control-select-popover::backdrop{background:transparent}.control-select-list{display:flex;flex-direction:column;gap:2px}.control-select-option{display:flex;align-items:center;gap:10px;flex:none;min-height:38px;padding:8px 10px;border-radius:7px;cursor:pointer;line-height:1.5;overflow-wrap:anywhere}.control-select-option::after{content:"";display:block;flex:none;width:6px;height:11px;margin-left:auto;margin-right:4px;border-right:1.5px solid transparent;border-bottom:1.5px solid transparent;transform:rotate(40deg)}.control-select-option[aria-selected="true"]{color:var(--color-accent);font-weight:550}.control-select-option[aria-selected="true"]::after{border-color:var(--color-accent)}.control-select-option[data-active="true"]{background:var(--color-accent-soft)}.control-select-option[aria-disabled="true"]{opacity:.4;cursor:not-allowed}.control-select-option-copy{min-width:0}
 .control-number{width:min(100%,240px);gap:0}
 .control-number input.control-input{appearance:textfield;-moz-appearance:textfield;text-align:center;padding-inline:4px;font-variant-numeric:tabular-nums}
 .control-number input::-webkit-inner-spin-button,.control-number input::-webkit-outer-spin-button{appearance:none;-webkit-appearance:none;margin:0}
@@ -33,5 +37,5 @@
 .control-switch-track::after{content:"";position:absolute;left:3px;top:3px;width:21px;height:21px;border-radius:50%;background:var(--color-canvas);box-shadow:0 1px 3px var(--color-shadow);transition:transform .18s}
 .control-switch input:checked+.control-switch-track{background:var(--color-accent)}
 .control-switch input:checked+.control-switch-track::after{transform:translateX(19px)}
-@media(max-width:760px){.control-surface .control-input{font-size:16px}.control-surface{min-height:48px}.control-switch{min-height:27px}.control-number{width:100%;max-width:280px}.control-step{width:44px}}
+@media(max-width:760px){.control-surface .control-input,.control-select-trigger{font-size:16px}.control-surface{min-height:48px}.control-select-trigger{min-height:46px}.control-select-popover{font-size:15px}.control-select-option{min-height:44px}.control-switch{min-height:27px}.control-number{width:100%;max-width:280px}.control-step{width:44px}}
 @media(prefers-reduced-motion:reduce){.control-surface,.control-switch-track,.control-switch-track::after{transition:none}}

@@ -1,8 +1,14 @@
 import {icon} from './icons.js';
+import {enhanceControl} from './form-controls.js';
+import {TOOL_NAMES} from './presentation.js';
 
 const node=(tag,cls,text)=>{const item=document.createElement(tag);if(cls)item.className=cls;if(text!=null)item.textContent=String(text);return item;};
 const labels={system:'系统提示',user:'用户输入',assistant:'助手输出',tool:'工具回调',idea:'交流',planning:'选菜',prep:'备菜',cooking:'烹饪',completed:'完成'};
 const fieldLabels={revision:'任务版本',presentation_revision:'展示版本',current_actions:'可执行操作',allowed_transitions:'可进入阶段',blockers:'阻塞原因',effect:'操作类型',auto_display:'自动展示',parameter_integrity:'参数完整性',stage:'当前阶段',preferences:'用餐条件',components:'界面内容',recent_actions:'最近操作',pending_question:'待回答问题',last_answer:'用户答案',recipe_id:'菜谱 ID',recipe_ids:'菜谱 ID',item_id:'食材项目 ID',expected_revision:'预期版本',status:'状态',message:'说明',items:'项目',actions:'界面更新',ui_snapshot:'任务状态',values:'条件',servings:'用餐人数',ingredient_terms:'想吃的食材',exclude_ingredient_terms:'不吃的食材',max_total_time_min:'时间上限',available_tools:'可用厨具',dietary_notes:'饮食说明',question:'问题',option_ids:'选择',text:'文字',title:'标题'};
+const tokenValue=value=>Number.isFinite(value)?value.toLocaleString('zh-CN'):'未报告';
+export function traceRequests(capture) {
+  return (capture?.debug_trace || []).map((request,index)=>({request,round:request.round || index+1,usage:(capture.usage?.calls || []).find(call=>call.round===(request.round || index+1)) || null}));
+}
 
 function details(title,build,{open=false}={}) {
   const item=node('details','dev-disclosure'),summary=node('summary','',title);item.append(summary);
@@ -137,7 +143,7 @@ export class DeveloperPanel {
     const label=node('label','dev-turn-label','查看轮次'),select=node('select');select.dataset.devKey='turn-select';select.setAttribute('aria-label','查看调试轮次');
     payload.runs.forEach(run=>{const option=node('option','',`${run.message?.slice(0,28)||'本轮'} · ${run.status==='running'?'执行中':run.status==='waiting_for_user'?'待回答':run.model_calls+'次请求'}`);option.value=run.turn_id;select.append(option);});
     select.value=payload.capture?.turn_id||payload.runs[0].turn_id;
-    select.addEventListener('change',()=>{this.chosen=select.value;this.render({force:true});});label.append(select);root.append(label);
+    select.addEventListener('change',()=>{this.chosen=select.value;this.selectedRequest=null;this.render({force:true});});label.append(enhanceControl(select,{label:'查看调试轮次'}));root.append(label);
   }
   logs(root,payload){
     this.turnSelect(root,payload);
@@ -162,20 +168,28 @@ export class DeveloperPanel {
   }
   context(root,payload){
     this.turnSelect(root,payload);
-    const trace=payload.capture?.debug_trace||[];
-    root.append(node('p','dev-note','实际模型请求的脱敏记录，包含系统提示、消息顺序、工具定义及任务状态。图片仅保留元数据，不展示内部推理。最近保留20轮。'));
-    if(!trace.length){root.append(paragraph(payload.capture?.status==='running'?'正在准备首次模型请求。':'这轮没有留存实际模型请求。旧对话不会用当前配置重建并冒充原始上下文。'));return;}
-    trace.forEach((request,index)=>{
-      const entry=details(`第 ${request.round||index+1} 次模型请求 · ${request.messages?.length||0} 条消息`,()=>{
-        const body=node('div','dev-request');
-        body.append(details('系统提示词',()=>paragraph(request.system||'')));
-        if(request.parameter_integrity)body.append(details('工具参数完整性',()=>valueView(request.parameter_integrity)));
-        if(request.skills?.length)body.append(details('本次系统提示中的组件指南',()=>valueView(request.skills)));
-        if(request.native_images_count)body.append(node('p','dev-constraint',`实际发送 ${request.native_images_count} 张图片 · 不记录图片字节`));
-        (request.messages||[]).forEach((message,messageIndex)=>body.append(messageView(message,messageIndex)));
-        body.append(details(`本次绑定的 ${request.tools?.length||0} 项工具`,()=>valueView((request.tools||[]).map(tool=>({name:tool.name||tool.function?.name,description:tool.description||tool.function?.description})))));
-        return body;
-      },{open:index===trace.length-1});entry.dataset.devKey=`request:${payload.capture.turn_id}:${request.round||index}`;root.append(entry);
-    });
+    const requests=traceRequests(payload.capture);
+    root.append(node('p','dev-note','按实际请求顺序查看输入与工具。用量来自服务端报告；分类占用在左侧概览中估算。'));
+    if(!requests.length){root.append(paragraph(payload.capture?.status==='running'?'正在准备首次模型请求。':'这轮没有留存实际请求。旧对话不会按当前配置重建。'));return;}
+    const turn=payload.capture.turn_id;
+    if(this.requestTurn!==turn){this.requestTurn=turn;this.selectedRequest=null;}
+    const selected=requests.find(item=>item.round===this.selectedRequest) || requests.at(-1);this.selectedRequest=selected.round;
+    const browser=node('section','dev-trace-browser'),navigation=node('nav','dev-request-list');navigation.setAttribute('aria-label','本轮模型请求');
+    for(const item of requests){const button=node('button','dev-request-choice');button.type='button';button.dataset.devKey=`request:${turn}:${item.round}`;button.setAttribute('aria-current',item===selected?'true':'false');
+      const copy=node('span','dev-request-choice-copy');copy.append(node('strong','',`请求 ${item.round}`),node('small','',`${item.request.messages?.length || 0} 条消息 · ${(item.request.messages || []).filter(message=>message.role==='tool').length} 项工具结果`));
+      const usage=node('span','dev-request-choice-tokens',item.usage?`${tokenValue(item.usage.input_tokens)} → ${tokenValue(item.usage.output_tokens)}`:'用量未报告');button.append(node('i','dev-trace-dot'),copy,usage);
+      button.addEventListener('click',()=>{this.selectedRequest=item.round;this.paintKey='';this.paint();});navigation.append(button);}
+    const content=node('section','dev-trace-detail'),request=selected.request,usage=selected.usage;
+    const title=node('div','dev-trace-title');title.append(node('h3','',`第 ${selected.round} 次模型请求`),node('span','',usage?.model || '模型名称未记录'));content.append(title);
+    const metrics=node('dl','dev-request-metrics');for(const [key,label]of [['input_tokens','输入'],['output_tokens','输出'],['total_tokens','总量'],['cached_tokens','缓存读取']]){const cell=node('div');cell.append(node('dt','',label),node('dd','',tokenValue(usage?.[key])));metrics.append(cell);}content.append(metrics);
+    if(usage?.total_tokens_source==='input_output_sum')content.append(node('p','dev-constraint','总量由本次完整输入与输出精确相加。'));
+    const tab=this.contextTab || 'messages',tabs=node('nav','dev-context-tabs');tabs.setAttribute('aria-label','请求内容');tabs.setAttribute('role','tablist');
+    const panel=node('div','dev-context-content');panel.id=`dev-request-panel-${selected.round}`;panel.setAttribute('role','tabpanel');
+    const tabButtons=[];for(const [key,label]of [['messages','消息'],['system','系统提示'],['tools','工具定义']]){const button=node('button','',label);button.type='button';button.dataset.devKey=`context-tab:${key}`;button.id=`dev-request-tab-${key}`;button.setAttribute('role','tab');button.setAttribute('aria-selected',String(key===tab));button.setAttribute('aria-controls',panel.id);button.tabIndex=key===tab?0:-1;button.addEventListener('click',()=>{this.contextTab=key;this.paintKey='';this.paint();});tabButtons.push(button);tabs.append(button);}
+    tabs.addEventListener('keydown',event=>{const index=tabButtons.indexOf(event.target),delta=event.key==='ArrowLeft'?-1:event.key==='ArrowRight'?1:0;let next;if(delta)next=(index+delta+tabButtons.length)%tabButtons.length;else if(event.key==='Home')next=0;else if(event.key==='End')next=tabButtons.length-1;else return;event.preventDefault();tabButtons[next].click();this.host.querySelector(`#${tabButtons[next].id}`)?.focus();});panel.setAttribute('aria-labelledby',`dev-request-tab-${tab}`);content.append(tabs,panel);
+    if(tab==='system'){panel.append(paragraph(request.system || '未记录系统提示词'));if(request.skills?.length)panel.append(details('本次组件指南目录',()=>valueView(request.skills)));}
+    else if(tab==='tools'){for(const item of request.tools || []){const tool=item.function || item;panel.append(details(TOOL_NAMES[tool.name] || tool.name || '工具',()=>{const body=node('div');body.append(node('code','dev-tool-name',tool.name || ''),paragraph(tool.description || ''),schemaView(tool.parameters || {}));return body;}));}if(!request.tools?.length)panel.append(paragraph('本次请求未绑定工具。'));}
+    else {if(request.native_images_count)panel.append(node('p','dev-constraint',`${request.native_images_count} 张实际图片 · 只记录元数据`));(request.messages || []).forEach((message,index)=>{if(message.role==='tool'){const entry=details(`${index+1} · ${TOOL_NAMES[message.name] || message.name || '工具结果'} · ${message.result?.status || '已返回'}`,()=>messageView(message,index));entry.dataset.devKey=`message:${turn}:${selected.round}:${index}`;panel.append(entry);}else panel.append(messageView(message,index));});if(request.parameter_integrity)panel.append(details('工具参数完整性',()=>valueView(request.parameter_integrity)));}
+    content.append(node('p','dev-constraint','来源：实际模型请求的脱敏快照。未记录图片字节、隐藏推理或供应商完整封装。'));browser.append(navigation,content);root.append(browser);
   }
 }

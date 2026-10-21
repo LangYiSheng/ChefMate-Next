@@ -17,6 +17,7 @@ import {DeveloperPanel} from './developer-panel.js';
 import {TimerPopover} from './timer-popover.js';
 import {KitchenCenters} from './centers.js';
 import {ContextMeter} from './context-meter.js';
+import {ChatFood,foodPresentations} from './chat-food.js';
 applyBranding();
 
 const $ = (id) => document.getElementById(id);
@@ -41,6 +42,12 @@ const state = {
   blankId:`draft:${crypto.randomUUID()}`,starterCapability:null,failedDrafts:new Map(),
 };
 const contextMeter=new ContextMeter(ui.sidebar);
+const chatFood=new ChatFood({api,sessionId:()=>state.currentId,notify:toast,canAct:()=>!state.creating&&!state.preparing&&!busy(state.currentId),onChange:id=>scheduleRender(id),ask:(text,mode)=>{
+  if(state.creating || state.preparing || busy(state.currentId)){toast('等这一条回复结束，就可以继续。');return;}
+  const existing=ui['composer-input'].value.trim();
+  if(mode==='send' && !existing)sendMessage(text);
+  else{fillComposer(existing?`${existing}\n${text}`:text);if(existing)toast('已把这项操作补到输入框，原来的文字已保留。');}
+}});
 const questions=new QuestionState({
   read:id=>JSON.parse(localStorage.getItem(`chefmate:question:${id}`) || 'null'),
   write:(id,value)=>value ? localStorage.setItem(`chefmate:question:${id}`,JSON.stringify(value)) : localStorage.removeItem(`chefmate:question:${id}`),
@@ -775,6 +782,7 @@ function renderConversation(forceScroll = false) {
   ui.messages.hidden = !messages.length;
   ui.messages.replaceChildren();
   const lastViewMessage = new Map();
+  const foodOwners=new Map();messages.forEach((message,index)=>foodPresentations(message.tool_calls).records.forEach(record=>foodOwners.set(record.id,index)));
   const shownViews = visibleMessageViews;
   messages.forEach((message,index) => shownViews(message).forEach(view => lastViewMessage.set(view.id,index)));
   for (let index = 0; index < messages.length; index++) {
@@ -826,12 +834,7 @@ function renderConversation(forceScroll = false) {
       const receipt=element('button','view-receipt','核对刚整理的菜谱草稿');receipt.type='button';
       receipt.onclick=()=>{centers.source='drafts';shell.setPage('recipes');};node.append(receipt);
     }
-    if(!message.streaming){
-      for(const call of message.tool_calls || [])if(['create_food_log_draft','revise_food_log_draft'].includes(call.name) && call.result?.status==='ok' && call.result.draft?.id){
-        const draft=call.result.draft,receipt=element('button','view-receipt','核对这顿饭的份量与营养');receipt.type='button';
-        receipt.onclick=()=>{if(shell.setPage('journal')){centers.setJournalTab('drafts');centers.openFoodLog({id:draft.id,document:{title:draft.title || draft.document?.title || '这顿饭'}});}};node.append(receipt);
-      }
-    }
+    if(!message.streaming){const food=chatFood.render(message,{sessionId:state.currentId,canAct:!busy(state.currentId)&&!state.preparing&&!state.creating,recordOwners:foodOwners,index});if(food)node.append(food);}
     if ((message.streaming || state.developer) && (message.tool_calls?.length || message.process?.length || message.streaming || message.usage?.model_calls)) {
       const log = executionTrace(message);
       log.dataset.logKey = `${state.currentId}:${index}`;
@@ -1181,7 +1184,7 @@ function setDetails(open) {
   ui.app.classList.toggle('panel-open', open);
   ui['detail-panel'].hidden = !open;
   ui['toggle-details'].setAttribute('aria-expanded', String(open));
-  ui['toggle-details'].setAttribute('aria-label', open ? '收起查询与菜谱详情' : '展开查询与菜谱详情');
+  ui['toggle-details'].setAttribute('aria-label', open ? '收起右侧栏' : '展开右侧栏');
   backdrop();
 }
 function setTab(tab, focus = false) {
@@ -1376,6 +1379,7 @@ ui['stop-button'].addEventListener('click', cancelTurn);
 ui['open-sidebar'].addEventListener('click', () => setSidebar(true));
 $('close-sidebar').addEventListener('click', () => { setSidebar(false); ui['open-sidebar'].focus(); });
 ui['toggle-details'].addEventListener('click', () => setDetails(!state.detailOpen));
+window.addEventListener('chefmate:inspect-context',()=>{if(!state.developer)return;developerPanel.mode='context';setDetails(true);setTab('query');});
 $('close-details').addEventListener('click', () => { setDetails(false); ui['toggle-details'].focus(); });
 ui['status-button'].addEventListener('click', () => { setDetails(true); setTab('query'); });
 ui['workspace-context'].addEventListener('click', () => { setDetails(true); setTab('workspace'); });

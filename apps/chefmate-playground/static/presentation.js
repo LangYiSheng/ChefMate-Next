@@ -14,7 +14,7 @@ export function snapshotStatus(snapshot={}) {
     active_recipe_name:recipes.find(recipe=>recipe.recipe_id===snapshot.active_recipe_id)?.name,
     choosing:snapshot.components?.some(view=>['preference_form','recipe_choices','recipe_detail'].includes(view.kind))};
 }
-export const TOOL_NAMES = Object.freeze({create_food_log_draft:'整理饮食记录',search_food_logs:'查看个人饮食',get_food_log:'读取饮食草稿',revise_food_log_draft:'调整饮食草稿',find_ingredients:'识别食材',search_recipes:'筛选菜谱',get_recipe:'读取菜谱',
+export const TOOL_NAMES = Object.freeze({create_food_log_draft:'整理饮食记录',search_food_logs:'查看个人饮食',get_food_log:'读取饮食记录',revise_food_log_draft:'调整饮食草稿',confirm_food_log:'确认饮食记录',find_ingredients:'识别食材',search_recipes:'筛选菜谱',get_recipe:'读取菜谱',
   get_search_options:'核对查询条件',show_preference_form:'整理用餐条件',show_recipe_choices:'整理菜品选择',
   show_recipe_details:'展示菜品详情',set_meal_plan:'安排餐单',show_meal_plan:'核对餐单',show_shopping_list:'整理备菜清单',
   show_prep_checklist:'整理备菜清单',show_cooking_guide:'整理烹饪步骤',set_cooking_timer:'设置计时',show_timers:'查看计时',

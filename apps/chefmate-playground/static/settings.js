@@ -6,6 +6,7 @@ import { icon } from './icons.js';
 import {navigationIndex, navigationEdges, revealNavigationItem} from './settings-navigation.js';
 import {enhanceControl} from './form-controls.js';
 import {SettingsInsights} from './settings-insights.js';
+import {TOOL_NAMES} from './presentation.js';
 const reminderSound = new TimerSound();
 applyBranding();
 const embedded = window.parent !== window && new URLSearchParams(location.search).get('embedded') === '1';
@@ -356,19 +357,20 @@ function render() {
     $("settings-form").append(memoryHost);
     if (initialize) window.dispatchEvent(new CustomEvent('chefmate:memory-settings',{detail:{container:memoryHost}}));
   } else if (current === "components") {
-    heading("已安装组件");
+    const examples={'meal-planning':'5个人，帮我搭配4道家常菜。','pantry-preparation':'这些菜要先准备什么？','cooking-guide':'这一步要计时多久？','recipe-authoring':'把这张菜谱截图整理成我的菜谱。','personal-memory':'记住我不吃香菜。','food-journal':'这是今天的午饭，帮我记一下。'};
+    const pageNames={journal:'食光手记',recipes:'菜谱中心',memory:'长期记忆设置'},uiNames={preference_form:'用餐条件',recipe_choices:'菜品选择',recipe_detail:'菜谱详情',meal_plan:'餐单与份量',prep_checklist:'备菜清单',cooking_guide:'烹饪步骤',timers:'计时器',task_progress:'任务进度',food_log:'饮食记录',nutrition_summary:'营养统计'};
+    $('settings-form').append(node('p','components-intro','决定小锅搭子能帮你做什么。关闭后保留已有记录。'));
     for (const component of loaded.components || []) {
-      const name=component.id;field(component.name,name,{type:'checkbox',note:component.description});
-      const details=node('details','settings-component-details'),summary=node('summary','',`${component.tools?.length || 0} 项工具 · 查看组成`);details.append(summary);
-      details.append(node('p','settings-note',`指南按需加载 · ${component.ui?.pages?.length?'含独立页面入口':'在对话内使用'}`));$('settings-form').append(details);
+      const entry=node('section','settings-component'),input=field(component.name,component.id,{type:'checkbox',note:component.description}),row=input.closest('.setting-field');entry.append(row);
+      const details=node('details','settings-component-details'),summary=node('summary','','查看能力');details.append(summary);
+      const body=node('div','settings-component-body');
+      if(examples[component.id]){body.append(node('h3','','可以这样说'),node('p','component-example',examples[component.id]));}
+      body.append(node('h3','','可执行功能'));const tools=node('ul','component-tool-list');for(const tool of component.tools || []){const item=node('li');item.append(node('span','',TOOL_NAMES[tool] || tool),node('code','',tool));tools.append(item);}body.append(tools);
+      const interfaces=[...(component.ui?.kinds || []).map(key=>uiNames[key] || key),...(component.ui?.pages || []).map(key=>pageNames[key] || key)];
+      body.append(node('h3','','界面与组成'),node('p','',interfaces.length?interfaces.join('、'):'在当前对话内使用'));
+      const technical=node('dl','component-manifest');for(const [label,value]of [['组件ID',component.id],['指南',component.instructions?.entrypoint || '未提供'],['加载方式',component.instructions?.loading==='on_demand'?'按需读取':component.instructions?.loading || '未提供'],['依赖',(component.dependencies || []).join('、') || '无额外依赖'],['状态',component.available===false?'依赖尚未就绪':'已就绪']]){technical.append(node('dt','',label),node('dd','',value));}body.append(technical);details.append(body);entry.append(details);$('settings-form').append(entry);
     }
-    $("settings-form").append(
-      node(
-        "p",
-        "settings-note",
-        "开关同时控制组件的指南与工具权限，已有记录会保留。",
-      ),
-    );
+    $('settings-form').append(node('p','settings-note','开关同时控制组件指南与工具权限。'));
   } else if (['usage','about'].includes(current)) {
     const host=node('section','settings-insights');$('settings-form').append(host);insights=new SettingsInsights({host,api});insights.show(current);
   } else if (current === "context") {

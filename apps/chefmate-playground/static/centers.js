@@ -5,6 +5,7 @@ import {CenterEditorState,draftIngredient} from './center-state.js';
 import {FocusMotion} from './focus-state.js';
 import {renderJournalContent} from './nutrition-dashboard.js';
 import {renderFoodLogEditor} from './food-log-editor.js';
+import {resizeRightPane,panelBounds} from './pane-resize.js';
 
 const nutrients=[['calories_kcal','热量','kcal'],['protein_g','蛋白质','g'],['fat_g','脂肪','g'],['carbohydrate_g','碳水','g']];
 const value=(number,unit='')=>Number.isFinite(number)?`${Math.round(number*10)/10}${unit?` ${unit}`:''}`:'暂无数据';
@@ -58,7 +59,7 @@ export class KitchenCenters {
       if(!this.editor || this.confirmation || this.host.hidden)return;
       if(event.key==='Escape'){event.preventDefault();event.stopImmediatePropagation();this.closeInspector();}
       if(event.key==='Tab' && this.compact){
-        const targets=[...this.editor.panel.querySelectorAll('button:not(:disabled),input:not(:disabled),select:not(:disabled),textarea:not(:disabled),[tabindex="0"]')].filter(target=>target.getClientRects().length);
+        const targets=[...this.editor.panel.querySelectorAll('button:not(:disabled),input:not(:disabled),select:not(:disabled),textarea:not(:disabled),[tabindex="0"]')].filter(target=>target.tabIndex>=0 && target.getClientRects().length);
         const first=targets[0],last=targets.at(-1);if(!first)return;
         if(!this.editor.panel.contains(document.activeElement) || (event.shiftKey?document.activeElement===first:document.activeElement===last)){event.preventDefault();(event.shiftKey?last:first).focus();}
       }
@@ -163,6 +164,8 @@ export class KitchenCenters {
     const panel=node('aside','center-inspector'),header=node('header','center-inspector-header'),identity=node('div'),titleNode=node('h2','',title);titleNode.tabIndex=-1;identity.append(node('span','center-eyebrow','菜谱中心'),titleNode);
     header.append(identity,iconButton('x','关闭详情',()=>this.closeInspector()));const body=node('div','center-inspector-body'),footer=node('footer','center-inspector-footer'),status=node('p','center-inspector-status');status.setAttribute('role','status');status.hidden=true;panel.append(header,body,status,footer);
     const editor={id,panel,header,title:titleNode,eyebrow:identity.firstChild,body,footer,status,state:new CenterEditorState(id),returnFocus:document.activeElement};this.editor=editor;this.layout.append(panel);this.layout.classList.add('has-inspector');this.adaptInspector();
+    const handle=node('div','right-pane-resize');handle.setAttribute('role','separator');handle.setAttribute('aria-label','调整详情宽度');handle.setAttribute('aria-orientation','vertical');handle.tabIndex=0;panel.prepend(handle);
+    editor.resizer=resizeRightPane({root:this.layout,handle,key:'chefmate:inspector-width',property:'--inspector-width',initial:500,enabled:()=>!this.compact,bounds:()=>panelBounds(this.host.clientWidth,{minimum:360,remaining:310})});
     if(!window.matchMedia('(prefers-reduced-motion: reduce)').matches && panel.animate)this.motion.start(panel.animate([{transform:'translateX(32px)',opacity:0},{transform:'translateX(0)',opacity:1}],{duration:200,easing:'cubic-bezier(.2,.7,.3,1)'}));
     titleNode.focus({preventScroll:true});for(const row of this.content.querySelectorAll('[data-recipe-id]'))row.classList.toggle('is-selected',row.dataset.recipeId===id);return editor;
   }
@@ -172,7 +175,7 @@ export class KitchenCenters {
     this.editor.panel.setAttribute('role',this.compact?'dialog':'region');if(this.compact)this.editor.panel.setAttribute('aria-modal','true');else this.editor.panel.removeAttribute('aria-modal');this.editor.panel.setAttribute('aria-label',this.editor.title.textContent);
   }
   disposeInspector(restoreFocus=true) {
-    this.detailGeneration++;this.detailAbort?.abort();this.motion.cancel();const editor=this.editor;if(!editor)return;editor.state.dispose();editor.panel.remove();this.editor=null;if(this.pane)this.pane.inert=false;this.layout?.classList.remove('has-inspector','compact-inspector');
+    this.detailGeneration++;this.detailAbort?.abort();this.motion.cancel();const editor=this.editor;if(!editor)return;editor.resizer?.dispose();editor.state.dispose();editor.panel.remove();this.editor=null;if(this.pane)this.pane.inert=false;this.layout?.classList.remove('has-inspector','compact-inspector');
     for(const background of [document.getElementById('sidebar'),document.querySelector('.topbar')])if(background)background.inert=false;
     for(const row of this.content?.querySelectorAll('.is-selected') || [])row.classList.remove('is-selected');
     if(restoreFocus){const target=editor.returnFocus?.isConnected?editor.returnFocus:[...this.content?.querySelectorAll('[data-recipe-id]') || []].find(row=>row.dataset.recipeId===editor.id)?.querySelector('button');target?.focus({preventScroll:true});}

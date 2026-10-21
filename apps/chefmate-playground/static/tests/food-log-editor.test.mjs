@@ -9,6 +9,7 @@ class Element extends EventTarget {
   constructor(tag){super();this.tagName=tag.toUpperCase();this.children=[];this.dataset={};this.attributes={};this.value='';this.disabled=false;this.hidden=false;this.className='';this.copy='';this.type=tag==='textarea'?'textarea':'text';this.validity={valid:true};this.min='';this.max='';}
   get classList(){return {add:(...names)=>this.className+=` ${names.join(' ')}`};}
   setAttribute(key,value){this.attributes[key]=String(value);}
+  removeAttribute(key){delete this.attributes[key];}
   getAttribute(key){return this.attributes[key];}
   append(...items){for(const item of items){item.remove();item.parentNode=this;this.children.push(item);}}
   replaceChildren(...items){for(const child of [...this.children])child.remove();this.copy='';this.append(...items);}

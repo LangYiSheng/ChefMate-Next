@@ -1,4 +1,5 @@
 import { icon } from './icons.js';
+import {resizeRightPane,panelBounds} from './pane-resize.js';
 
 // Keep the intended click until the owning page accepts its departure. This
 // controller has no DOM dependencies so rejected and resumed navigation share
@@ -87,6 +88,9 @@ export function initShell({ onSettingsClose = () => {} } = {}) {
   const frame = document.getElementById('settings-frame');
   const link = document.querySelector('.settings-link');
   const mobile = matchMedia('(max-width:760px)');
+  const detailResizer=resizeRightPane({root:app,handle:document.getElementById('detail-resize'),key:'chefmate:detail-width',observe:[sidebar],
+    enabled:()=>!mobile.matches,
+    bounds:()=>panelBounds(window.innerWidth-(app.classList.contains('sidebar-collapsed')?0:sidebar.getBoundingClientRect().width)-24,{remaining:window.innerWidth>1180?420:40})});
   let collapsed = false, width = 248, lastFocus;
   function applyPage(page, previous) {
     const settingsOpen = page === 'settings';
@@ -135,6 +139,7 @@ export function initShell({ onSettingsClose = () => {} } = {}) {
     app.style.setProperty('--sidebar-width', `${width}px`);
     toggle.setAttribute('aria-expanded', String(!collapsed));
     resize.setAttribute('aria-valuenow', String(width));
+    detailResizer.paint();
   }
   function setCollapsed(value) {
     collapsed = value; paint(); persist();

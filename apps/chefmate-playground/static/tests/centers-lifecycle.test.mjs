@@ -10,6 +10,7 @@ class Element extends EventTarget {
     this.dataset={};this.attributes={};this.className='';this.copy='';this.value='';
     this.disabled=false;this.hidden=false;this.readOnly=false;this.min='';this.max='';
     this.type=tag==='textarea'?'textarea':'text';this.validity={valid:true};this.clientWidth=1200;
+    this.style={setProperty(){}};
   }
   get classList() {
     const tokens=()=>new Set(this.className.split(/\s+/).filter(Boolean));
@@ -36,6 +37,7 @@ class Element extends EventTarget {
     item.remove();const index=this.children.indexOf(reference);item.parentNode=this;
     if(index<0)this.children.push(item);else this.children.splice(index,0,item);return item;
   }
+  prepend(...items) {for(const item of items.reverse())this.insertBefore(item,this.children[0]);}
   remove() {if(this.parentNode){const siblings=this.parentNode.children;siblings.splice(siblings.indexOf(this),1);this.parentNode=null;}}
   replaceChildren(...items) {for(const child of [...this.children])child.remove();this.copy='';this.append(...items);}
   get childNodes() {return this.children;}

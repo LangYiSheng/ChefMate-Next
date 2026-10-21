@@ -78,7 +78,7 @@ export class CookingFocus {
       }
       if (event.key === 'Tab') {
         const controls = [...this.root.querySelectorAll('button:not([disabled]),input:not([disabled]),textarea:not([disabled]),select:not([disabled]),a[href],[tabindex="0"]')]
-          .filter(control => control.getClientRects().length && !control.closest('[inert]'));
+          .filter(control => control.tabIndex>=0 && control.getClientRects().length && !control.closest('[inert]'));
         const first = controls[0], last = controls.at(-1);
         if (event.shiftKey && (document.activeElement === first || !this.root.contains(document.activeElement))) { event.preventDefault(); last?.focus(); }
         else if (!event.shiftKey && (document.activeElement === last || !this.root.contains(document.activeElement))) { event.preventDefault(); first?.focus(); }

@@ -7,6 +7,7 @@ body{padding:14px}
 .app-page{padding:0}
 .app{--sidebar-width:248px;height:100dvh;grid-template-columns:var(--sidebar-width) minmax(0,1fr) 0;gap:0;border:0;border-radius:0;overflow:hidden;background:var(--color-background);box-shadow:none;transition:grid-template-columns .2s ease}
 .app.panel-open{grid-template-columns:var(--sidebar-width) minmax(0,1fr) clamp(352px,31vw,480px)}
+.detail-toggle{display:inline-flex;align-items:center;gap:7px;min-height:36px;padding:7px 11px;border:0;border-radius:8px;font-size:13px;color:var(--color-muted);white-space:nowrap}.detail-toggle:hover,.detail-toggle[aria-expanded=true]{color:var(--color-accent);background:var(--color-accent-soft)}.detail-toggle .icon{width:17px;height:17px}.app[data-page]:not([data-page=chat]) .detail-toggle{display:none}
 .sidebar{position:relative;border:0;padding:26px 16px 16px;background:var(--color-background)}
 .brand-row{padding:0 4px;margin-bottom:27px;gap:8px;min-width:0}
 .brand{min-width:0;white-space:nowrap}.brand-icon{width:30px;height:30px}
@@ -53,7 +54,7 @@ body{padding:14px}
 .sidebar-resize:hover::after,.sidebar-resize:focus-visible::after,.sidebar-resizing .sidebar-resize::after{background:var(--color-border-strong)}
 .app.sidebar-resizing{transition:none;user-select:none;cursor:col-resize}
 .app.sidebar-collapsed{grid-template-columns:0 minmax(0,1fr) 0}
-.app.sidebar-collapsed.panel-open{grid-template-columns:0 minmax(0,1fr) clamp(352px,31vw,480px)}
+.app.sidebar-collapsed.panel-open{grid-template-columns:0 minmax(0,1fr) var(--detail-width,460px)}
 .sidebar-collapsed .sidebar{visibility:hidden;padding:0;pointer-events:none}
 .sidebar-collapsed .expand-sidebar{display:inline-flex}
 .sidebar-collapsed .main{margin-left:12px;border:1px solid var(--line);border-radius:var(--radius-shell)}
@@ -133,7 +134,7 @@ body{padding:14px}
 .primary-button{background:var(--accent);color:var(--color-canvas)}.secondary-button{border-color:var(--line);color:var(--accent)}
 .primary-button:hover{background:var(--color-accent-hover)}
 .settings-error{background:var(--color-danger-soft);color:var(--color-danger)}.settings-success{color:var(--color-success)}
-@media(min-width:761px) and (max-width:1180px){.app,.app.panel-open{grid-template-columns:var(--sidebar-width) minmax(0,1fr) 0}.app.sidebar-collapsed,.app.sidebar-collapsed.panel-open{grid-template-columns:0 minmax(0,1fr) 0}.app.panel-open .main{margin-right:12px;border-radius:var(--radius-shell)}.detail-panel,.app.panel-open .detail-panel{margin:0;top:12px;right:12px;bottom:12px;border:1px solid var(--line);border-radius:var(--radius-shell);width:min(420px,80vw)}}
+@media(min-width:761px) and (max-width:1180px){.app,.app.panel-open{grid-template-columns:var(--sidebar-width) minmax(0,1fr) 0}.app.sidebar-collapsed,.app.sidebar-collapsed.panel-open{grid-template-columns:0 minmax(0,1fr) 0}.app.panel-open .main{margin-right:12px;border-radius:var(--radius-shell)}.detail-panel,.app.panel-open .detail-panel{margin:0;top:12px;right:12px;bottom:12px;border:1px solid var(--line);border-radius:var(--radius-shell);width:min(var(--detail-width,460px),calc(100vw - 24px))}}
 @media(max-width:1000px){.settings-page,.settings-embedded .settings-page{grid-template-columns:156px minmax(0,1fr)}.setting-field{grid-template-columns:1fr;gap:5px}.setting-label{padding:0}.settings-header{padding:24px}.settings-content{padding:8px 24px 24px}.settings-footer{padding:14px 24px}}
 @media(max-width:760px){
   body{padding:0}.desktop-only{display:none!important}

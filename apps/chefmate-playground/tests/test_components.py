@@ -32,6 +32,7 @@ def test_manifest_metadata_includes_guidance_tools_ui_and_ownership():
     assert "meal_plan" in plans.ui_kinds and "select_recipes" in plans.tools
     food = next(item for item in components.metadata() if item["id"] == "food-journal")
     assert food["ui"]["pages"] == ["journal"]
+    assert food["ui"]["kinds"] == ["food_log", "nutrition_summary"]
     assert food["dependencies"] == ["journal"] and not food["available"]
     assert food["instructions"] == {"entrypoint": "skills/food-journal/SKILL.md", "loading": "on_demand"}
     assert "food-journal" in {item["name"] for item in components.instructions.list_metadata()}

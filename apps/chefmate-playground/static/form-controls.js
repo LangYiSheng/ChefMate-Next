@@ -1,5 +1,7 @@
-// Shared presentation around native controls. Native focus, selection, form
-// validation and keyboard behavior stay on the actual input/select/textarea.
+import {enhanceSelect} from './select-control.js';
+
+// Native form values and validation stay on the inputs. Selects share one
+// keyboard-accessible combobox instead of the platform's unrelated menus.
 function element(tag, className = '') {
   const item = document.createElement(tag);
   item.className = className;
@@ -33,6 +35,7 @@ export function enhanceControl(input, { label = '', stepper = true } = {}) {
   let touched = false;
   const buttons = [];
   const auxiliary = [];
+  let selectControl = null;
   const sync = () => {
     surface.dataset.disabled = String(Boolean(input.disabled));
     if (touched && !isSwitch) input.setAttribute('aria-invalid', String(!input.validity.valid));
@@ -43,6 +46,7 @@ export function enhanceControl(input, { label = '', stepper = true } = {}) {
         && (direction === 'down' ? number <= Number(limit) : number >= Number(limit));
     }
     for (const button of auxiliary) button.disabled = input.disabled;
+    selectControl?.sync();
   };
   input._syncControl = sync;
   if (isSwitch) {
@@ -50,6 +54,8 @@ export function enhanceControl(input, { label = '', stepper = true } = {}) {
     const track = element('span', 'control-switch-track');
     track.setAttribute('aria-hidden', 'true');
     surface.append(input, track);
+  } else if (isSelect && !input.multiple) {
+    selectControl = enhanceSelect(input, surface, {label});
   } else if (isNumber) {
     const makeStep = (copy, direction) => {
       const button = element('button', 'control-step');
@@ -67,11 +73,6 @@ export function enhanceControl(input, { label = '', stepper = true } = {}) {
     surface.append(makeStep('−', 'down'), input, makeStep('+', 'up'));
   } else {
     surface.append(input);
-    if (isSelect) {
-      const arrow = element('span', 'control-select-arrow');
-      arrow.setAttribute('aria-hidden', 'true');
-      surface.append(arrow);
-    }
     if (isPassword) {
       const reveal = element('button', 'control-reveal');
       reveal.type = 'button'; reveal.textContent = '显示';

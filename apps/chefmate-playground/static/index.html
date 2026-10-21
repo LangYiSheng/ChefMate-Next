@@ -13,6 +13,8 @@
   <link rel="stylesheet" href="/static/experience.css">
   <link rel="stylesheet" href="/static/theme.css">
   <link rel="stylesheet" href="/static/shell.css">
+  <link rel="stylesheet" href="/static/context-meter.css">
+  <link rel="stylesheet" href="/static/chat-food.css">
   <link rel="stylesheet" href="/static/focus.css">
   <link rel="stylesheet" href="/static/activity.css">
   <link rel="stylesheet" href="/static/conversation.css">
@@ -20,6 +22,7 @@
   <link rel="stylesheet" href="/static/cooking.css">
   <link rel="stylesheet" href="/static/timer-popover.css">
   <link rel="stylesheet" href="/static/typography.css">
+  <link rel="stylesheet" href="/static/pane-resize.css">
   <script type="module" src="/static/app.js"></script>
 </head>
 <body class="app-page">
@@ -57,7 +60,7 @@
         <div class="topbar-actions">
           <button class="timer-trigger" id="chat-timer-toggle" data-timer-trigger type="button" aria-label="打开厨房计时" aria-haspopup="dialog" aria-expanded="false" aria-controls="kitchen-timer-popover" hidden></button>
           <button class="status-pill" id="status-button" type="button" aria-label="查看连接状态" hidden><span class="status-dot" id="status-dot" aria-hidden="true"></span><span id="status-label">连接中</span></button>
-          <button class="icon-button panel-toggle" id="toggle-details" type="button" aria-label="展开厨房工作区" aria-controls="detail-panel" aria-expanded="false" data-icon="panel-right" hidden></button>
+          <button class="panel-toggle detail-toggle" id="toggle-details" type="button" aria-label="展开右侧栏" aria-controls="detail-panel" aria-expanded="false"><span data-icon="panel-right" aria-hidden="true"></span><span>详情</span></button>
         </div>
       </header>
 
@@ -98,6 +101,7 @@
     </main>
 
     <aside class="detail-panel" id="detail-panel" aria-label="厨房工作区" hidden>
+      <div id="detail-resize" class="right-pane-resize" role="separator" aria-label="调整右侧栏宽度" aria-orientation="vertical" tabindex="0"></div>
       <div class="panel-header">
         <div class="panel-tabs" role="tablist" aria-label="详情内容">
           <button type="button" class="panel-tab active" id="workspace-tab" role="tab" aria-selected="true" aria-controls="workspace-content">工作区</button>
