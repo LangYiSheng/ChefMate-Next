@@ -112,6 +112,18 @@ class CustomSearchRequest(BaseModel):
     query: str = Field(default="", max_length=200)
     limit: int = Field(default=8, ge=1, le=30)
     offset: int = Field(default=0, ge=0, le=100000)
+    status: Literal["saved", "draft", "all"] = Field(default="saved", description="saved找已保存菜谱；draft找待核对草稿；all同时搜索两者。")
+
+
+class RecipeDeletionRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+    recipe_id: str = Field(min_length=1, max_length=100)
+    revision: int = Field(ge=1)
+
+
+class ConfirmRecipeDeletionRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+    confirmation_id: str = Field(min_length=1, max_length=100)
 
 
 def _document(draft: RecipeDraftRequest) -> RecipeDocument:
@@ -153,6 +165,10 @@ class CookbookRepository:
                 operation_id TEXT UNIQUE, body TEXT NOT NULL)""")
             db.execute("""CREATE TABLE IF NOT EXISTS recipe_favorites (
                 recipe_id TEXT PRIMARY KEY, created_at TEXT NOT NULL)""")
+            db.execute("""CREATE TABLE IF NOT EXISTS recipe_delete_confirmations (
+                id TEXT PRIMARY KEY, session_id TEXT NOT NULL, recipe_id TEXT NOT NULL,
+                recipe_revision INTEGER NOT NULL, question_id TEXT NOT NULL, origin_turn_id TEXT NOT NULL,
+                state TEXT NOT NULL, created_at TEXT NOT NULL)""")
 
     def _connect(self):
         return sqlite3.connect(self.path, timeout=10)
@@ -166,9 +182,10 @@ class CookbookRepository:
                 "created_at": created, "updated_at": updated, "source_session_id": session_id,
                 "origin": "user", "is_custom": True}
 
-    def get(self, recipe_id):
+    def get(self, recipe_id, *, include_deleted=False):
         with self._connect() as db:
-            return self._public(db.execute("SELECT * FROM personal_recipes WHERE id=?", (recipe_id,)).fetchone())
+            record = self._public(db.execute("SELECT * FROM personal_recipes WHERE id=?", (recipe_id,)).fetchone())
+            return record if record and (include_deleted or record["status"] != "deleted") else None
 
     def create_draft(self, values, *, session_id=None, image_ids=(), operation_id=None, guard=None, active_turn_id=None):
         draft = RecipeDraftRequest.model_validate(values)
@@ -238,18 +255,141 @@ class CookbookRepository:
         return self.get(recipe_id)
 
     def list(self, *, query="", status="saved", limit=20, offset=0):
-        if not 1 <= limit <= 100 or not 0 <= offset <= 100000 or status not in {"saved", "draft", "all"}:
+        if not 1 <= limit <= 100 or not 0 <= offset <= 100000 or status not in {"saved", "draft", "all", "deleted"}:
             raise ValueError("菜谱列表参数无效")
         with self._connect() as db:
             records = [self._public(row) for row in db.execute("SELECT * FROM personal_recipes ORDER BY created_at DESC,id")]
         terms = query.casefold().strip()
-        records = [item for item in records if (status == "all" or item["status"] == status)
+        records = [item for item in records if (item["status"] in {"saved", "draft"} if status == "all" else item["status"] == status)
                    and (not terms or terms in json.dumps(item["document"], ensure_ascii=False).casefold())]
         return {"total": len(records), "items": records[offset:offset+limit], "offset": offset, "limit": limit}
 
+    @staticmethod
+    def _delete(db, recipe_id, revision):
+        record = CookbookRepository._public(db.execute("SELECT * FROM personal_recipes WHERE id=?", (recipe_id,)).fetchone())
+        if not record:
+            raise KeyError(recipe_id)
+        if record["status"] == "deleted" and record["revision"] == revision + 1:
+            return record
+        if record["revision"] != revision or record["status"] not in {"draft", "saved"}:
+            raise ValueError("菜谱已更新或已删除，请刷新后核对")
+        body = json.loads(db.execute("SELECT body FROM personal_recipes WHERE id=?", (recipe_id,)).fetchone()[0])
+        body.update(deleted_from=record["status"], deleted_at=now())
+        db.execute("UPDATE personal_recipes SET status='deleted',revision=revision+1,updated_at=?,body=? WHERE id=?",
+                   (now(), json.dumps(body, ensure_ascii=False, allow_nan=False), recipe_id))
+        db.execute("DELETE FROM recipe_favorites WHERE recipe_id=?", (recipe_id,))
+        db.execute("UPDATE recipe_delete_confirmations SET state='superseded' WHERE recipe_id=? AND state='pending'", (recipe_id,))
+        return CookbookRepository._public(db.execute("SELECT * FROM personal_recipes WHERE id=?", (recipe_id,)).fetchone())
+
+    def delete(self, recipe_id, revision):
+        """Hide a personal recipe atomically; frozen cooking tasks remain untouched."""
+        if type(revision) is not int or revision < 1:
+            raise ValueError("菜谱版本无效")
+        with self._connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            return self._delete(db, recipe_id, revision)
+
+    def restore(self, recipe_id, revision):
+        if type(revision) is not int or revision < 1:
+            raise ValueError("菜谱版本无效")
+        with self._connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            record = self._public(db.execute("SELECT * FROM personal_recipes WHERE id=?", (recipe_id,)).fetchone())
+            if not record:
+                raise KeyError(recipe_id)
+            if record["status"] != "deleted" or record["revision"] != revision:
+                raise ValueError("菜谱状态已变化，请刷新后核对")
+            body = json.loads(db.execute("SELECT body FROM personal_recipes WHERE id=?", (recipe_id,)).fetchone()[0])
+            restored_status = body.pop("deleted_from")
+            body.pop("deleted_at", None)
+            db.execute("UPDATE personal_recipes SET status=?,revision=revision+1,updated_at=?,body=? WHERE id=?",
+                       (restored_status, now(), json.dumps(body, ensure_ascii=False, allow_nan=False), recipe_id))
+        return self.get(recipe_id)
+
+    def prepare_deletion(self, recipe_id, revision, *, session_id, question_id, active_turn_id, cancelled=None):
+        """Bind an already committed host question to exactly one recipe revision."""
+        identity = str(uuid4())
+        with self._connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            row = db.execute("SELECT state FROM sessions WHERE id=?", (session_id,)).fetchone()
+            state = json.loads(row[0]) if row else {}
+            if (cancelled is not None and cancelled.is_set() or not state.get("running")
+                    or (state.get("active_turn") or {}).get("id") != active_turn_id):
+                raise ValueError("本轮已经停止，没有准备删除操作")
+            pending = (state.get("workspace") or {}).get("pending_question") or {}
+            if pending.get("id") != question_id:
+                raise ValueError("删除问题已变化，请重新发起确认")
+            record = self._public(db.execute("SELECT * FROM personal_recipes WHERE id=?", (recipe_id,)).fetchone())
+            if not record or record["status"] not in {"draft", "saved"} or record["revision"] != revision:
+                raise ValueError("菜谱状态已变化，请刷新后重新确认")
+            db.execute("UPDATE recipe_delete_confirmations SET state='superseded' WHERE session_id=? AND state='pending'", (session_id,))
+            db.execute("INSERT INTO recipe_delete_confirmations VALUES(?,?,?,?,?,?,'pending',?)",
+                       (identity, session_id, recipe_id, revision, question_id, active_turn_id, now()))
+            if cancelled is not None and cancelled.is_set():
+                raise ValueError("本轮已经停止，没有准备删除操作")
+        return identity
+
+    def confirm_deletion(self, confirmation_id, *, session_id, active_turn_id, cancelled=None):
+        """Only the host-persisted answer can authorize a model-requested deletion."""
+        with self._connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            confirmation = db.execute("SELECT session_id,recipe_id,recipe_revision,question_id,origin_turn_id,state FROM recipe_delete_confirmations WHERE id=?",
+                                      (confirmation_id,)).fetchone()
+            if not confirmation or confirmation[0] != session_id:
+                return {"status": "confirmation_required", "message": "没有这段对话的删除确认，请先发起确认。"}
+            _, recipe_id, revision, question_id, origin_turn_id, confirmation_state = confirmation
+            row = db.execute("SELECT state FROM sessions WHERE id=?", (session_id,)).fetchone()
+            state = json.loads(row[0]) if row else {}
+            if (cancelled is not None and cancelled.is_set() or not state.get("running")
+                    or (state.get("active_turn") or {}).get("id") != active_turn_id):
+                db.execute("UPDATE recipe_delete_confirmations SET state='cancelled' WHERE id=? AND state='pending'",
+                           (confirmation_id,))
+                return {"status": "turn_closed", "message": "本轮已经停止，没有删除菜谱。"}
+            workspace = state.get("workspace") or {}
+            answer = workspace.get("last_answer") or {}
+            if confirmation_state == "used":
+                record = self._public(db.execute("SELECT * FROM personal_recipes WHERE id=?", (recipe_id,)).fetchone())
+                if record and record["status"] == "deleted" and record["revision"] == revision + 1:
+                    return {"status": "ok", "recipe_id": recipe_id, "deleted": True, "revision": record["revision"],
+                            "message": "已移到最近删除；已保存的烹饪任务和饮食记录不受影响，可在菜谱中心恢复。"}
+                return {"status": "confirmation_expired", "message": "这次确认已处理，菜谱状态已变化；没有再次删除。"}
+            if confirmation_state != "pending":
+                return {"status": "confirmation_expired", "message": "这次确认已失效，没有删除菜谱。"}
+            if (workspace.get("pending_question") or {}).get("id") == question_id or answer.get("question_id") != question_id:
+                return {"status": "confirmation_required", "message": "请先由用户回答当前删除确认，不能代替用户确认。"}
+            # Cancelled/interrupted questions can remain visible, but only a completed
+            # question turn can issue a usable receipt. User text cannot forge this log.
+            if not any(message.get("role") == "assistant" and message.get("turn_id") == origin_turn_id
+                       for message in state.get("messages", [])):
+                db.execute("UPDATE recipe_delete_confirmations SET state='cancelled' WHERE id=?", (confirmation_id,))
+                return {"status": "confirmation_expired", "message": "原来的确认轮次没有完成，请重新发起删除确认。"}
+            if answer.get("option_ids") != ["delete"]:
+                db.execute("UPDATE recipe_delete_confirmations SET state='cancelled' WHERE id=?", (confirmation_id,))
+                return {"status": "cancelled", "deleted": False, "message": "已保留这份菜谱，没有删除。"}
+            record = self._public(db.execute("SELECT * FROM personal_recipes WHERE id=?", (recipe_id,)).fetchone())
+            if not record or record["status"] not in {"draft", "saved"} or record["revision"] != revision:
+                db.execute("UPDATE recipe_delete_confirmations SET state='superseded' WHERE id=?", (confirmation_id,))
+                return {"status": "recipe_changed", "message": "菜谱在确认期间已更新，请重新确认；没有删除。"}
+            result = self._delete(db, recipe_id, revision)
+            db.execute("UPDATE recipe_delete_confirmations SET state='used' WHERE id=?", (confirmation_id,))
+            if cancelled is not None and cancelled.is_set():
+                # Undo both recipe/favorite changes, then durably revoke the receipt.
+                db.rollback()
+                db.execute("BEGIN IMMEDIATE")
+                db.execute("UPDATE recipe_delete_confirmations SET state='cancelled' WHERE id=? AND state='pending'",
+                           (confirmation_id,))
+                return {"status": "turn_closed", "message": "本轮已经停止，没有删除菜谱；请重新发起确认。"}
+            return {"status": "ok", "recipe_id": recipe_id, "deleted": True, "revision": result["revision"],
+                    "message": "已移到最近删除；已保存的烹饪任务和饮食记录不受影响，可在菜谱中心恢复。"}
+
     def favorite(self, recipe_id, enabled):
         with self._connect() as db:
+            db.execute("BEGIN IMMEDIATE")
             if enabled:
+                if recipe_id.startswith("custom-"):
+                    record = db.execute("SELECT status FROM personal_recipes WHERE id=?", (recipe_id,)).fetchone()
+                    if not record or record[0] != "saved":
+                        raise ValueError("个人菜谱尚未保存或已删除，不能收藏")
                 db.execute("INSERT OR IGNORE INTO recipe_favorites VALUES(?,?)", (recipe_id, now()))
             else:
                 db.execute("DELETE FROM recipe_favorites WHERE recipe_id=?", (recipe_id,))
@@ -335,16 +475,67 @@ def make_recipe_tools(cookbook):
 
     def search(values, context):
         request = CustomSearchRequest.model_validate(values)
-        records = cookbook.list(query=request.query, limit=request.limit, offset=request.offset)
+        records = cookbook.list(query=request.query, limit=request.limit, offset=request.offset, status=request.status)
         return {"status": "ok", "total": records["total"], "items": [
             {"recipe_id": item["recipe_id"], "name": item["document"]["name"], "origin": "user",
+             "revision": item["revision"], "status": item["status"],
              "snapshot": cookbook.snapshot(item), "servings": item["document"]["servings"],
              "total_time_min": item["document"]["total_time_min"]} for item in records["items"]],
             "message": "使用get_recipe读取单道菜谱后，再用其真实snapshot安排餐单。"}
+
+    def request_deletion(values, context):
+        from .interactions import ScopedWorkspace
+
+        host = context.host_context
+        if not isinstance(host, ScopedWorkspace):
+            return {"status": "workspace_unavailable", "message": "当前对话无法保存用户确认，没有删除菜谱。"}
+        request = RecipeDeletionRequest.model_validate(values)
+        record = cookbook.get(request.recipe_id)
+        if not record:
+            return {"status": "not_found", "message": "只能删除个人菜谱；这份菜谱不存在或已经删除。"}
+        if record["revision"] != request.revision:
+            return {"status": "recipe_changed", "message": "菜谱版本已变化，请重新搜索后再请求确认。"}
+        name = record["document"]["name"].replace("<", "〈").replace(">", "〉")
+        result = host.execute("ask_user", {
+            "title": "删除个人菜谱？",
+            "question": f"确定将「{name}」移到最近删除吗？已保存的烹饪记录仍会保留。",
+            "options": [{"id": "delete", "label": "确认删除"}, {"id": "keep", "label": "保留菜谱"}],
+            "allow_custom": False, "multiple": False,
+        }, context)
+        if result.get("status") != "ok" or not isinstance(result.get("pending_question"), dict):
+            return result
+        try:
+            identity = cookbook.prepare_deletion(request.recipe_id, request.revision,
+                session_id=host.session_id, question_id=result["pending_question"]["id"],
+                active_turn_id=host.turn_id, cancelled=host.cancelled)
+        except ValueError as error:
+            return {"status": "confirmation_expired", "message": str(error)}
+        return {**result, "receipt": {"confirmation_id": identity,
+            "next_tool": "confirm_recipe_deletion",
+            "on_answer": "用户选择确认删除或保留菜谱后，都必须调用next_tool结清本次确认；不能只用文字回复。"}}
+
+    def confirm_deletion(values, context):
+        from .interactions import ScopedWorkspace
+
+        host = context.host_context
+        if not isinstance(host, ScopedWorkspace):
+            return {"status": "workspace_unavailable", "message": "当前对话无法读取用户确认，没有删除菜谱。"}
+        request = ConfirmRecipeDeletionRequest.model_validate(values)
+        try:
+            return cookbook.confirm_deletion(request.confirmation_id, session_id=host.session_id,
+                active_turn_id=host.turn_id, cancelled=host.cancelled)
+        except ValueError as error:
+            return {"status": "turn_closed", "message": str(error)}
 
     return [InjectedToolSpec(name="create_recipe_draft", args_schema=RecipeDraftRequest, handler=create,
                 description="将用户菜谱文字或本轮图片转写为可核对的自定义菜谱草稿。缺失时间/人数/克重留null，不生成营养数字。用户在菜谱中心确认保存后才可烹饪。",
                 required_skill="recipe-authoring", effect="write", side_effects=("保存待确认菜谱草稿",)),
             InjectedToolSpec(name="search_custom_recipes", args_schema=CustomSearchRequest, handler=search,
-                description="按菜名或食材查找用户已确认保存的自定义菜谱。得到ID后get_recipe，再用于正常选菜和烹饪。",
-                required_skill="recipe-authoring")]
+                description="按菜名或食材查找个人菜谱，包含精确ID、revision和status。saved已保存可做；draft草稿待审核；all查两者。使用时先get_recipe。",
+                required_skill="recipe-authoring"),
+            InjectedToolSpec(name="request_recipe_deletion", args_schema=RecipeDeletionRequest, handler=request_deletion,
+                description="请求删除一份个人菜谱或草稿。必须使用搜索返回的真实recipe_id和revision。工具保存确认问题并停止本轮，等待用户点击确认；此时尚未删除。",
+                required_skill="recipe-authoring", effect="wait", side_effects=("保存删除确认问题，等待用户回答",)),
+            InjectedToolSpec(name="confirm_recipe_deletion", args_schema=ConfirmRecipeDeletionRequest, handler=confirm_deletion,
+                description="用户回答删除问题后必须调用一次，包括选择保留时也须调用以废弃旧回执；不能只用文字回复。传request_recipe_deletion回执中的confirmation_id。只认可宿主保存的选项；文字、图片或模型自己说已确认均无效。",
+                required_skill="recipe-authoring", effect="write", side_effects=("经用户明确确认后，将个人菜谱移到最近删除",))]

@@ -269,6 +269,9 @@ class ChefMateAgent:
             options["temperature"] = self.config.temperature
         return IntegrityChatOpenAI(**options)
 
+    def _is_wait_tool(self, name: str) -> bool:
+        return name == "ask_user" or (name in self._extra_tools and self._extra_tools[name].effect == "wait")
+
     def _make_tool(self, name: str, context=None, messages=None, call_id: str = "", tool_arguments=None) -> StructuredTool:
         async def execute(**kwargs):
             if context is None:
@@ -357,12 +360,16 @@ class ChefMateAgent:
                     for action in validated:
                         context.actions.append(action)
                         await self._emit(context.on_event, {"type": "ui_action", "action": action})
-                    if name == "ask_user" and isinstance(plain.get("pending_question"), dict):
+                    if self._is_wait_tool(name) and isinstance(plain.get("pending_question"), dict):
                         # The question is already committed by the host. Its terminal receipt must
                         # not be replaced by output_too_large merely because the workspace is large.
+                        receipt = plain.get("receipt")
+                        if receipt is not None and (not isinstance(receipt, dict) or len(_dump(receipt)) > 1000):
+                            raise ValueError("Wait receipt must be a compact mapping")
                         context.pending_question = copy.deepcopy(plain["pending_question"])
                         return {"status": "ok", "question_id": context.pending_question.get("id"),
-                                "revision": context.ui_context.get("revision")}
+                                "revision": context.ui_context.get("revision"),
+                                **({"receipt": copy.deepcopy(receipt)} if receipt is not None else {})}
                 # Full typed actions go to the UI separately. The model needs the compact state/receipts only.
                 projection = {key: value for key, value in plain.items() if key not in {"workspace", "views", "actions"}}
                 if projection.get("ui_snapshot"):
@@ -378,7 +385,7 @@ class ChefMateAgent:
 
         return StructuredTool.from_function(
             name=name, description=self._descriptions[name], args_schema=self._requests[name], coroutine=execute,
-            return_direct=name == "ask_user",
+            return_direct=self._is_wait_tool(name),
         )
 
     def _validate_ui_context(self, value) -> dict:
@@ -601,7 +608,7 @@ class ChefMateAgent:
             async with asyncio.timeout(self.config.turn_timeout_s):
                 final_messages = await self._wait_checked(self._stream_runner(working, context), cancel_event)
             pending_question = None
-            if final_messages and isinstance(final_messages[-1], ToolMessage) and final_messages[-1].name == "ask_user":
+            if final_messages and isinstance(final_messages[-1], ToolMessage) and self._is_wait_tool(final_messages[-1].name):
                 question_result = self._parse_tool_result(final_messages[-1].content)
                 pending_question = context.pending_question
                 if (question_result.get("status") != "ok" or not isinstance(pending_question, dict)
@@ -746,7 +753,7 @@ class ChefMateAgent:
         if response.invalid_tool_calls:
             raise _AgentFailure("invalid_tool_batch", "模型工具参数无效，本批调用未执行。", True)
         calls = response.tool_calls
-        if len(calls) > 1 and any(call.get("name") == "ask_user" for call in calls):
+        if len(calls) > 1 and any(self._is_wait_tool(call.get("name")) for call in calls):
             raise _AgentFailure("invalid_tool_batch", "提问工具必须单独调用；本批没有执行任何操作。", True)
         if response.response_metadata.get("finish_reason") == "tool_calls" and not calls:
             raise _AgentFailure("incomplete_tool_batch", "模型声明了工具调用但没有完整调用，本轮未执行。", True)

@@ -298,17 +298,19 @@ def create_app(config: PlaygroundConfig | None = None, *, service=None, agent=No
 
     @app.get("/api/cookbook")
     async def recipe_center(query: str = Query(default="", max_length=200),
-                            source: str = Query(default="all", pattern="^(all|user|favorites|drafts)$"),
+                            source: str = Query(default="all", pattern="^(all|user|favorites|drafts|deleted)$"),
                             offset: int = Query(default=0, ge=0, le=100000), limit: int = Query(default=12, ge=1, le=30)):
         favorite_ids = cookbook.favorites()
         personal = cookbook.list(query=query, status="draft" if source == "drafts" else "saved", limit=100)
         def card(record):
             return {"recipe_id": record["recipe_id"], "name": record["document"]["name"], "origin": "user",
                     "status": record["status"], "revision": record["revision"],
+                    **({key: record[key] for key in ("deleted_from", "deleted_at")} if record["status"] == "deleted" else {}),
                     "servings": record["document"]["servings"], "total_time_min": record["document"]["total_time_min"],
                     "description": record["document"]["description"], "favorite": record["recipe_id"] in favorite_ids}
-        if source in {"user", "drafts"}:
-            personal = cookbook.list(query=query, status="draft" if source == "drafts" else "saved", limit=limit, offset=offset)
+        if source in {"user", "drafts", "deleted"}:
+            status = {"user": "saved", "drafts": "draft", "deleted": "deleted"}[source]
+            personal = cookbook.list(query=query, status=status, limit=limit, offset=offset)
             return {**personal, "items": [card(item) for item in personal["items"]]}
         if source == "favorites":
             items = []
@@ -316,6 +318,11 @@ def create_app(config: PlaygroundConfig | None = None, *, service=None, agent=No
                 result = await asyncio.to_thread(service.get_recipe, {"recipe_id": identity}) if service else cookbook.retrieve(identity)
                 recipe = result.get("recipe")
                 if result.get("status") == "ok" and recipe and (not query or query.casefold() in recipe["name"].casefold()):
+                    if identity.startswith("custom-"):
+                        record = cookbook.get(identity)
+                        if record and record["status"] == "saved":
+                            items.append(card(record))
+                        continue
                     items.append({**{key: recipe.get(key) for key in ("recipe_id", "name", "servings", "total_time_min", "description")},
                                   "origin": recipe.get("origin", "system"), "favorite": True, "status": "saved"})
             return {"items": items[offset:offset+limit], "total": len(items), "offset": offset, "limit": limit}
@@ -341,6 +348,26 @@ def create_app(config: PlaygroundConfig | None = None, *, service=None, agent=No
         if record is None:
             raise HTTPException(404, "个人菜谱不存在。")
         return record
+
+    @app.delete("/api/cookbook/{recipe_id}")
+    async def delete_personal_recipe(recipe_id: str, revision: int = Query(ge=1)):
+        try:
+            return cookbook.delete(recipe_id, revision)
+        except KeyError:
+            raise HTTPException(404, "个人菜谱不存在，基础菜谱不能删除。") from None
+        except ValueError:
+            raise HTTPException(409, "菜谱版本已变化，请刷新后重新确认删除。") from None
+
+    @app.post("/api/cookbook/{recipe_id}/restore")
+    async def restore_personal_recipe(recipe_id: str, values: dict):
+        if set(values) != {"revision"} or type(values["revision"]) is not int or values["revision"] < 1:
+            raise HTTPException(422, "请核对菜谱版本。")
+        try:
+            return cookbook.restore(recipe_id, values["revision"])
+        except KeyError:
+            raise HTTPException(404, "个人菜谱不存在。") from None
+        except ValueError:
+            raise HTTPException(409, "菜谱状态已变化，请刷新后重试。") from None
 
     @app.put("/api/cookbook/{recipe_id}")
     async def edit_recipe_draft(recipe_id: str, values: dict):
@@ -370,7 +397,10 @@ def create_app(config: PlaygroundConfig | None = None, *, service=None, agent=No
             result = await asyncio.to_thread(service.get_recipe, {"recipe_id": recipe_id}) if service else cookbook.retrieve(recipe_id)
             if result.get("status") != "ok":
                 raise HTTPException(404, "菜谱不存在，不能收藏。")
-        return cookbook.favorite(recipe_id, values["favorite"])
+        try:
+            return cookbook.favorite(recipe_id, values["favorite"])
+        except ValueError:
+            raise HTTPException(409, "菜谱已删除或尚未保存，不能收藏。") from None
 
     @app.post("/api/sessions")
     async def new_session():
