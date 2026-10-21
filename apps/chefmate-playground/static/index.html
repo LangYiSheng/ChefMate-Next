@@ -17,6 +17,7 @@
   <link rel="stylesheet" href="/static/activity.css">
   <link rel="stylesheet" href="/static/conversation.css">
   <link rel="stylesheet" href="/static/question.css">
+  <link rel="stylesheet" href="/static/cooking.css">
   <script type="module" src="/static/app.js"></script>
 </head>
 <body class="app-page">
@@ -65,6 +66,7 @@
       </div>
 
       <div class="composer-area">
+        <div id="cooking-timer-dock" class="cooking-timer-dock" aria-label="厨房计时" hidden></div>
         <section id="question-composer" class="question-composer" aria-label="回答助手的问题" hidden></section>
         <button id="resume-draft" class="resume-draft" type="button" hidden><span data-icon="undo-2" aria-hidden="true"></span>继续未发送的消息</button>
         <div id="composer-choices" class="composer-choices" aria-label="当前表单操作" hidden></div>

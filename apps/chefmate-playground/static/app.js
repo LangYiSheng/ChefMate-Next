@@ -72,6 +72,7 @@ const tools = { stove: '炉灶', wok: '炒锅', pot: '锅', oven: '烤箱', air_
 const workspace = new WorkspaceController({
   api, notify: toast, onChange: () => {
     updateComposer(); updateConversationState();
+    workspace.tick();
     const editing = ui.messages.contains(document.activeElement) && document.activeElement?.matches('input,textarea,select');
     if (!editing || workspace.entries.get(state.currentId)?.saving) scheduleRender(state.currentId);
   },
@@ -82,6 +83,7 @@ const cookingFocus=new CookingFocus(workspace,{session:currentSession,onChange:u
   activity:id=>({running:busy(id),status:state.runs.get(id)?.status,cancelling:state.runs.get(id)?.cancelling}),
   renderMessage:markdown,retry:message=>sendMessage(message.retryMessage,!message.retryAsNew,message)});
 const developerPanel=new DeveloperPanel({api,sessionId:()=>state.currentId,session:currentSession,enabled:()=>state.developer});
+document.addEventListener('visibilitychange',()=>{ if(!document.hidden)workspace.tick(); });
 const questionComposer=new QuestionComposer(ui['question-composer'],{state:questions,onAnswer:submitAnswer,
   onRetry:id=>{const entry=questions.get(id);if(entry)questions.set(id,{...entry,stage:'saved',error:''});updateComposer();}});
 workspace.onFocus=(view,id,trigger)=>{

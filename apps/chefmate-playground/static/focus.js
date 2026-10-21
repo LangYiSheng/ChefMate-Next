@@ -17,7 +17,9 @@ function contentBlocks(root) {
       [...element.children].filter(child => child.tagName !== 'SUMMARY').forEach(visit); return;
     }
     if (element.classList.contains('ui-component') || element.classList.contains('paged-content') ||
-        element.classList.contains('ui-cooking-step') || element.classList.contains('assistant-body') ||
+        element.classList.contains('ui-cooking-step') || element.classList.contains('ui-cooking-guide') ||
+        element.classList.contains('ui-timers-guide') || element.classList.contains('ui-timer-panel') ||
+        element.classList.contains('timer-create-form') || element.classList.contains('assistant-body') ||
         element.tagName === 'DIV' && !element.className && element.children.length) {
       [...element.children].forEach(visit); return;
     }
@@ -56,6 +58,7 @@ export class CookingFocus {
     }
     this.contentPager = new FocusPager(this.content, document.getElementById('focus-content-pages'), { label: '内容' });
     this.replyPager = new FocusPager(this.reply, document.getElementById('focus-reply-pages'), { label: '交流' });
+    this.workspace.onTimerStateChange = () => this.contentPager.schedule();
     document.getElementById('exit-focus').addEventListener('click', () => this.close());
     this.workToggle.addEventListener('click', () => this.setTalking(false));
     this.talk.addEventListener('click', () => this.setTalking(true));
@@ -163,17 +166,23 @@ export class CookingFocus {
     const view = entry.views.find(item => item.kind === active.kind) || (entry.loading || entry.presentationPending ? active.view : null);
     if (!view) { this.close(); return; }
     active.id = view.id; active.view = view; this.root.dataset.kind = view.kind;
-    this.title.textContent = view.title || '厨房工作区'; this.subtitle.textContent = conversationLabel(snapshotStatus(entry.snapshot || {}));
+    const cooking = view.kind === 'cooking_guide' && view.data.recipe_id;
+    this.title.textContent = cooking ? view.data.recipe_name : view.title || '厨房工作区';
+    this.subtitle.textContent = cooking ? `已完成 ${(view.data.steps || []).filter(step=>step.status==='done').length} / ${(view.data.steps || []).length} 步`
+      : conversationLabel(snapshotStatus(entry.snapshot || {}));
     const stage = ({ prep_checklist:'备菜清单', cooking_guide:'专心做菜', recipe_detail:'菜谱做法' })[view.kind]
       || STAGE_NAMES[entry.snapshot?.stage] || '厨房工作区';
     this.stage.textContent = stage; document.getElementById('focus-work-label').textContent = stage;
     const signature = JSON.stringify([view, entry.saving, entry.viewState[view.id], entry.drafts[view.id]]);
     if (signature !== this.signature) {
-      const identity = JSON.stringify([view.kind, view.data.recipe_id, view.data.recipe_ids, entry.viewState[view.id]?.stepIndex, entry.viewState[view.id]?.detailSection]);
+      const displayedStep = view.data.steps?.[entry.viewState[view.id]?.stepIndex]
+        || view.data.steps?.find(step=>step.id===view.data.active_step_id) || view.data.steps?.[0];
+      const identity = JSON.stringify([view.kind, view.data.recipe_id, view.data.recipe_ids, displayedStep?.id,
+        entry.viewState[view.id]?.stepIndex, entry.viewState[view.id]?.detailSection]);
       const ctx = { ...this.workspace.context(view, active.sessionId), focused: true };
       ctx.onViewState = () => { this.workspace.onInlineChange?.(); this.refresh(); };
       const focusedTool = this.tools.contains(document.activeElement) ? document.activeElement?.dataset.controlKey : null;
-      const blocks = contentBlocks(renderView(view, ctx));
+      const blocks = contentBlocks(renderView(view, ctx)).filter(block => !cooking || !block.matches('.ui-recipe-name,.cooking-overview'));
       this.tools.replaceChildren(...blocks.filter(block => block.classList.contains('step-navigator')));
       this.work.classList.toggle('with-step-tools', Boolean(this.tools.children.length));
       this.tools.querySelectorAll('button').forEach((button, index) => { button.dataset.controlKey = `focus-step-${index}`; });
@@ -187,6 +196,7 @@ export class CookingFocus {
     this.wasRunning = state.running; this.root.classList.toggle('focus-running', state.running);
     this.talk.replaceChildren(icon('message-circle'), node('span', '', state.running ? '助手正在回复' : '问问助手'));
     this.renderConversation(active, state);
+    this.workspace.tick();
   }
   close({ immediate = false } = {}) {
     const active = this.active;

@@ -41,8 +41,9 @@ test('servings choices commit sequential revisions and timer draft clears after 
   item.receive('session',{workspace:{revision:2,stage:'cooking'},views:[timers]});
   item.api=async()=>({status:'ok',workspace:{revision:3,stage:'cooking'},views:[{...timers,id:'timer-new',revision:3}]});
   item.setTimerDraft(timers,'面条',2);
-  assert.deepEqual(item.composerActions().map(action=>action.label),['开始计时','放弃修改']);
-  await item.composerActions()[0].run();assert.deepEqual(item.entry('session').drafts,{});
+  assert.deepEqual(item.composerActions(),[]);
+  assert.equal(item.canSubmit(),true);
+  await item.startTimer(timers,{seconds:120,label:'面条'});assert.deepEqual(item.entry('session').drafts,{});
 });
 
 test('closed actions carry revision and preserve only supplied fields', () => {

@@ -186,10 +186,13 @@ class CookingData(StrictModel):
     steps: list[StepView]
     active_step_id: str | None
     guidance: list[str] = Field(default_factory=list)
+    timers: list[TimerState] = Field(default_factory=list)
+    server_now: str | None = None
 
 
 class TimersData(StrictModel):
     timers: list[TimerState]
+    server_now: str | None = None
 
 
 class ProgressData(StrictModel):

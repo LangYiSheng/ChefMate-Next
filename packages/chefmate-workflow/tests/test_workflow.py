@@ -338,6 +338,78 @@ def test_timer_deadline_pause_restore_cancel_and_expiry_are_persistent(kitchen):
     assert action(kitchen, "resume_timer", {"timer_id": timer_id})["status"] == "timer_state_conflict"
 
 
+def test_step_timer_duplicate_does_not_restart_or_replace_a_paused_timer(kitchen):
+    _, host, _, clock = kitchen
+    prepare(kitchen)
+    payload = {"seconds": 60, "label": "当前步骤", "recipe_id": "r1", "step_id": "r1:step:0"}
+    first = action(kitchen, "start_timer", payload, action_id="start-1")
+    timer = first["actions"][0]["component"]["data"]["timers"][0]
+    clock[0] += timedelta(seconds=15)
+    again = action(kitchen, "start_timer", payload, action_id="start-2")
+    current = again["actions"][0]["component"]["data"]["timers"][0]
+    assert current["id"] == timer["id"] and current["deadline_at"] == timer["deadline_at"]
+    assert current["remaining_seconds"] == 45 and len(host.state["timers"]) == 1
+    assert action(kitchen, "start_timer", {**payload, "seconds": 90})["status"] == "timer_already_exists"
+    assert action(kitchen, "pause_timer", {"timer_id": timer["id"]})["status"] == "ok"
+    paused = copy.deepcopy(host.state["timers"][0])
+    clock[0] += timedelta(seconds=100)
+    assert action(kitchen, "start_timer", payload)["status"] == "ok"
+    assert host.state["timers"][0] == paused
+    assert action(kitchen, "cancel_timer", {"timer_id": timer["id"]})["status"] == "ok"
+    restarted = action(kitchen, "start_timer", payload)
+    assert restarted["status"] == "ok"
+    assert len(host.state["timers"]) == 2 and host.state["timers"][-1]["id"] != timer["id"]
+    assert host.state["timers"][-1]["remaining_seconds"] == 60
+
+
+def test_cooking_projection_scopes_timers_to_recipe_and_expiry_never_completes_steps(kitchen):
+    service, host, retrieval, clock = kitchen
+    choose(kitchen, ids=["r1", "r2"])
+    action(kitchen, "change_stage", {"stage": "prep"})
+    items = service._prep_items(WorkspaceState.model_validate(host.state))
+    tool(kitchen, "update_prep_items", {"expected_revision": host.state["revision"],
+         "items": [{"item_id": item.id, "status": "ready"} for item in items]})
+    action(kitchen, "change_stage", {"stage": "cooking"})
+    for identity, seconds in (("r1", 60), ("r2", 90)):
+        action(kitchen, "start_timer", {"seconds": seconds, "label": identity,
+               "recipe_id": identity, "step_id": f"{identity}:step:0"})
+    action(kitchen, "start_timer", {"seconds": 60, "label": "厨房提醒"})
+    views = service.get_workspace()["views"]
+    guide = next(view["data"] for view in views if view["kind"] == "cooking_guide")
+    assert len(guide["timers"]) == 1 and guide["timers"][0]["recipe_id"] == "r1"
+    assert guide["server_now"] == clock[0].isoformat()
+    timers = next(view["data"] for view in views if view["kind"] == "timers")
+    assert len(timers["timers"]) == 3 and timers["server_now"] == guide["server_now"]
+    action(kitchen, "set_active_recipe", {"recipe_id": "r2"})
+    clock[0] += timedelta(seconds=91)
+    before = copy.deepcopy(host.state)
+    restored = WorkflowService(retrieval, host.get, host.mutate, now=lambda: clock[0])
+    snapshot = restored.get_workspace()
+    expired = next(view["data"] for view in snapshot["views"] if view["kind"] == "cooking_guide")
+    assert expired["timers"][0]["recipe_id"] == "r2" and expired["timers"][0]["status"] == "finished"
+    assert expired["timers"][0]["remaining_seconds"] == 0 and expired["timers"][0]["deadline_at"] is None
+    assert host.state == before and not any(status == "done" for status in host.state["step_status"].values())
+    timer_id = expired["timers"][0]["id"]
+    assert action(kitchen, "pause_timer", {"timer_id": timer_id})["status"] == "timer_state_conflict"
+    assert action(kitchen, "resume_timer", {"timer_id": timer_id})["status"] == "timer_state_conflict"
+    assert action(kitchen, "cancel_timer", {"timer_id": timer_id})["status"] == "ok"
+    assert next(timer for timer in host.state["timers"] if timer["id"] == timer_id)["status"] == "finished"
+    assert host.state["meal_plan"][0]["recipe"]["steps"] == retrieval.recipes["r1"]["steps"]
+
+
+def test_terminal_history_never_evicts_an_active_timer(kitchen):
+    _, host, _, clock = kitchen
+    prepare(kitchen)
+    action(kitchen, "start_timer", {"seconds": 3600, "label": "长计时", "recipe_id": "r1"})
+    long_timer = copy.deepcopy(host.state["timers"][0])
+    for index in range(32):
+        clock[0] += timedelta(seconds=2)
+        action(kitchen, "start_timer", {"seconds": 1, "label": f"短计时{index}"})
+    assert len(host.state["timers"]) == 30
+    retained = next(timer for timer in host.state["timers"] if timer["id"] == long_timer["id"])
+    assert retained["status"] == "running" and retained["deadline_at"] == long_timer["deadline_at"]
+
+
 def test_tool_timer_duration_requires_source_or_trusted_user_text(kitchen):
     prepare(kitchen)
     params = {"seconds": 999, "label": "guess", "recipe_id": "r1", "step_id": "r1:step:0", "basis": "recipe_text"}

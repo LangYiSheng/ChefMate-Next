@@ -1,7 +1,9 @@
-import { clone, changedValues, makeAction, remainingSeconds, clockText, EXECUTION_STAGES, messageViews } from './ui-protocol.js';
+import { clone, changedValues, makeAction, remainingSeconds, EXECUTION_STAGES, messageViews } from './ui-protocol.js';
 import { viewChoices, VIEW_LABELS, STAGE_NAMES } from './presentation.js';
 import { node, renderView } from './ui-components.js';
 import { icon } from './icons.js';
+import { timerPresentation } from './cooking-timer.js';
+import { timerClock, workspaceTimers } from './timer-runtime.js';
 
 const keyFor = (id) => `chefmate:workspace-drafts:${id}`;
 const compareSnapshots = (left, right) => (left?.revision ?? -1) - (right?.revision ?? -1)
@@ -51,13 +53,15 @@ export class WorkspaceController {
   entry(id) {
     if (!this.entries.has(id)) this.entries.set(id, { snapshot: null, views: [], drafts: id ? readDrafts(id) : {},
       generation: 0, loading: false, saving: false, error: '', conflict: null, failedRequest: null,
-      activeKind: null, viewState: {}, presentationPending: false, pendingResponse: null, confirming: false });
+      activeKind: null, viewState: {}, presentationPending: false, pendingResponse: null, confirming: false,
+      timerNow: () => Date.now(), timerAcknowledged: this.readTimerAcknowledged(id), timerStates:new Map() });
     return this.entries.get(id);
   }
   select(id) { this.activeId = id; this.render(); if (id) this.load(id).catch(() => {}); this.onChange(); }
   remove(id) {
     this.entries.get(id)?.controller?.abort(); this.entries.delete(id);
     try { localStorage.removeItem(keyFor(id)); } catch { /* 可继续删除服务端会话。 */ }
+    try { localStorage.removeItem(`chefmate:timer-ack:${id}`); } catch { /* No local storage available. */ }
   }
   async load(id = this.activeId) {
     if (!id) return null;
@@ -89,25 +93,29 @@ export class WorkspaceController {
     const entry = this.entry(id); const snapshot = response?.workspace || response?.ui_snapshot;
     if (!snapshot || !Number.isInteger(snapshot.revision)) return false;
     if (entry.snapshot && compareSnapshots(snapshot, entry.snapshot) < 0) return false;
+    const receivedAt = response._timerReceivedAt ?? performance.now();
+    const serverNow = (response.views || []).map(view => view.data?.server_now).filter(Boolean).sort().at(-1);
     // Model tools save their work before the final answer. Keep those new views
     // out of the UI until the turn ends, including workspace reads on reconnect.
     // Direct user actions still receive their own confirmed state immediately.
     if (entry.presentationPending) {
       const pendingSnapshot = entry.pendingResponse?.workspace || entry.pendingResponse?.ui_snapshot;
-      if (!pendingSnapshot || compareSnapshots(snapshot, pendingSnapshot) >= 0) entry.pendingResponse = clone(response);
+      if (!pendingSnapshot || compareSnapshots(snapshot, pendingSnapshot) >= 0) entry.pendingResponse = {...clone(response), _timerReceivedAt:receivedAt};
       if(!immediate)return false;
       // An action response also includes every model-created view. Only expose
       // updates to views already on screen and a detail explicitly opened by
       // the user; the complete response stays queued until the turn settles.
       const visibleIds=new Set(entry.views.map(view=>view.id));
       const updates=(response.views || []).filter(view=>visibleIds.has(view.id) || view.kind===userViewKind);
-      response={...response,views:[...entry.views.filter(view=>!updates.some(update=>update.id===view.id)),...updates]};
+      response={...response,views:[...entry.views.filter(view=>!updates.some(update=>update.id===view.id
+        || userViewKind && update.kind===userViewKind && view.kind===userViewKind)),...updates]};
     }
     const previousStage = entry.snapshot?.stage;
     const oldIds = new Set(entry.views.map(view=>view.id));
     entry.snapshot = clone(snapshot);
     // 完整呈现与模型短快照分开；短快照不能被当作食材、菜谱详情。
     entry.views = Array.isArray(response.views) ? clone(response.views) : entry.views;
+    if (serverNow) entry.timerNow = timerClock(serverNow,undefined,receivedAt);
     const choices = viewChoices(entry.views,snapshot.stage);
     const introduced = choices.filter(view=>!oldIds.has(view.id));
     if (previousStage !== snapshot.stage || !choices.some(view=>view.kind === entry.activeKind)) entry.activeKind = choices[0]?.kind;
@@ -126,6 +134,12 @@ export class WorkspaceController {
       const draft = entry.drafts[entry.failedDraft];
       if (draft?.baseline && JSON.stringify(changedValues(draft.baseline, draft.values)) === JSON.stringify(entry.failedRequest.payload?.values)) delete entry.drafts[entry.failedDraft];
       if (draft?.selectedIds && JSON.stringify(draft.selectedIds) === JSON.stringify(entry.failedRequest.payload?.recipe_ids)) delete entry.drafts[entry.failedDraft];
+      if (entry.failedRequest.type === 'start_timer') {
+        for (const [key,value] of Object.entries(entry.drafts)) {
+          if (value.kind === 'timers' && Math.round(value.minutes * 60) === entry.failedRequest.payload.seconds
+              && (value.label?.trim() || '厨房计时') === entry.failedRequest.payload.label) delete entry.drafts[key];
+        }
+      }
       entry.failedRequest = null; entry.autoSaveError = false; entry.error = '';
     }
     writeDrafts(id, entry.drafts); this.refresh(id); return true;
@@ -135,7 +149,7 @@ export class WorkspaceController {
   canSubmit(id = this.activeId) {
     const entry = this.entries.get(id);
     return !entry || (!entry.saving && !entry.failedRequest && !entry.conflict && !entry.autoSaveError
-      && !Object.values(entry.drafts).some((draft) => draft.kind !== 'preference_form' || draft.conflict));
+      && !Object.values(entry.drafts).some((draft) => draft.kind !== 'timers' && (draft.kind !== 'preference_form' || draft.conflict)));
   }
   unsaved(id = this.activeId) {
     const entry = this.entries.get(id);
@@ -177,13 +191,9 @@ export class WorkspaceController {
             }
           }});
       } else if(draft.kind==='timers') {
-        actions.push({label:'开始计时',context:'新计时器',disabled:entry.saving || entry.snapshot?.stage!=='cooking' || !(draft.minutes>=.1 && draft.minutes<=1440),
-          run:async()=>{
-            await this.dispatch('start_timer',{seconds:Math.round(draft.minutes*60),label:draft.label.trim() || '厨房计时'},view,
-              {sessionId:id,revision:draft.conflict?entry.snapshot.revision:draft.baseRevision});
-            for(const [key,value] of Object.entries(entry.drafts))if(value.nonce===draft.nonce)delete entry.drafts[key];
-            writeDrafts(id,entry.drafts);this.refresh(id);
-          }});
+        // Timer fields have their own submit button; they do not block asking
+        // the assistant or duplicate confirmation controls above the composer.
+        continue;
       } else continue;
       actions.push({label:'放弃修改',tone:'secondary',disabled:entry.saving || entry.confirming,run:()=>this.discardDraft(view,id)});
     }
@@ -205,12 +215,23 @@ export class WorkspaceController {
     if(!Object.keys(draft.servings).length)delete entry.drafts[view.id];
     writeDrafts(id,entry.drafts);this.onChange();
   }
-  setTimerDraft(view,label,minutes,id=this.activeId) {
+  setTimerDraft(view,label,minutes,id=this.activeId,duration) {
     const entry=this.entry(id),prior=entry.drafts[view.id];
-    if(!label.trim() && minutes==null)delete entry.drafts[view.id];
+    if(!label.trim() && minutes==null && !duration)delete entry.drafts[view.id];
     else entry.drafts[view.id]={kind:'timers',label,minutes,baseRevision:prior?.baseRevision ?? view.revision,
-      conflict:Boolean(prior?.conflict),nonce:prior?.nonce || crypto.randomUUID()};
+      conflict:Boolean(prior?.conflict),nonce:prior?.nonce || crypto.randomUUID(),...(duration?{duration:clone(duration)}:{})};
     writeDrafts(id,entry.drafts);this.onChange();
+  }
+  async startTimer(view, {seconds, label}, id = this.activeId) {
+    if (!Number.isInteger(seconds) || seconds < 1 || seconds > 86400) throw new Error('计时请填写 1 秒到 24 小时。');
+    const entry = this.entry(id), draft = entry.drafts[view.id];
+    if (draft && !draft.nonce) draft.nonce = crypto.randomUUID();
+    await this.dispatch('start_timer', {seconds, label:label?.trim() || '厨房计时'}, view,
+      {sessionId:id, revision:draft?.conflict ? entry.snapshot.revision : draft?.baseRevision ?? view.revision, clearDraft:view.id});
+    // A successful start may replace the timer view. Clear its migrated draft,
+    // while preserving unrelated edits and any input retained after failure.
+    if (draft?.nonce) for (const [key,value] of Object.entries(entry.drafts)) if (value.nonce === draft.nonce) delete entry.drafts[key];
+    writeDrafts(id,entry.drafts); this.refresh(id);
   }
   syncLabel(id = this.activeId) {
     const entry = this.entries.get(id);
@@ -294,7 +315,7 @@ export class WorkspaceController {
     entry.saving = true; entry.error = ''; entry.conflict = null; this.refresh(id);
     try {
       const response = await this.api(`/api/sessions/${encodeURIComponent(id)}/actions`, { method: 'POST', body: JSON.stringify(request) });
-      this.receive(id, response, { immediate: true, userViewKind: type==='open_recipe_detail' ? 'recipe_detail' : null });
+      this.receive(id, response, { immediate: true, userViewKind: type==='open_recipe_detail' ? 'recipe_detail' : type==='start_timer' ? 'timers' : null });
       if (response.status !== 'ok') {
         const stale = ['revision_conflict', 'stale_view'].includes(response.status);
         if (stale) {
@@ -307,6 +328,9 @@ export class WorkspaceController {
       }
       entry.failedRequest = null;
       entry.autoSaveError = false;
+      if (['complete_step', 'set_active_step'].includes(type)) {
+        for (const guide of entry.views.filter(item => item.kind === 'cooking_guide')) delete (entry.viewState[guide.id] ||= {}).stepIndex;
+      }
       if (options.clearDraft) delete entry.drafts[options.clearDraft];
       writeDrafts(id, entry.drafts); this.notify('已同步到当前任务。'); return response;
     } catch (error) {
@@ -353,7 +377,9 @@ export class WorkspaceController {
         stage: entry.snapshot?.stage,
         activeRecipeId: entry.snapshot?.active_recipe_id,
         onServings:(origin,recipeId,value)=>this.setServingsDraft(origin,recipeId,value,id),
-        onTimer:(origin,label,minutes)=>this.setTimerDraft(origin,label,minutes,id),
+        onTimer:(origin,label,minutes,duration)=>this.setTimerDraft(origin,label,minutes,id,duration),
+        onStartTimer:(origin,payload)=>this.startTimer(origin,payload,id),
+        timerNow:()=>entry.timerNow(),
         openFocus: (origin,trigger) => this.onFocus?.(origin,id,trigger),
         mealRecipes: entry.views.find(item => item.kind === 'meal_plan')?.data.recipes ||
           entry.snapshot?.components?.find(item => item.kind === 'meal_plan')?.data.recipes || [],
@@ -465,18 +491,69 @@ export class WorkspaceController {
       if (target && !target.disabled) target.focus({ preventScroll: true });
     }
   }
-  tick() {
-    const views = this.entries.get(this.activeId)?.views || [];
-    const timers = views.find((view) => view.kind === 'timers')?.data.timers || [];
-    for (const timer of timers) {
-      const targets = document.querySelectorAll(`[data-timer-id="${CSS.escape(timer.id)}"]`);
-      for (const target of targets) {
-      if (target) target.textContent = clockText(remainingSeconds(timer));
-      if (target && timer.status === 'running' && remainingSeconds(timer) === 0) {
-        const status = target.parentElement?.querySelector('.ui-badge');
-        if (status) status.textContent = '时间到';
-      }
+  readTimerAcknowledged(id) {
+    try { return new Set(JSON.parse(localStorage.getItem(`chefmate:timer-ack:${id}`) || '[]')); } catch { return new Set(); }
+  }
+  acknowledgeTimer(id, timerId) {
+    const entry = this.entry(id); entry.timerAcknowledged.add(timerId);
+    try { localStorage.setItem(`chefmate:timer-ack:${id}`, JSON.stringify([...entry.timerAcknowledged].slice(-100))); } catch { /* Keep the acknowledgement in this tab. */ }
+    this.tick();
+  }
+  renderTimerDock(timers, entry) {
+    const dock = document.getElementById?.('cooking-timer-dock');
+    if (!dock) return;
+    const candidates = timers.filter(timer => ['running', 'paused', 'finished'].includes(timer.status) && !entry?.timerAcknowledged.has(timer.id));
+    const now = entry?.timerNow() ?? Date.now();
+    const priority = timer => timerPresentation(timer,now).expired ? 0 : timer.status === 'running' ? 1 : 2;
+    candidates.sort((a,b) => priority(a) - priority(b) || (remainingSeconds(a,now) ?? Infinity) - (remainingSeconds(b,now) ?? Infinity));
+    const timer = candidates[0], presentation = timer && timerPresentation(timer,now);
+    const identity = JSON.stringify([this.activeId, timer?.id, presentation?.state, candidates.length]);
+    dock.hidden = !timer;
+    if (!timer) { dock.replaceChildren(); dock.dataset.identity = identity; return; }
+    if (dock.dataset.identity !== identity) {
+      dock.dataset.identity = identity; dock.dataset.state = presentation.state;
+      const open = node('button','dock-timer'); open.type = 'button';
+      open.append(icon('timer'),node('span','dock-timer-label',timer.label));
+      const clock = node('span','dock-timer-clock',presentation.clock); clock.dataset.dockClock = timer.id;
+      open.append(clock,node('span','dock-timer-status',presentation.status));
+      if (candidates.length > 1) open.append(node('span','dock-timer-count',`共 ${candidates.length} 个`));
+      const id = this.activeId;
+      open.addEventListener('click',()=>{
+        const view = this.entries.get(id)?.views.find(view => view.kind === 'timers');
+        if (view) this.onFocus?.(view,id,open); else this.openCurrent('cooking_guide');
+      });
+      dock.replaceChildren(open);
+      if (presentation.expired) {
+        const dismiss = node('button','timer-dock-dismiss','知道了'); dismiss.type = 'button';
+        dismiss.addEventListener('click',()=>this.acknowledgeTimer(id,timer.id)); dock.append(dismiss);
       }
     }
+    const clock = dock.querySelector('[data-dock-clock]'); if (clock) clock.textContent = presentation.clock;
+  }
+  tick() {
+    if (typeof document === 'undefined') return;
+    const entry = this.entries.get(this.activeId), timers = workspaceTimers(entry?.views || []);
+    let stateChanged = false;
+    for (const timer of timers) {
+      const presentation = timerPresentation(timer,entry.timerNow());
+      const prior = entry.timerStates.get(timer.id);
+      if (prior && prior !== presentation.state) stateChanged = true;
+      if (prior === 'running' && presentation.expired) this.notify(`${timer.label}时间到，看看锅里的状态。`);
+      entry.timerStates.set(timer.id,presentation.state);
+      const targets = document.querySelectorAll(`[data-timer-id="${CSS.escape(timer.id)}"]`);
+      for (const target of targets) {
+        target.textContent = presentation.clock;
+        target.dataset.timerState = presentation.state;
+        target.setAttribute('aria-label',presentation.remaining == null ? '剩余时间未知' : `剩余 ${presentation.remaining} 秒`);
+      }
+      const selector = CSS.escape(timer.id);
+      for (const row of document.querySelectorAll(`[data-timer-row="${selector}"]`)) row.dataset.timerState = presentation.state;
+      for (const status of document.querySelectorAll(`[data-timer-status="${selector}"]`)) status.textContent = presentation.status;
+      for (const progress of document.querySelectorAll(`[data-timer-progress="${selector}"]`)) progress.value = presentation.progress;
+      for (const controls of document.querySelectorAll(`[data-timer-controls="${selector}"]`)) controls.hidden = presentation.expired;
+      for (const expired of document.querySelectorAll(`[data-timer-expired="${selector}"]`)) expired.hidden = !presentation.expired;
+    }
+    this.renderTimerDock(timers,entry);
+    if (stateChanged) this.onTimerStateChange?.();
   }
 }

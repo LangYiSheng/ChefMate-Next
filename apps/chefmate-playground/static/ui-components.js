@@ -1,6 +1,7 @@
-import { COMPONENT_KINDS, STAGES, EXECUTION_STAGES, clockText, remainingSeconds, splitTerms } from './ui-protocol.js';
+import { COMPONENT_KINDS, STAGES, EXECUTION_STAGES, splitTerms } from './ui-protocol.js';
 import { pageWindow } from './presentation.js';
 import { icon } from './icons.js';
+import {durationText, timerPresentation, timerForStep, manualTimerSeconds, timerDraftParts} from './cooking-timer.js';
 
 export function node(tag, className, text) {
   const item = document.createElement(tag);
@@ -298,58 +299,127 @@ function prepChecklist(view, ctx) {
 }
 
 function cookingGuide(view, ctx) {
-  const root = node('div'); const data = view.data;
+  const root = node('div', 'ui-cooking-guide'); const data = view.data;
   if (!data.recipe_id) { root.append(hint('在菜单中选择一道菜，开始查看步骤。')); return root; }
   root.append(node('h4', 'ui-recipe-name', data.recipe_name));
   for(const text of data.guidance || []) root.append(node('div','ui-adaptation',text));
   const allSteps=data.steps || [];
+  if (!allSteps.length) { root.append(hint('这道菜暂时没有可用步骤。')); return root; }
   if(ctx.viewState.recipeId!==data.recipe_id) { ctx.viewState.recipeId=data.recipe_id;delete ctx.viewState.stepIndex; }
   const activeIndex=Math.max(0,allSteps.findIndex(step=>step.id===data.active_step_id));
-  const stepIndex=Math.min(allSteps.length-1,ctx.viewState?.stepIndex ?? activeIndex);
-  const navigation=node('div','step-navigator');
+  const stepIndex=Math.max(0,Math.min(allSteps.length-1,ctx.viewState?.stepIndex ?? activeIndex));
+  const completed=allSteps.filter(step=>step.status==='done').length;
+  const overview=node('div','cooking-overview');
+  overview.append(node('span','cooking-progress-label',`已完成 ${completed} / ${allSteps.length} 步`));
+  const progress=node('progress','cooking-progress');progress.max=allSteps.length;progress.value=completed;
+  progress.setAttribute('aria-label','烹饪步骤完成进度');overview.append(progress);root.append(overview);
+  const navigation=node('div','step-navigator cooking-step-nav');navigation.setAttribute('aria-label','浏览烹饪步骤');
   navigation.append(button('上一步',()=>{ctx.viewState.stepIndex=Math.max(0,stepIndex-1);ctx.onViewState();},stepIndex<=0,'page-button'),
     node('strong','',`第 ${stepIndex+1} / ${allSteps.length} 步`),button('下一步',()=>{ctx.viewState.stepIndex=Math.min(allSteps.length-1,stepIndex+1);ctx.onViewState();},stepIndex>=allSteps.length-1,'page-button'));
   root.append(navigation);
   for (const step of allSteps[stepIndex] ? [allSteps[stepIndex]] : []) {
-    const card = node('div', `ui-cooking-step ${step.status}`);
-    const heading = node('div', 'ui-step-heading'); heading.append(badge(String(Number(step.ordinal) + 1)), node('span', '', step.status === 'done' ? '已完成' : step.id === data.active_step_id ? '当前步骤' : '待进行'));
+    const state=step.status==='done'?'done':step.id===data.active_step_id?'current':'browsing';
+    const card = node('div', `ui-cooking-step ${state}`);card.dataset.stepId=step.id;
+    const heading = node('div', 'ui-step-heading');
+    heading.append(node('span','cooking-step-number',String(Number(step.ordinal) + 1).padStart(2,'0')),
+      node('span',`cooking-step-status ${state}`,({done:'这一步已完成',current:'正在做这一步',browsing:'正在浏览'})[state]));
     card.append(heading, node('p', 'ui-step-instruction', step.adapted_instruction || step.instruction));
     if(step.adapted_instruction) {
       card.append(hint(`按你的条件调整：${step.adaptation_reason || ''}`));
       card.append(disclosure('查看原菜谱步骤',[step.instruction]));
     }
-    const actions = node('div', 'ui-actions');
-    actions.append(button(step.status === 'done' ? '取消完成' : '完成这一步', () => ctx.action('complete_step', { recipe_id: data.recipe_id, step_id: step.id, completed: step.status !== 'done' }), ctx.locked || ctx.stage !== 'cooking'));
-    if (step.status !== 'done' && step.id !== data.active_step_id) actions.append(button('从这一步继续', () => ctx.action('set_active_step', { recipe_id: data.recipe_id, step_id: step.id }), ctx.locked || ctx.stage !== 'cooking', 'ui-text-button'));
-    if (step.timer_seconds > 0 && !step.adapted_instruction) actions.append(button(`计时 ${Math.round(step.timer_seconds / 60 * 10) / 10} 分钟`, () => ctx.action('start_timer', { recipe_id: data.recipe_id, step_id: step.id, seconds: step.timer_seconds, label: `${data.recipe_name} · 第 ${Number(step.ordinal) + 1} 步` }), ctx.locked, 'ui-text-button'));
-    card.append(actions); root.append(card);
+    const actions = node('div', 'ui-actions cooking-step-actions');
+    const complete=button(step.status === 'done' ? '取消完成' : '完成这一步', () => ctx.action('complete_step', { recipe_id: data.recipe_id, step_id: step.id, completed: step.status !== 'done' }), ctx.locked || ctx.stage !== 'cooking',step.status==='done'?'ui-button cooking-secondary':'ui-button cooking-primary');
+    actions.append(complete);
+    if (step.id!==data.active_step_id && data.active_step_id) {
+      const back=button('回到正在做的步骤',()=>{delete ctx.viewState.stepIndex;ctx.onViewState();},false,'ui-button cooking-secondary');
+      back.prepend(icon('arrow-left'));actions.append(back);
+      if(step.status!=='done') actions.append(button('从这一步继续',()=>ctx.action('set_active_step',{recipe_id:data.recipe_id,step_id:step.id}),ctx.locked || ctx.stage!=='cooking','ui-button cooking-secondary'));
+    }
+    card.append(actions);
+    const savedTimer=timerForStep(data.timers,data.recipe_id,step.id);
+    if(savedTimer) card.append(timerRow(savedTimer,ctx,true));
+    else if (step.timer_seconds > 0 && !step.adapted_instruction && step.status!=='done') {
+      const timing=node('div','cooking-step-timing');
+      timing.append(node('span','cooking-timing-note',`这一步可计时 ${durationText(step.timer_seconds)}`));
+      const start=button(`开始 ${durationText(step.timer_seconds)}计时`,()=>ctx.action('start_timer',{recipe_id:data.recipe_id,step_id:step.id,seconds:step.timer_seconds,label:`${data.recipe_name} · 第 ${Number(step.ordinal)+1} 步`}),ctx.locked || ctx.stage!=='cooking','ui-button cooking-secondary timer-start-button');
+      start.prepend(icon('play'));timing.append(start);card.append(timing);
+    }
+    root.append(card);
   }
-  root.append(hint('浏览步骤不会改变进度，完成后再确认。'));
+  const note=hint(ctx.stage==='cooking'?'做完后点“完成这一步”，计时结束不会代你确认步骤。':'当前可以浏览做法，进入烹饪后再确认步骤和计时。');
+  note.classList.add('cooking-step-note');if(!ctx.focused)root.append(note);
   return root;
 }
 
+function timerRow(timer,ctx,attached=false) {
+  const display=timerPresentation(timer,ctx.timerNow?.() ?? Date.now());
+  const row=node('section',`ui-timer ui-timer-panel${attached?' step-attached-timer':''}`);
+  row.dataset.timerRow=timer.id;row.dataset.timerState=display.state;
+  const title=node('div','timer-heading');title.append(icon('timer'),node('strong','timer-label',timer.label || '厨房计时'));
+  const status=node('span','timer-status',display.status);status.dataset.timerStatus=timer.id;status.setAttribute('aria-live','polite');
+  title.append(status);row.append(title);
+  const readout=node('div','timer-readout');
+  const clock=node('time','ui-timer-clock',display.clock);clock.dataset.timerId=timer.id;
+  clock.dataset.timerState=display.state;
+  clock.setAttribute('aria-label',`剩余 ${display.remaining==null?'时间未知':durationText(display.remaining)}`);
+  readout.append(clock,node('span','timer-duration',`共 ${durationText(timer.seconds)}`));row.append(readout);
+  const progress=node('progress','timer-progress');progress.max=1;progress.value=display.progress;
+  progress.dataset.timerProgress=timer.id;progress.setAttribute('aria-label','计时剩余进度');row.append(progress);
+  const controls=node('div','ui-actions timer-controls');controls.dataset.timerControls=timer.id;controls.hidden=display.expired;
+  const cookingLocked=ctx.locked || ctx.stage!=='cooking';
+  if(timer.status==='running') controls.append(button('暂停',()=>ctx.action('pause_timer',{timer_id:timer.id}),cookingLocked,'ui-button cooking-secondary'));
+  if(timer.status==='paused') controls.append(button('继续',()=>ctx.action('resume_timer',{timer_id:timer.id}),cookingLocked,'ui-button cooking-primary'));
+  if(['running','paused'].includes(timer.status)) controls.append(button('结束计时',()=>ctx.action('cancel_timer',{timer_id:timer.id}),ctx.locked,'ui-button cooking-secondary'));
+  const restart=()=>ctx.action('start_timer',{seconds:timer.seconds,label:timer.label || '厨房计时',...(timer.recipe_id?{recipe_id:timer.recipe_id}:{}),...(timer.step_id?{step_id:timer.step_id}:{})});
+  if(timer.status==='cancelled') {const retry=button('重新计时',restart,cookingLocked,'ui-button cooking-secondary');retry.prepend(icon('refresh-cw'));controls.append(retry);}
+  const expired=node('div','timer-expired');expired.dataset.timerExpired=timer.id;expired.hidden=!display.expired;
+  const message=node('p','timer-expired-message','时间到，看看锅里的状态。');message.prepend(icon('timer'));
+  const retry=button('重新计时',restart,cookingLocked,'ui-button cooking-secondary');retry.prepend(icon('refresh-cw'));
+  expired.append(message,retry);row.append(controls,expired);return row;
+}
+
 function timers(view, ctx) {
-  const root = node('div');
+  const root = node('div','ui-timers-guide');
   const newTimerLocked = ctx.locked || ctx.stage !== 'cooking';
-  root.append(pagedList(view.data.timers || [],ctx,'timerPage',(timer)=>{
-    const card = node('div', 'ui-timer'); card.append(node('strong', '', timer.label));
-    const time = node('time', 'ui-timer-clock', clockText(remainingSeconds(timer))); time.dataset.timerId = timer.id;
-    const remaining = remainingSeconds(timer); const status = remaining === 0 && timer.status === 'running' ? '时间到' : ({ running: '计时中', paused: '已暂停', finished: '已结束', cancelled: '已取消' })[timer.status] || '状态未知';
-    card.append(time, badge(status, 'muted'));
-    const actions = node('div', 'ui-actions');
-    if (timer.status === 'running') actions.append(button('暂停', () => ctx.action('pause_timer', { timer_id: timer.id }), ctx.locked, 'ui-text-button'));
-    if (timer.status === 'paused') actions.append(button('继续', () => ctx.action('resume_timer', { timer_id: timer.id }), ctx.locked, 'ui-text-button'));
-    if (['running', 'paused'].includes(timer.status)) actions.append(button('结束计时', () => ctx.action('cancel_timer', { timer_id: timer.id }), ctx.locked, 'ui-text-button'));
-    card.append(actions); return card;
-  },2));
-  if (!view.data.timers?.length) root.append(hint('计时器随任务保存，关闭页面后仍可按截止时间恢复。'));
-  const form = node('form', 'ui-timer-form'); const label = node('input', 'ui-input'); label.placeholder = '计时名称'; label.maxLength = 100; label.setAttribute('aria-label', '计时名称'); label.disabled = newTimerLocked;
-  const minutes = node('input', 'ui-input'); minutes.type = 'number'; minutes.min = '0.1'; minutes.max = '1440'; minutes.step = '0.1'; minutes.required = true; minutes.placeholder = '分钟'; minutes.setAttribute('aria-label', '计时分钟数'); minutes.disabled = newTimerLocked;
-  label.value=ctx.draft?.label || '';minutes.value=ctx.draft?.minutes ?? '';
-  label.dataset.controlKey='timer-label';minutes.dataset.controlKey='timer-minutes';
-  const changed=()=>ctx.onTimer?.(view,label.value,minutes.value===''?null:Number(minutes.value));
-  label.addEventListener('input',changed);minutes.addEventListener('input',changed);
-  form.append(label, minutes);form.addEventListener('submit',event=>event.preventDefault());root.append(form);
+  root.append(pagedList(view.data.timers || [],ctx,'timerPage',timer=>timerRow(timer,ctx),2));
+  if (!view.data.timers?.length) root.append(node('p','timer-empty','还没有计时器，设好时间就能开始。'));
+  if(ctx.historical) return root;
+  const form=node('form','ui-timer-form timer-create-form');form.setAttribute('aria-label','新建厨房计时器');
+  form.append(node('h4','timer-form-title','新建计时'));
+  const label=node('input','ui-input');label.placeholder='例如：焖煮、静置';label.maxLength=100;label.setAttribute('aria-label','计时名称');label.disabled=newTimerLocked;
+  label.value=ctx.draft?.label || '';label.dataset.controlKey='timer-label';
+  const parts=ctx.draft?.duration || timerDraftParts(ctx.draft?.minutes),duration=node('div','timer-duration-fields');
+  const field=(caption,key,max,value)=>{const wrap=node('label','timer-duration-field');const input=node('input','ui-input');
+    input.type='number';input.inputMode='numeric';input.min='0';input.max=String(max);input.step='1';input.value=value;input.disabled=newTimerLocked;
+    input.setAttribute('aria-label',`计时${caption}数`);input.dataset.controlKey=key;wrap.append(input,node('span','',caption));duration.append(wrap);return input;};
+  const minutes=field('分钟','timer-minutes',1440,parts.minutes),seconds=field('秒','timer-seconds',59,parts.seconds);
+  const start=node('button','ui-button cooking-primary timer-submit','开始计时');start.type='submit';start.prepend(icon('play'));
+  const feedback=node('p','timer-form-feedback');feedback.setAttribute('aria-live','polite');
+  const lockedMessage=ctx.stage!=='cooking'?'进入烹饪阶段后可以启动计时。':'正在同步计时状态，请稍等。';
+  const changed=()=>{const total=manualTimerSeconds(minutes.value,seconds.value);start.disabled=newTimerLocked || total==null;
+    feedback.textContent=newTimerLocked?lockedMessage:total==null?'设置 1 秒到 24 小时之间的时长。':`启动后计时 ${durationText(total)}`;
+    ctx.onTimer?.(view,label.value,total==null?null:total/60,{minutes:minutes.value,seconds:seconds.value});};
+  for(const input of [label,minutes,seconds])input.addEventListener('input',changed);
+  const initial=manualTimerSeconds(minutes.value,seconds.value);start.disabled=newTimerLocked || initial==null;
+  feedback.textContent=newTimerLocked?lockedMessage:initial==null?'设置 1 秒到 24 小时之间的时长。':`启动后计时 ${durationText(initial)}`;
+  form.append(label,duration,start,feedback);
+  const startTimer=async event=>{event.preventDefault();const total=manualTimerSeconds(minutes.value,seconds.value);
+    if(newTimerLocked || start.disabled || total==null || ![minutes,seconds,label].every(control=>control.reportValidity()))return;
+    start.disabled=true;feedback.textContent='正在启动计时…';
+    try {ctx.onTimer?.(view,label.value,total/60);
+      if(ctx.onStartTimer) await ctx.onStartTimer(view,{seconds:total,label:label.value.trim() || '厨房计时'});
+      else {await ctx.action('start_timer',{seconds:total,label:label.value.trim() || '厨房计时'});ctx.onTimer?.(view,'',null);}
+      feedback.textContent='计时已开始。';
+    } catch(error) {feedback.textContent=error.message || '计时未开始，请重试。';}
+    finally {start.disabled=newTimerLocked || manualTimerSeconds(minutes.value,seconds.value)==null;}
+  };
+  form.addEventListener('submit',startTimer);
+  start.addEventListener('click',event=>{if(!start.form)startTimer(event);});
+  for(const input of [label,minutes,seconds])input.addEventListener('keydown',event=>{
+    if(event.key==='Enter' && !input.form){event.preventDefault();startTimer(event);}
+  });
+  root.append(form);
   return root;
 }
 

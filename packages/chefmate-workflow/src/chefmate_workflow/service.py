@@ -269,9 +269,11 @@ class WorkflowService:
                         step.adapted_instruction, step.adaptation_reason = note.instruction, note.reason
             return CookingData(recipe_id=identity, recipe_name=view.name if view else None,
                                steps=view.steps if view else [], active_step_id=state.active_step_id,
-                               guidance=[note.instruction for note in state.adaptations if note.recipe_id == identity and note.step_id is None])
+                               guidance=[note.instruction for note in state.adaptations if note.recipe_id == identity and note.step_id is None],
+                               timers=[timer for timer in state.timers if identity is not None and timer.recipe_id == identity],
+                               server_now=_stamp(self._now()))
         if kind == "timers":
-            return TimersData(timers=state.timers)
+            return TimersData(timers=state.timers, server_now=_stamp(self._now()))
         items = self._prep_items(state)
         steps = [step for recipe in state.meal_plan for step in self._recipe_view(recipe, state).steps]
         return ProgressData(stage=state.stage, recipe_count=len(state.meal_plan), prep_total=len(items),
@@ -317,6 +319,8 @@ class WorkflowService:
                                   for step in raw["steps"]],
                         "current_step": next((step for step in raw["steps"] if step["id"] == raw["active_step_id"]), None)}
                 data["guidance"] = raw["guidance"]
+                data["timers"] = raw["timers"]
+                data["server_now"] = raw["server_now"]
             else:
                 data = raw
             components.append(CompactComponentSnapshot(id=view.id, kind=view.kind, title=view.title,
@@ -628,12 +632,25 @@ class WorkflowService:
             step = next((item for item in steps if item.id == step_id), None) if recipe_id else None
             if step is None or step.timer_seconds != payload["seconds"]:
                 raise DomainConflict("unverified_duration", "源步骤没有这个明确时长；请让用户指定，不能猜测。")
+        existing = next((timer for timer in state.timers if step_id is not None
+            and timer.status in {"running", "paused"} and timer.recipe_id == recipe_id and timer.step_id == step_id), None)
+        if existing is not None:
+            if existing.seconds != payload["seconds"]:
+                raise DomainConflict("timer_already_exists", "这个步骤已有未结束的计时器，请先继续或取消它，再设置新的时长。")
+            return self._ensure_component(state, Timers, "厨房计时", TimersData(timers=state.timers))
         if sum(timer.status in {"running", "paused"} for timer in state.timers) >= 12:
             raise DomainConflict("timer_limit", "同时计时已达上限，请结束已有计时器后再添加。")
         state.timers.append(TimerState(id=str(uuid4()), label=payload["label"], seconds=payload["seconds"],
             remaining_seconds=float(payload["seconds"]), deadline_at=_stamp(self._now() + timedelta(seconds=payload["seconds"])),
             recipe_id=recipe_id, step_id=step_id, basis=basis))
-        state.timers = state.timers[-30:]
+        # Bounded terminal history must never evict a still-running or paused reminder.
+        active_ids = {timer.id for timer in state.timers if timer.status in {"running", "paused"}}
+        terminal = [timer for timer in state.timers if timer.id not in active_ids]
+        keep_ids = active_ids.copy()
+        terminal_slots = max(0, 30 - len(active_ids))
+        if terminal_slots:
+            keep_ids.update(timer.id for timer in terminal[-terminal_slots:])
+        state.timers = [timer for timer in state.timers if timer.id in keep_ids]
         return self._show(state, Timers, "厨房计时", TimersData(timers=state.timers))
 
     def execute_tool(self, name, request=None, *, approved_recipes=(), operation_id=None, user_text=None):
@@ -921,7 +938,7 @@ class WorkflowService:
                         raise DomainConflict("timer_state_conflict", "只有仍有剩余时间的暂停计时器可以恢复。")
                     timer.status = "running"
                     timer.deadline_at = _stamp(self._now() + timedelta(seconds=timer.remaining_seconds))
-                else:
+                elif timer.status in {"running", "paused"}:
                     timer.status, timer.deadline_at = "cancelled", None
             return None
         try:
