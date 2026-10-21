@@ -178,7 +178,7 @@ export function initShell({ onSettingsClose = () => {} } = {}) {
     const target = event.target.closest('.settings-link,.session-link,#new-chat,.brand,[data-primary-page]');
     if (!target) return;
     const settingsLink = target === link;
-    if (settingsLink) event.preventDefault();
+    if (settingsLink || target.matches('.brand')) event.preventDefault();
     if (navigation.replaying) return;
     const previous = navigation.page;
     const page = settingsLink ? (navigation.page === 'settings' ? 'chat' : 'settings')

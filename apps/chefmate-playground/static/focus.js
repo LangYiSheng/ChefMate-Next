@@ -44,13 +44,7 @@ export class CookingFocus {
     this.work.insertBefore(this.overview, this.content);
     this.overview.open = matchMedia('(min-width: 1000px)').matches;
     this.finish = document.getElementById('finish-meal');
-    this.finish.addEventListener('click', () => {
-      if (!this.active || this.finish.disabled) return;
-      const completion = focusCompletion(this.workspace.entry(this.active.sessionId).snapshot, this.active.kind);
-      if (completion === 'prep') { this.close(); return; }
-      if (completion !== 'meal') return;
-      window.dispatchEvent(new CustomEvent('chefmate:finish-meal', { detail: { sessionId: this.active.sessionId } }));
-    });
+    this.finish.addEventListener('click', () => this.finishCurrent());
     this.slot = document.getElementById('focus-composer-slot'); this.prompts = document.getElementById('focus-prompts');
     this.composer = document.querySelector('.composer-area'); this.input = document.getElementById('composer-input');
     this.homeAnchor = document.createComment('composer-home'); this.composer.before(this.homeAnchor);
@@ -92,6 +86,19 @@ export class CookingFocus {
         else if (!event.shiftKey && (document.activeElement === last || !this.root.contains(document.activeElement))) { event.preventDefault(); first?.focus(); }
       }
     });
+  }
+
+  finishCurrent() {
+    if (!this.active || this.finish.disabled) return;
+    const {sessionId,kind}=this.active,entry=this.workspace.entry(sessionId);
+    if (entry.loading || entry.saving || entry.confirming || entry.presentationPending || entry.failedRequest || entry.conflict || entry.autoSaveError || this.activity(sessionId).running) return;
+    const completion=focusCompletion(entry.snapshot,kind);
+    if (completion==='prep') {
+      this.close();
+      this.workspace.onConfirm(sessionId,'食材已经全部备齐了，开始做菜吧。');
+    } else if (completion==='meal') {
+      window.dispatchEvent(new CustomEvent('chefmate:finish-meal',{detail:{sessionId}}));
+    }
   }
 
   captureSource(view, trigger) {

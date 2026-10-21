@@ -113,7 +113,7 @@ export class KitchenCenters {
       else{
         actions.append(button(item.status==='draft'?'核对草稿':'查看做法',()=>this.openRecipe(item),'quiet'));
         if(item.status!=='draft'){
-          const favorite=iconButton('book-open',item.favorite?'取消收藏':'收藏菜谱',async()=>{
+          const favorite=iconButton('star',item.favorite?'取消收藏':'收藏菜谱',async()=>{
             favorite.disabled=true;const pane=this.pane;
             try{const data=await this.api(`/api/favorites/${encodeURIComponent(item.recipe_id)}`,{method:'PUT',body:JSON.stringify({favorite:!item.favorite})});if(!this.isCurrentPane(pane))return;item.favorite=data.favorite;favorite.setAttribute('aria-pressed',String(data.favorite));favorite.setAttribute('aria-label',data.favorite?'取消收藏':'收藏菜谱');favorite.title=data.favorite?'取消收藏':'收藏菜谱';if(this.source==='favorites' && !data.favorite)this.refresh();}
             catch(error){if(this.isCurrentPane(pane))this.message(error.message,true);}finally{favorite.disabled=false;}

@@ -14,7 +14,7 @@ function button(text, callback, disabled = false, className = 'ui-button') {
   const glyph = ({ '上一页': 'chevron-left', '下一页': 'chevron-right', '上一步': 'chevron-left', '下一步': 'chevron-right',
     '全屏查看': 'maximize', '查看做法': 'book-open', '暂停': 'pause', '继续': 'play', '结束计时': 'square',
     '移除': 'trash-2', '完成这一步': 'check', '取消完成': 'undo-2' })[text];
-  if (glyph) item.prepend(icon(glyph));
+  if (glyph && className !== 'ui-text-button') item.prepend(icon(glyph));
   item.addEventListener('click', () => Promise.resolve(callback()).catch(error => {
     console.warn('界面操作未完成：', error?.message || '请重试。');
   })); return item;
@@ -24,7 +24,7 @@ function hint(text) { return node('p', 'ui-hint', text); }
 function pagedList(items,ctx,key,render,size=4) {
   // The full-screen deck measures the available space itself, including long rows.
   // Keep its complete list available; an inline fixed-size page would hide later items.
-  if (ctx.focused) {
+  if (ctx.focused || ['choicesPage','mealPage'].includes(key)) {
     const root = node('div', 'paged-content');
     items.forEach((item, index) => { const row = render(item); row.dataset.focusKey = `${key}:${item.id || item.recipe_id || index}`; root.append(row); });
     return root;

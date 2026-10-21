@@ -314,7 +314,7 @@ function updateConversationState() {
   const kind=stage==='prep'?'prep_checklist':['cooking','completed'].includes(stage)?'cooking_guide':null;
   const taskView=workspace.entries.get(state.currentId)?.views.find(view=>view.kind===kind);
   kitchen.hidden=!taskView || !['chat',undefined].includes(ui.app.dataset.page);
-  kitchen.textContent=stage==='prep'?'查看备菜':stage==='completed'?'查看本次做菜':'继续做菜';
+  kitchen.replaceChildren(icon(stage==='prep'?'shopping-bag':'cooking-pot'),element('span','',stage==='prep'?'查看备菜':stage==='completed'?'查看本次做菜':'继续做菜'));
   kitchen.onclick=()=>{if(taskView)workspace.onFocus(taskView,state.currentId);};
   if (snapshot) {
     const item = state.sessions.find(item => item.id === state.currentId);
@@ -1370,6 +1370,7 @@ ui['composer-input'].addEventListener('keydown', (event) => {
   }
 });
 ui['new-chat'].addEventListener('click', newSession);
+document.querySelector('.brand').addEventListener('click',event=>{event.preventDefault();newSession({retainDraft:true});});
 ui['attach-image'].addEventListener('click',()=>ui['image-input'].click());
 ui['image-input'].addEventListener('change',()=>{
   const files=[...ui['image-input'].files];ui['image-input'].value='';uploadImages(files);

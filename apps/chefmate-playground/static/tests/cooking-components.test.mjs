@@ -10,6 +10,7 @@ class Element {
   getAttribute(name){return this.attributes[name];}
   get classList(){return {contains:name=>this.className.split(' ').includes(name),add:name=>{this.className+=` ${name}`;}};}
   append(...items){for(const item of items){if(item.parentNode)item.parentNode.children.splice(item.parentNode.children.indexOf(item),1);item.parentNode=this;this.children.push(item);}}
+  replaceChildren(...items){for(const item of this.children)item.parentNode=null;this.children=[];this.append(...items);}
   prepend(...items){this.append(...items);this.children.unshift(...this.children.splice(-items.length));}
   set textContent(value){this.copy=String(value);this.children=[];}
   get textContent(){return (this.copy || '')+this.children.map(child=>child.textContent).join('');}
@@ -104,6 +105,17 @@ test('a planning checklist accepts explicit user confirmations without requiring
   assert.doesNotMatch(root.textContent,/进入备菜阶段后/);
   const cooked=renderView(view,{...ctx,stage:'cooking'});
   assert.equal(descendants(cooked).find(element=>element.type==='checkbox').disabled,true);
+});
+
+test('short recipe candidates and meal plans show all dishes with plain text actions',t=>{
+  const recipes=Array.from({length:4},(_,i)=>({recipe_id:`r${i}`,name:`菜${i}`,servings:1,total_time_min:10}));
+  const ctx=context(t,{stage:'planning',selectedRecipeIds:[],openRecipeSection(){}});
+  for(const [kind,data]of [['recipe_choices',{recipes}],['meal_plan',{recipes,meal_diners:5}]]) {
+    const root=renderView({id:kind,kind,data},ctx);
+    for(const recipe of recipes)assert.ok(root.textContent.includes(recipe.name));
+    assert.equal(byClass(root,'page-controls'),undefined);
+    for(const action of descendants(root).filter(el=>el.className==='ui-text-button'))assert.equal(action.children.some(el=>el.tagName==='SVG'),false);
+  }
 });
 
 for(const focused of [false,true])test(`prep always presents one complete ordered checklist ${focused?'in fullscreen':'inline'}`,async t=>{

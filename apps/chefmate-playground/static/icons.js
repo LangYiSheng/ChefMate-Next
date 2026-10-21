@@ -1,5 +1,6 @@
 // Lucide 1.60.0, vendored locally under vendor/lucide (ISC license).
 const names = new Set(`panel-left panel-left-close panel-left-open panel-right plus settings x arrow-up arrow-down arrow-up-right image-plus check chevron-left chevron-right chevron-down chevron-up menu maximize minimize message-circle arrow-left circle-help search play pause square refresh-cw trash-2 chef-hat utensils shopping-bag list-checks timer info circle-alert loader-circle book-open images copy undo-2 corner-down-left camera upload send circle-check circle-x external-link ellipsis check-check circle-stop list-filter cooking-pot layout-grid list sun-moon plug layers sliders-horizontal database code-xml`.split(' '));
+names.add('star');
 const sprite = '/static/vendor/lucide/sprite.svg';
 const svgNamespace = 'http://www.w3.org/2000/svg';
 const checkedName = name => names.has(name) ? name : 'circle-help';
