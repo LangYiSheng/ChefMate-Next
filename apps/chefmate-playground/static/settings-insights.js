@@ -1,6 +1,7 @@
 import {node} from './ui-components.js';
 import {brandImage} from './branding.js';
 import {enhanceControl} from './form-controls.js';
+import {renderChangelog} from './settings-changelog.js';
 
 export const tokenText=value=>Number.isFinite(value)?Math.round(value).toLocaleString('zh-CN'):'未报告';
 const dayMilliseconds=86400000;
@@ -48,9 +49,10 @@ export class SettingsInsights {
   async show(section) {
     const epoch=++this.sequence;this.abort?.abort();this.abort=new AbortController();this.host.replaceChildren(node('p','settings-note','正在读取…'));
     try{
-      const data=await this.api(section==='usage'?`/api/usage?days=${this.days}`:'/api/about',{signal:this.abort.signal});
+      const endpoint=section==='usage'?`/api/usage?days=${this.days}`:section==='changelog'?'/api/changelog':'/api/about';
+      const data=await this.api(endpoint,{signal:this.abort.signal});
       if(epoch!==this.sequence || !this.host.isConnected)return;
-      this.host.replaceChildren();if(section==='usage')this.usage(data);else this.about(data);
+      this.host.replaceChildren();if(section==='usage')this.usage(data);else if(section==='changelog')renderChangelog(this.host,data);else this.about(data);
     }catch(error){if(error.name!=='AbortError' && epoch===this.sequence)this.host.replaceChildren(node('p','settings-error',error.message));}
   }
   usage(data) {

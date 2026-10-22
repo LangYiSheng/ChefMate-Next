@@ -22,6 +22,7 @@ const names = {
   developer: ["开发者", "按需查看公开执行记录、工具参数和模型实际用量。"],
   components: ["系统组件", "统一管理指南、工具和交互界面。"],
   usage: ['Token 用量','查看模型服务已报告的使用量。'],
+  changelog: ['版本更新日志','看看小锅搭子最近多了哪些本领。'],
   about: ['关于 ChefMate',''],
   runtime: ["执行设置", "设置一次任务的等待时间和操作上限。"],
   context: ["上下文预算", "给查询结果和连续对话留出足够空间。"],
@@ -108,11 +109,11 @@ function updateFooter() {
     if ($("settings-message").textContent === closeWaitMessage) message('');
     closeWaitMessage = '';
   }
-  const readOnly = ['data','memory','usage','about'].includes(current);
+  const readOnly = ['data','memory','usage','changelog','about'].includes(current);
   document.querySelector('.settings-footer').hidden = current === 'memory';
   $("save-settings").hidden = readOnly;
   $("reload-settings").hidden = current === 'memory';
-  $("reload-settings").textContent = ['usage','about'].includes(current)?'刷新':'重新读取';
+  $("reload-settings").textContent = ['usage','changelog','about'].includes(current)?'刷新':'重新读取';
   $("reload-settings").disabled = busy || testing;
   $("save-settings").disabled =
     !loaded || !dirty.has(current) || busy || testing;
@@ -122,7 +123,7 @@ function updateFooter() {
       ? busyMessage
       : dirty.has(current)
         ? "当前页有未保存修改"
-        : footerNotice?.text || (current==='usage'?'按服务端报告统计':current==='about'?'ChefMate 本地工作台':"设置已同步");
+        : footerNotice?.text || (current==='usage'?'按服务端报告统计':current==='changelog'?'每次进步，都记在这里。':current==='about'?'ChefMate 本地工作台':"设置已同步");
   const kind=testing||busy?'busy':dirty.has(current)?'dirty':footerNotice?.ok===false?'error':'saved';
   const status=$("save-state");status.dataset.state=kind;
   status.replaceChildren(icon(({busy:'loader-circle',dirty:'circle-alert',error:'circle-x',saved:'circle-check'})[kind]),node('span','',text));
@@ -185,7 +186,7 @@ async function load() {
   }
 }
 async function save() {
-  if (busy || testing || !reportSettingsValidity()) return;
+  if (busy || testing || ['data','memory','usage','changelog','about'].includes(current) || !reportSettingsValidity()) return;
   const section = current,
     values = { ...drafts.get(section) };
   const timerSound = values.timer_sound;

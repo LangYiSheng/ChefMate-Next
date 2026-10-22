@@ -1,8 +1,21 @@
 """Read-only build identity; source archives can omit Git metadata."""
 
+import json
 import re
 import subprocess
+import tomllib
 from pathlib import Path
+
+
+def current_version(root: Path) -> str:
+    return tomllib.loads((root / "pyproject.toml").read_text(encoding="utf-8"))["project"]["version"]
+
+
+def release_history(root: Path) -> dict:
+    return {
+        "current_version": current_version(root),
+        "releases": json.loads((root / "releases.json").read_text(encoding="utf-8")),
+    }
 
 
 def current_commit(root: Path) -> str | None:

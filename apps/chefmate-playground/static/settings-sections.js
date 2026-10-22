@@ -137,7 +137,7 @@ export function createSettingsSections({getState, names, drafts, changed, messag
         const technical=node('dl','component-manifest');for(const [label,value]of [['组件ID',component.id],['指南',component.instructions?.entrypoint || '未提供'],['加载方式',component.instructions?.loading==='on_demand'?'按需读取':component.instructions?.loading || '未提供'],['依赖',(component.dependencies || []).map(key=>dependencyNames[key] || key).join('、') || '无额外依赖'],['状态',component.available===false?'依赖尚未就绪':'已就绪']]){technical.append(node('dt','',label),node('dd','',value));}body.append(technical);details.append(body);entry.append(details);$('settings-form').append(entry);
       }
       $('settings-form').append(node('p','settings-note','开关同时控制组件指南与工具权限。'));
-    } else if (['usage','about'].includes(current)) {
+    } else if (['usage','changelog','about'].includes(current)) {
       const host=node('section','settings-insights');$('settings-form').append(host);insights=new SettingsInsights({host,api});insights.show(current);
     } else if (current === "context") {
       heading("信息容量");
@@ -211,7 +211,7 @@ export function createSettingsSections({getState, names, drafts, changed, messag
 
   function refreshInsights() {
     const {current}=getState();
-    if(!insights || !['usage','about'].includes(current))return false;
+    if(!insights || !['usage','changelog','about'].includes(current))return false;
     insights.show(current);return true;
   }
   function resetMemoryHost() { memoryHost=null; }

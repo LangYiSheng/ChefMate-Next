@@ -25,6 +25,7 @@ from .routes import mount_routes
 from .runtime import TurnManager
 from .sessions import SessionRepository
 from .settings import build_agent
+from .versioning import current_version
 
 
 def create_app(
@@ -55,7 +56,7 @@ def create_app(
         yield
         await running_app.state.manager.close()
 
-    app = FastAPI(title="ChefMate Playground", lifespan=lifespan)
+    app = FastAPI(title="ChefMate Playground", version=current_version(APP_ROOT), lifespan=lifespan)
     context = AppContext(app, settings, repo, cookbook, journal, memory, retrieval=service)
     workspace_binding = (
         WorkspaceBinding(

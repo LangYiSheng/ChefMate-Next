@@ -16,7 +16,7 @@ from ..settings import (
     public_settings,
     resolve_model,
 )
-from ..versioning import current_commit
+from ..versioning import current_commit, current_version, release_history
 from ..http_models import SettingsRequest
 from ..app_context import AppContext
 
@@ -134,19 +134,20 @@ def build_router(context: AppContext) -> APIRouter:
 
     @router.get("/api/about")
     async def about():
-        import tomllib
-
-        version = tomllib.loads((APP_ROOT / "pyproject.toml").read_text(encoding="utf-8"))["project"]["version"]
         current_status = await status()
         return {
             "name": "ChefMate",
             "subtitle": "您的个性化烹饪助手",
-            "version": version,
+            "version": current_version(APP_ROOT),
             "commit": await asyncio.to_thread(current_commit, APP_ROOT),
             "runtime": "本地工作台",
             "recipe_count": current_status["database"]["recipe_count"],
             "component_count": len(context.components.metadata()) if context.components else 0,
         }
+
+    @router.get("/api/changelog")
+    async def changelog():
+        return release_history(APP_ROOT)
 
     @router.get("/api/components")
     async def components():

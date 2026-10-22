@@ -176,6 +176,7 @@ uv run --project apps/chefmate-playground chefmate-playground
 | `GET /api/components` | 指引、工具、UI 和依赖清单 |
 | `GET /api/usage?days=30` | `days=1..366` 或 `all`，实际报告用量与覆盖情况 |
 | `GET /api/about` | 包版本、当前 Git 提交、菜谱及组件数量 |
+| `GET /api/changelog` | 当前版本与按版本分组的更新日志，无需模型或菜谱库 |
 | `GET /api/debug/catalog` | 真实注册工具 schema 与组件目录 |
 | `GET /api/sessions/{id}/debug?turn_id=...` | 已捕获模型请求、工具过程、用量与参数完整性诊断 |
 
