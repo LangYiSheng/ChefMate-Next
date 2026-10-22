@@ -1,5 +1,4 @@
 include .env.example
-include VERIFICATION.md
 include uv.lock
 recursive-include scripts *.ps1
 recursive-include examples *.py

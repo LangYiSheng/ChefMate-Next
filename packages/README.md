@@ -1,30 +1,41 @@
 # ChefMate 可复用包
 
-| 包 | 职责 | 依赖 |
-|---|---|---|
-| [chefmate-contracts](chefmate-contracts/README.md) | 菜谱结构、营养数值、词表及校验 | Pydantic |
-| [chefmate-food-data](chefmate-food-data/README.md) | 本地 USDA 查询、维护和每 100g 营养解析 | contracts、requests |
-| [chefmate-recipe-processing](chefmate-recipe-processing/README.md) | 文本结构化、食材匹配、营养计算和标记估算 | contracts、food-data、OpenAI SDK |
-| [chefmate-storage](chefmate-storage/README.md) | PostgreSQL 当前数据集存储与一致只读查询 | Psycopg、ijson |
-| [chefmate-retrieval](chefmate-retrieval/README.md) | 食材候选、分组筛选、查询证据与工具参数 | storage、contracts、food-data |
-| [chefmate-workflow](chefmate-workflow/README.md) | 厨房任务、冻结快照、闭合动作与界面投影 | retrieval、Pydantic |
-| [chefmate-agent](chefmate-agent/README.md) | 标准 Agent、middleware、多轮历史、UI工具与按需 Skills | retrieval、LangChain、LangGraph、ChatOpenAI |
+七个 Python 3.12+ 包为核心 App 和清洗工具提供共同能力。每个包拥有自己的契约与测试，不反向导入应用，也不读取应用配置。
 
-均为 Python 3.12+ 包，不导入 `data_cleaning`。清洗端持有配置、业务数据库、审阅、批次与导出；未来后端可独立调用相同能力，按需要转换成更简化的服务模型。
+[项目首页](../README.md) · [模块地图](../docs/guide/development.md) · [数据的一生](../docs/guide/data.md) · [接口参考](../docs/reference/README.md)
 
-在项目根目录安装开发版本，不改变现有第三方依赖：
+## 包与边界
 
-```powershell
-uv pip install --python data_cleaning/.venv/Scripts/python.exe --no-deps -e packages/chefmate-contracts -e packages/chefmate-food-data -e packages/chefmate-recipe-processing
-```
+| 包 | 职责 | 主要依赖 |
+| --- | --- | --- |
+| [Contracts](chefmate-contracts/README.md) | 菜谱、营养、词表与快照契约 | Pydantic |
+| [Food Data](chefmate-food-data/README.md) | 本地 USDA 读取与显式安装维护 | contracts、requests |
+| [Recipe Processing](chefmate-recipe-processing/README.md) | AI 提取、候选匹配、确定性营养计算 | contracts、food-data、模型适配器 |
+| [Storage](chefmate-storage/README.md) | 当前数据集发布、PostgreSQL 一致读取 | Psycopg、ijson |
+| [Retrieval](chefmate-retrieval/README.md) | 食材候选、组合筛选与查询证据 | storage、contracts、food-data |
+| [Workflow](chefmate-workflow/README.md) | 冻结餐单、份量、备菜、步骤、计时与视图 | retrieval、Pydantic |
+| [Agent](chefmate-agent/README.md) | 标准执行器、边界校验、上下文与工具扩展 | retrieval、LangChain |
 
-新环境先安装 `data_cleaning/requirements-lock.txt`（在 `data_cleaning` 目录执行，editable 路径相对于该目录）。发布到其他项目时安装构建出的 wheel，三个业务包版本为 `0.1.0`。
+## 快速开始
 
-验证：
+开发整个工作台时，在仓库根目录同步应用即可安装本地 editable 包：
 
 ```powershell
-data_cleaning/.venv/Scripts/python.exe -m pytest data_cleaning/tests packages -p no:cacheprovider --basetemp=data_cleaning/data/intermediate/package-tests
-data_cleaning/.venv/Scripts/ruff.exe check --config data_cleaning/pyproject.toml data_cleaning packages
+uv sync --project apps/chefmate-playground --extra dev --python 3.12
 ```
 
-数据库格式、历史菜谱 JSON、食材身份和快照 key 保持兼容。菜谱处理包支持文本/Markdown；智能体与检索由独立包负责。本地聊天工作台见 [chefmate-playground](../apps/chefmate-playground/README.md)。
+在其他 Python 环境复用某个包时，按该包 README 安装所需本地依赖；例如：
+
+```powershell
+python -m pip install ./packages/chefmate-contracts ./packages/chefmate-food-data ./packages/chefmate-storage ./packages/chefmate-retrieval
+```
+
+数据库连接、模型与持久化由调用方注入；清洗端持有审阅和发布，App 持有在线个人数据。
+
+## 验证
+
+```powershell
+apps/chefmate-playground/.venv/Scripts/python.exe -m pytest packages -q -p no:cacheprovider --basetemp=apps/chefmate-playground/.runtime/package-tests
+```
+
+真实数据库测试需要显式测试 DSN。详见[开发指南](../docs/guide/development.md)，每个包的细节见[接口参考](../docs/reference/README.md)。

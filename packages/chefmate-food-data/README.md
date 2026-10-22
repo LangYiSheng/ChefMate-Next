@@ -1,35 +1,37 @@
 # ChefMate Food Data
 
-本地 USDA Foundation 2026-04（363 条，跳过32个空项）与 SR Legacy 2018-04（7,793条）统一检索，各记录保留独立 FDC ID、数据集和原始 JSON，不合并同名食物或平均营养。
+只读查询本地 USDA 数据，并提供显式下载、校验和安装维护。每条食物保留 FDC ID、数据集与营养来源。
 
-SQLite 格式保持 schema version 2：`datasets` 保存版本、URL、SHA256、导入时间和计数；`foods` 保存 FDC ID、名称、数据集和 raw_json；`foods_fts` 保存名称全文索引。ZIP 和数据库不进入 wheel，由调用方指定路径。
+[项目首页](../../README.md) · [数据导览](../../docs/guide/data.md) · [完整接口与维护命令](../../docs/reference/food-data.md)
+
+## 主要能力
+
+- Foundation Foods 与 SR Legacy 的独立记录和本地全文检索。
+- 每 100g 营养解析、未知值与来源保留。
+- 安装版本、URL、哈希与计数记录，先验证新库再替换。
+- 日常查询不下载数据，数据文件不打包进 wheel。
+
+## 快速开始
 
 ```python
 from chefmate_food_data import LocalFoodData
 
 foods = LocalFoodData("path/to/usda.db")
 foods.require_ready()
-options = foods.search("potatoes raw", limit=15)
-record = foods.get_food(str(options[0]["fdcId"]))
-print(record.nutrients_per_100g, record.provenance)
+candidates = foods.search("potatoes raw", limit=15)
+record = foods.get_food(str(candidates[0]["fdcId"])) if candidates else None
 ```
 
-接口：
+数据库路径由宿主提供。安装/恢复使用 `chefmate-usda install`，实际状态使用 `chefmate-usda status`，完整参数见[维护参考](../../docs/reference/food-data.md)。
 
-- `status()`：ready/count/datasets/path 或错误；`require_ready()` 在不可用时抛 `FoodDataError`。
-- `list_datasets()`：安装版本和来源。
-- `search(query, limit=15)`：保持 fdcId/description/dataType 候选格式和旧检索排序。
-- `get_food(fdc_id)`：`FoodRecord`（fdc_id、description、data_type、nutrients_per_100g、provenance）。
-- `get_raw_food(fdc_id)`：原始 USDA JSON；兼容方法 `food(..., refresh=False)`、`provenance()` 继续可用。
-- `parse_nutrients(raw)`：处理 USDA 编号/单位优先级，未知值保持 None；支持读取历史 Survey 快照，不增加 Survey 查询库。
+## 代码入口
 
-维护模块提供 `download_datasets(folder)`、`import_datasets(folder, database)` 和 `install_datasets(folder, database)`；旧 `download()` 仍可用。下载续传，导入先建立临时库、校验后替换旧库，同版本/哈希不重复写入。
+[src/chefmate_food_data/](src/chefmate_food_data)包含查询、营养解析、数据集维护与 CLI。数据类型与覆盖区别以 [USDA 官方说明](https://fdc.nal.usda.gov/data-documentation/)为准。
 
-在 `data_cleaning` 目录执行：
+## 验证
 
 ```powershell
-.venv/Scripts/python.exe -m chefmate_food_data.cli install --directory data/raw/usda --database database/usda.db
-.venv/Scripts/python.exe -m chefmate_food_data.cli status --database database/usda.db
+apps/chefmate-playground/.venv/Scripts/python.exe -m pytest packages/chefmate-food-data/tests -q -p no:cacheprovider --basetemp=apps/chefmate-playground/.runtime/food-data-tests
 ```
 
-`chefmate-usda` 的 download/import/install/status/search 命令参数不变。查询只读本地库，维护操作才允许下载。不要同时执行多个维护命令；Windows 替换时文件被占用会保留旧库，关闭读取后重试。
+来源与本地安装历史见[USDA 验收](../../docs/engineering/records/data-cleaning-local-usda.md)，历史数量不等于当前安装状态。

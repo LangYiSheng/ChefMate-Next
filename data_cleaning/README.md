@@ -1,150 +1,48 @@
-# 菜谱 AI 转换工具
+# ChefMate 数据清洗工具
 
-**完整 Markdown → AI 一次生成完整 JSON → 修改与审阅 → 营养计算 / 导出**。
+把完整 Markdown 菜谱转成可以核对、计算和发布的数据：AI 提取结构，程序校验与计算，人来审阅。
 
-无需规则预提取，无需先建立标准食材库，无需逐阶段审核。第一次输出已包含原始与标准食材名、类别、过敏原、用量、人数、步骤、口味/方法/厨具/难度标签和 USDA 英文检索词。
+[项目首页](../README.md) · [数据的一生](../docs/guide/data.md) · [完整操作参考](../docs/reference/data-cleaning.md) · [字段说明](../docs/reference/recipe-fields.md)
 
-## 启动
+## 主要能力
 
-本机已有 Python 3.12 虚拟环境：
+- 单篇与后台批次转换，原文和修改历史保留。
+- 本地 USDA 候选、共享已审阅映射、确定性营养计算。
+- 可选的缺失估算与清晰标记，修改来源后失效。
+- 整篇人工审阅、统一 JSON 导出、版本和 SHA256 清单。
 
-```powershell
-cd D:\Dev\ChefMate\data_cleaning
-.\.venv\Scripts\python.exe -m streamlit run app/main.py --server.address 127.0.0.1 --server.port 8501 --browser.gatherUsageStats false
-```
+## 快速开始
 
-打开 <http://127.0.0.1:8501>。主界面包含 **菜谱转换 / 批量转换 / 数据库菜谱 / 标准食材 / 数据与设置**。
-
-新机器安装（已有配置不要覆盖）：
+在本目录执行，已有环境和配置时保留原文件：
 
 ```powershell
 py -3.12 -m venv .venv
-.\.venv\Scripts\python.exe -m pip install -r requirements-lock.txt
+.venv/Scripts/python.exe -m pip install -r requirements-lock.txt
 Copy-Item .env.example .env
+# 编辑本目录 .env，填写模型连接和本地 USDA 路径。
+.venv/Scripts/python.exe -m streamlit run app/main.py --server.address 127.0.0.1 --server.port 8501 --browser.gatherUsageStats false
 ```
 
-配置仅从本目录 `.env` 读取，进程环境变量优先：
+打开[清洗页面](http://127.0.0.1:8501)。导入 Markdown 后即可转换与审阅；USDA 库未安装时，营养查询明确不可用，结构化流程仍可使用。
 
-```dotenv
-OPENAI_API_KEY=你的DeepSeek密钥
-OPENAI_MODEL=deepseek-flash
-OPENAI_BASE_URL=https://api.deepseek.com
-OPENAI_API_MODE=deepseek_json
-USDA_DB_PATH=database/usda.db
-```
+## 代码入口
 
-改 `.env` 后重启后台。本地 USDA 库未安装时仍能完成 JSON 转换和审阅，营养查询可选。USDA_API_KEY 已停用，旧配置项会被忽略。
+| 目录 | 职责 |
+| --- | --- |
+| [app/](app) | 单篇、批量、数据库、标准食材与设置页面 |
+| [models/](models) | 清洗数据库、版本、批次和审阅 |
+| [services/](services) | 转换、营养与后台任务编排 |
+| [scripts/](scripts) | 初始化、导入、转换、批次与导出 CLI |
+| [../packages/](../packages/README.md) | 共享契约、处理和食物查询能力 |
 
-## USDA 本地数据与复用包
-
-当前已部署 Foundation 2026-04（363条）与 SR Legacy 2018-04（7,793条），共 8,156 条。
-原始 ZIP 位于 `data/raw/usda`，独立只读查询库位于 `database/usda.db`。Foundation 包内 32 个空项已记录并跳过。
-首次安装或恢复数据（当前目录 `data_cleaning`）：
-
-```powershell
-.\.venv\Scripts\python.exe -m chefmate_food_data.cli install --directory data/raw/usda --database database/usda.db
-.\.venv\Scripts\python.exe -m chefmate_food_data.cli status --database database/usda.db
-```
-
-`download` 仅下载，`import` 仅导入；下载支持续传，导入校验成功才替换旧库。同哈希重复导入不写入。
-“数据与设置”显示数据版本、数量与 SHA256。未安装时提示本地库不可用，不会回退到在线 API。
-旧业务数据库、已审阅菜谱和历史营养快照保持兼容，不自动重算。失败项可以从本地重试，发生修改后重新审阅。
-
-共享模型/词表在 `chefmate-contracts`，本地食物数据在 `chefmate-food-data`，菜谱处理在 `chefmate-recipe-processing`。
-应用直接使用这三个包。其他 Python 项目可以独立安装 wheel，接口与同步/异步示例参见 [包总览](../packages/README.md)。
-本次支持文本/Markdown，不包含图片/PDF解析。整篇转换导出附带 `vocabulary.json`（实际词表、启用状态和内容哈希），并纳入 manifest 文件哈希；使用快照校验历史词表，不依赖当前数据库的启用状态。
-
-## 单篇转换
-
-1. **菜谱转换** 选择菜谱，上一篇/下一篇逐页浏览。左侧完整原文，右侧可编辑 JSON。
-2. 点击 **AI 转换 / 按意见重做**，一次请求完成全部结构化字段，不输入旧规则解析结果。
-3. 直接修改 JSON，或在 **让 AI 修改的意见** 写要求后重做。当前编辑框也会传给 AI，支持修复格式错误的 JSON。失败保留已有结果。
-4. **保存修改** 留作待审阅；**通过审阅** 对整份 JSON 及当前营养来源一次确认；也可拒绝。重做成功/改变来源后重新待审阅。
-5. 可选转换后自动查询 USDA，或点击 **补齐 / 重试 USDA 并重新计算**。无需到标准食材页操作。
-
-原文、转换/修改历史、提示词、审阅记录和 USDA 快照保存在 SQLite。原文变更使旧结果失效；并发保存有版本检查。
-
-## 批量转换
-
-检查本批提示词、重试次数、是否附带营养查询及菜谱数量（0为全部），点击开始。
-
-- 独立后台进程逐篇生成完整 JSON，不再运行旧版食材整理/标签阶段。
-- 关闭浏览器不停止进程；自动刷新进度，支持停止、继续、失败重试。
-- 成功项有检查点，已有当前版本 JSON 复用。已通过/拒绝记录不会被批量覆盖。
-- 改提示词后可单篇重做，或在批量页勾选“按本批提示词重做已有待审阅 JSON”；默认复用已有结果，已通过/拒绝仍受保护。
-- 启动时固定范围与配置快照，修改默认设置不影响运行中批次。
-- 同库只允许一个批量进程。进程意外退出后先恢复中断状态，再继续。
-
-## 提示词、重试与超时
-
-在 **数据与设置** 保存默认提示词和参数；单篇/批量可临时覆盖提示词及重试次数。
-
-| 参数 | 默认 | 范围 |
-|---|---:|---:|
-| 额外重试次数 | 2 | 0–5 |
-| 每次请求超时 | 90秒 | 5–300秒 |
-| 最大输出 tokens | 12000 | 1000–64000 |
-
-额外重试2次表示最多请求3次。JSON/Schema错误、截断、可重试网络异常有限重试；400/401/403/404等不重复请求。USDA 只查询本地数据库，不使用网络重试或 API 密钥。转换以上述设置为准。
-
-默认提示词：`prompts/convert.txt`；Schema：`schemas/conversion.py`。固定提示词、启用词表及 Schema 置于前缀，Markdown、反馈、当前 JSON 放在后面，便于缓存复用。实际命中由服务端决定，不能保证每次命中；服务记录保留返回的 usage / 缓存 token 数据。见 [DeepSeek 缓存文档](https://api-docs.deepseek.com/guides/kv_cache/)。
-
-## AI 缺失估算模式
-
-单篇页面勾选 **AI 估算缺失数据（标记估算值）**，再点击 **补齐 / 重试 USDA 并重新计算**，无需重做菜谱。批量页也有相同开关；数据与设置可保存默认开关。开启后即使未勾选自动营养查询，也会进行营养补齐和估算。
-
-先保留已有原文克重与 USDA 指标，再让 AI 根据整份菜谱估算缺失的可食克重、人数及每100g营养。估算单独保存，不改写原始 JSON，不伪造 USDA 来源。页面显示估算表与依据，导出保留 `estimated`、字段列表、估算模型和时间。所有指标补齐且使用了估算时，`nutrition.status=estimated`；仍有缺项则为 `incomplete`。估算结果仍需整篇审阅，`ready_for_recommendation` 保持严格口径，估算结果不会自动设为 true。
-
-编辑菜谱使旧估算失效；关闭估算开关并点击补齐按钮可移除估算，恢复严格计算。估算失败保留已获得的 USDA 结果，可重试。无法合理估计的值仍可为空，未知不按0处理。估算不会加入 USDA 共享映射。
-
-## 营养计算
-
-已通过整篇审阅、且原文版本仍有效的 USDA 快照自动成为共享映射。后续食材标准名称命中该名称或已审阅别名、英文检索词一致且 FDC ID 无冲突时，直接复用快照，无需再次请求 AI/本地 USDA。不同部位或加工状态请保留在标准名和检索词中。查询词变化时保守地重新匹配。
-
-在“数据与设置 → 已确认的 USDA 共享映射”查看来源。编辑来源菜谱 aliases 并重新通过审阅即可确认别名；撤回为待审阅、拒绝或原文变化后停止作为共享来源。已经复用的历史营养快照不自动覆盖，需要重新转换或修改食材身份来清除旧快照后再匹配。共享映射从当前批准记录读取，无额外审核阶段或数据库迁移。导出增加 usda_mappings.json，菜谱搜索支持原始食材名、标准名、别名，以及已确认映射关联的相同 FDC ID。
-
-程序按 JSON 的英文检索词查询本地 USDA（Foundation Foods 与 SR Legacy），AI 只在真实候选中选 ID，程序获取每100g数据，结合 grams 计算总营养、每人份与统一阈值标签。
-
-- AI Schema 不允许营养值/FDC ID；候选外 ID 被校验拒绝。
-- 明确 g/kg 可转换；“一个、少许、约两勺”不猜克重，证据保留。
-- 未匹配或缺少指标时显示缺失，绝不按0处理。人数未知则每人份为 null。
-- 营养详情包含候选、理由、置信度、来源与完整快照，随菜谱整篇审阅。
-- 改标准名/检索词使对应快照失效；改克重则复用来源重新计算。
-- 不模拟烹饪损耗、吸油量、成品失水。
-
-## 导入、导出与命令行
-
-**数据与设置 → 导入 Markdown** 仅保存原文，hash 相同跳过，变更新增原文版本。支持 HowToCook 根目录、dishes 或自定义菜谱目录，不执行上游脚本。
-
-**导出菜谱 JSON** 默认只包含当前原文版本且审阅通过的记录。输出到 `data/exported/<批次>/recipes.json`，附带 manifest 与 SHA256。允许导出已审阅但营养不完整的 JSON，其 `ready_for_recommendation=false`；主项目使用前按该字段筛选。取消审核过滤只用于诊断。
-
-```powershell
-.\.venv\Scripts\python.exe scripts/cli.py init
-.\.venv\Scripts\python.exe scripts/cli.py import --source data/raw/HowToCook
-.\.venv\Scripts\python.exe scripts/cli.py convert --recipe-id <ID>
-.\.venv\Scripts\python.exe scripts/cli.py convert --recipe-id <ID> --feedback "核对工具和食材" --with-nutrition
-.\.venv\Scripts\python.exe scripts/cli.py batch --no-usda --limit 5
-.\.venv\Scripts\python.exe scripts/cli.py batch --resume <批次ID>
-.\.venv\Scripts\python.exe scripts/cli.py export
-```
-
-## 数据、清空与兼容
-
-数据库 `database/cleaning.db` 安全自动迁移至版本4。当前仅保留完整 JSON 转换工具，旧版页面和独立阶段命令已移除；底层共享数据库及迁移代码保留。字段说明见 [FIELDS.md](FIELDS.md)。
-
-清空位于设置折叠区，必须输入 CLEAR；有活动任务时阻止清空。不删除 SQLite 文件、磁盘原文、历史导出。配置只用于本机内部工具，没有多用户权限体系。
-
-目录：`app` 页面；`services` 转换/营养/外部接口/任务；`models` 集中数据库访问与 migrations；`schemas` 校验；`prompts` 指令；初始词表由 contracts 包提供；`tests` 测试；`logs` 日志；`data` 原始/中间/导出数据。应用数据仍在本子项目，复用能力位于 `../packages/`。
+模型与清洗配置由本应用持有，不流入在线检索参数。导出经 Storage 校验后显式发布，不由工作台启动时自动导入。
 
 ## 验证
 
+从仓库根目录运行：
+
 ```powershell
-.\.venv\Scripts\python.exe -m pytest --basetemp=data/intermediate/pytest
-.\.venv\Scripts\ruff.exe check --no-cache app models schemas services scripts tests config.py
+data_cleaning/.venv/Scripts/python.exe -m pytest data_cleaning/tests -q -p no:cacheprovider --basetemp=data_cleaning/data/intermediate/pytest
 ```
 
-测试使用隔离数据库；合成营养数据不会进入正式库。可选扩展为多用户权限、并行任务、更多营养指标，不影响当前简化流程。
-
-## 标准食材汇总展示
-
-列表按标准名相同或 USDA ID 相同合并，关联分组一并合并。查询命中组内任一名称、别名或来源 ID 时显示整个分组；详情保留每篇标准名、原名、检索词、来源及匹配依据。这仅改变展示分组，不改菜谱、营养快照或共享映射。
+操作参数、估算与导出限制见[完整参考](../docs/reference/data-cleaning.md)；历史检查已集中到[工程档案](../docs/engineering/README.md)。
