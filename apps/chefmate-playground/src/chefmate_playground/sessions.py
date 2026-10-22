@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+import base64
+import binascii
 import sqlite3
 import threading
 import zlib
@@ -34,6 +36,11 @@ class SessionRepository:
                 "(session_id TEXT NOT NULL, turn_id TEXT NOT NULL, created_at TEXT NOT NULL, "
                 "summary TEXT NOT NULL, body BLOB NOT NULL, PRIMARY KEY(session_id,turn_id))"
             )
+            connection.execute(
+                "CREATE INDEX IF NOT EXISTS sessions_sidebar ON sessions "
+                "(COALESCE(json_extract(state,'$.pinned'),0) DESC, updated_at DESC, id) "
+                "WHERE json_array_length(state,'$.messages') > 0"
+            )
         # A process restart cannot preserve a pending provider call.
         for session in self.list():
             if session.get("running"):
@@ -59,6 +66,45 @@ class SessionRepository:
         with self._lock, self._connect() as connection:
             row = connection.execute("SELECT state FROM sessions WHERE id=?", (session_id,)).fetchone()
             return json.loads(row[0]) if row else None
+
+    def page(self, *, limit: int = 20, cursor: str | None = None) -> tuple[list[dict], str | None]:
+        """Read only one sidebar page; the cursor follows stable pin/activity/id order."""
+        pin = "COALESCE(json_extract(state,'$.pinned'),0)"
+        condition = "json_array_length(state,'$.messages') > 0"
+        arguments = []
+        if cursor:
+            try:
+                anchor = json.loads(base64.urlsafe_b64decode(cursor.encode('ascii')))
+                if (not isinstance(anchor, list) or len(anchor) != 3 or type(anchor[0]) is not int
+                        or anchor[0] not in (0, 1) or not all(isinstance(value, str) and value for value in anchor[1:])):
+                    raise ValueError
+            except (ValueError, TypeError, UnicodeError, binascii.Error):
+                raise ValueError("会话列表位置已失效，请重新读取。") from None
+            pinned, updated, session_id = anchor
+            condition += f" AND ({pin} < ? OR ({pin} = ? AND updated_at < ?) OR ({pin} = ? AND updated_at = ? AND id > ?))"
+            arguments.extend((pinned, pinned, updated, pinned, updated, session_id))
+        with self._lock, self._connect() as connection:
+            rows = list(connection.execute(
+                f"SELECT state FROM sessions WHERE {condition} ORDER BY {pin} DESC, updated_at DESC, id LIMIT ?",
+                (*arguments, limit + 1),
+            ))
+        states = [json.loads(row[0]) for row in rows[:limit]]
+        next_cursor = None
+        if len(rows) > limit:
+            last = states[-1]
+            anchor = [int(bool(last.get('pinned'))), last['updated_at'], last['id']]
+            next_cursor = base64.urlsafe_b64encode(json.dumps(anchor).encode()).decode('ascii')
+        return states, next_cursor
+
+    def update_metadata(self, session_id: str, *, title: str | None = None, pinned: bool | None = None) -> dict:
+        def update(state):
+            if title is not None:
+                state.update(title=title, title_custom=True)
+            if pinned is not None:
+                state['pinned'] = pinned
+            # Metadata edits do not alter the last conversation activity time.
+            return state
+        return self.mutate(session_id, update)
 
     def save(self, state: dict) -> None:
         encoded = json.dumps(state, ensure_ascii=False, allow_nan=False)
@@ -89,7 +135,7 @@ class SessionRepository:
             "id": str(uuid4()), "title": "新对话", "created_at": timestamp, "updated_at": timestamp,
             "messages": [], "history": [], "running": False, "active_turn": None,
             "last_status": "idle", "last_error": None, "last_run": None,
-            "workspace": {},
+            "workspace": {}, "pinned": False, "title_custom": False,
         }
         self.save(state)
         return state

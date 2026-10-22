@@ -70,7 +70,8 @@ uv run --project apps/chefmate-playground chefmate-playground
 | 接口 | 用途 |
 |---|---|
 | `GET /api/status` | 模型配置、数据库状态和菜谱数量 |
-| `GET/POST /api/sessions` | 会话列表 / 创建 |
+| `GET/POST /api/sessions` | 游标分页列表（默认20条，`limit`、`cursor`）/ 创建；列表返回`next_cursor` |
+| `PATCH /api/sessions/{id}` | 重命名`title`（1–80字）或修改`pinned`；独立于对话/做菜状态保存 |
 | `GET/DELETE /api/sessions/{id}` | 恢复 / 删除未运行的会话 |
 | `GET /api/sessions/{id}/workspace` | 当前完整组件与模型短快照 |
 | `POST /api/sessions/{id}/actions` | 受控动作：`{action_id,base_revision,view_id?,type,payload}` |

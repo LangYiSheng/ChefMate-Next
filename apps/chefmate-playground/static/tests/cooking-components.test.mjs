@@ -165,14 +165,15 @@ test('a rejected prep update restores the checked state and keeps canonical orde
   assert.deepEqual(byClass(renderView(view,ctx),'prep-flat-list').children.map(row=>row.dataset.prepId),['pending','ready']);
 });
 
-test('step overview can complete any actual step and the list preserves all full instructions',async t=>{
+test('step overview only browses and the list preserves all full instructions',async t=>{
   const actions=[],ctx=context(t,{focused:true,action:async(type,payload)=>actions.push({type,payload})});
   const steps=Array.from({length:7},(_,index)=>({id:`s${index}`,ordinal:index,status:'pending',instruction:`第${index+1}步完整说明。`.repeat(8)}));
   const view={id:'cooking',kind:'cooking_guide',editable:true,data:{recipe_id:'r1',recipe_name:'测试菜',active_step_id:'s0',steps,timers:[]}};
   const root=renderView(view,ctx),overview=byClass(root,'workflow-overview');
-  assert.equal(descendants(overview).filter(element=>element.type==='checkbox').length,7);
-  const last=input(overview,'overview-step:s6');last.checked=true;await last.emit('change');
-  assert.deepEqual(actions,[{type:'complete_step',payload:{recipe_id:'r1',step_id:'s6',completed:true}}]);
+  assert.equal(descendants(overview).filter(element=>element.type==='checkbox').length,0);
+  const last=descendants(overview).filter(element=>element.className==='workflow-step-jump').at(-1);await last.emit('click');
+  assert.equal(ctx.viewState.stepIndex,6);assert.deepEqual(actions,[]);
+  assert.doesNotMatch(root.textContent,/计时结束不会代你确认|进入烹饪后再确认/);
   const list=renderView(view,{...ctx,viewState:{recipeId:'r1',displayMode:'list'}});
   const instructions=descendants(byClass(list,'workflow-list')).filter(element=>element.classList.contains('ui-step-instruction'));
   assert.deepEqual(instructions.map(element=>element.textContent),steps.map(step=>step.instruction));

@@ -1,7 +1,9 @@
+import {SessionFeed} from './session-feed.js';
+import {SessionMenu} from './session-menu.js';
 import { WorkspaceController, ConfirmationQueue, visibleMessageViews, recoverRunningTurn } from './workspace.js';
 import { renderView } from './ui-components.js';
 import { legacyRecipeItems } from './ui-protocol.js';
-import { STAGE_NAMES, VIEW_LABELS, TOOL_NAMES, viewSummary, activityRows, latestActivity, conversationLabel, snapshotStatus } from './presentation.js';
+import { STAGE_NAMES, VIEW_LABELS, TOOL_NAMES, viewSummary, activityRows, latestActivity, conversationLabel, snapshotStatus, messageViewsForStage } from './presentation.js';
 import {brandImage,applyBranding} from './branding.js';
 import {CookingFocus} from './focus.js';
 import {prepareImage} from './image-input.js';
@@ -34,7 +36,7 @@ const ui = Object.fromEntries([
 
 const state = {
   status: null, sessions: [], currentId: null, cache: new Map(), drafts: new Map(),
-  runs: new Map(), selectionEpoch: 0, sessionsEpoch: 0, detailEpoch: 0,
+  runs: new Map(), selectionEpoch: 0, detailEpoch: 0,
   detailAbort: null, detailOpen: false, sidebarOpen: false, tab: 'query',
   selectedRecipe: null, remotePoll: null, renderFrame: null, creating: false, preparing: false, initializing:true, components: [], componentsEpoch: 0,
   traceMode: readTraceMode(), developer: readDeveloper(), uiPreferences: readUIPreferences(),
@@ -402,8 +404,10 @@ async function loadStatus() {
 }
 
 function renderSessions() {
-  ui.sessions.replaceChildren();
-  if (!state.sessions.length) ui.sessions.append(element('div', 'session-empty', '从一个新会话开始吧。'));
+  const scroll=ui.sessions.scrollTop,focused=ui.sessions.contains(document.activeElement)?document.activeElement.closest('[data-session-id]')?.dataset.sessionId:null;
+  const focusClass=document.activeElement?.classList.contains('session-more')?'session-more':'session-link';
+  sessionObserver?.disconnect();ui.sessions.replaceChildren();
+  if (!state.sessions.length && !sessionFeed.loading) ui.sessions.append(element('div', 'session-empty', '从一个新对话开始吧。'));
   for (const session of state.sessions) {
     const waiting=Boolean(!session.running && !state.runs.has(session.id) && (session.awaiting_user || (session.id===state.currentId && pendingQuestion())));
     const row = element('div', `session-row${session.id === state.currentId ? ' active' : ''}${waiting?' awaiting':''}`);
@@ -420,50 +424,53 @@ function renderSessions() {
     row.append(link);
     if(waiting){const marker=element('span','session-awaiting');marker.setAttribute('role','img');marker.setAttribute('aria-label','有问题等你回答');row.append(marker);}
     if (session.running || state.runs.has(session.id)) row.append(element('span', 'session-running'));
-    const remove = element('button', 'session-delete');remove.append(icon('trash-2'));
-    remove.type = 'button';
-    remove.setAttribute('aria-label', `删除会话：${session.title || '新会话'}`);
-    remove.title = '删除会话';
-    remove.disabled = busy(session.id);
-    let armed = false;
-    let armTimer;
-    remove.addEventListener('click', async () => {
-      if (!armed) {
-        armed = true;
-        remove.textContent = '确认';
-        remove.classList.add('confirm-delete');
-        remove.setAttribute('aria-label', `确认删除会话：${session.title || '新会话'}`);
-        armTimer = setTimeout(() => { armed = false; remove.replaceChildren(icon('trash-2')); remove.classList.remove('confirm-delete'); }, 3500);
-        return;
-      }
-      clearTimeout(armTimer);
-      remove.disabled = true;
-      try {
-        await api(`/api/sessions/${encodeURIComponent(session.id)}`, { method: 'DELETE' });
-        state.cache.delete(session.id);
-        state.drafts.delete(session.id);
-        state.failedDrafts.delete(session.id);
-        releaseImages(state.imageDrafts.get(session.id));state.imageDrafts.delete(session.id);state.imageUploads.delete(session.id);
-        state.confirmationQueue.delete(session.id);
-        questions.accepted(session.id);
-        workspace.remove(session.id);
-        if (state.currentId === session.id) selectBlank();
-        await loadSessions();
-      } catch (error) { toast(error.message); remove.disabled = false; }
-    });
-    row.append(remove);
+    if(session.pinned){const mark=element('span','session-pinned');mark.append(icon('star'));mark.setAttribute('aria-label','已置顶');row.append(mark);}
+    const more=element('button','session-more');more.type='button';more.append(icon('ellipsis'));
+    more.setAttribute('aria-label',`对话操作：${title || '新对话'}`);more.title='对话操作';more.setAttribute('aria-haspopup','menu');more.setAttribute('aria-controls','session-menu');more.setAttribute('aria-expanded','false');
+    more.onclick=()=>sessionMenu.open(session,more);row.append(more);
     ui.sessions.append(row);
   }
+  if(sessionFeed.cursor || sessionFeed.loading || sessionFeed.error){
+    const tail=element('button','session-load-more',sessionFeed.loading?'正在读取…':sessionFeed.error?'加载失败，点此重试':'加载更多对话');
+    tail.type='button';tail.disabled=sessionFeed.loading;tail.setAttribute('aria-label',tail.textContent);
+    tail.onclick=()=>void loadSessions({more:Boolean(sessionFeed.cursor)}).catch(()=>{});ui.sessions.append(tail);
+    if(sessionFeed.cursor && !sessionFeed.loading && !sessionFeed.error)sessionObserver?.observe(tail);
+  }
+  ui.sessions.setAttribute('aria-busy',String(sessionFeed.loading));ui.sessions.scrollTop=scroll;
+  if(focused)ui.sessions.querySelector(`[data-session-id="${CSS.escape(focused)}"] .${focusClass}`)?.focus({preventScroll:true});
   updateConversationState();
 }
 
-async function loadSessions() {
-  const epoch = ++state.sessionsEpoch;
-  const payload = await api('/api/sessions');
-  if (epoch !== state.sessionsEpoch) return;
-  state.sessions = Array.isArray(payload) ? payload : payload?.items || [];
-  renderSessions();
+const sessionFeed=new SessionFeed(({limit,cursor})=>api(`/api/sessions?limit=${limit}${cursor?`&cursor=${encodeURIComponent(cursor)}`:''}`),{
+  onChange:()=>{state.sessions=sessionFeed.items;renderSessions();},
+});
+const sessionMenu=new SessionMenu({isBusy:busy,returnFocus:id=>{
+  const control=ui.sessions.querySelector(`[data-session-id="${CSS.escape(id)}"] .session-more`);
+  (control || ui['new-chat']).focus({preventScroll:true});
+},onAction:async(action,session,title)=>{
+  if(action==='delete'){
+    await api(`/api/sessions/${encodeURIComponent(session.id)}`,{method:'DELETE'});
+    state.cache.delete(session.id);state.drafts.delete(session.id);state.failedDrafts.delete(session.id);
+    releaseImages(state.imageDrafts.get(session.id));state.imageDrafts.delete(session.id);state.imageUploads.delete(session.id);
+    state.confirmationQueue.delete(session.id);questions.accepted(session.id);workspace.remove(session.id);
+    sessionFeed.items=sessionFeed.items.filter(item=>item.id!==session.id);state.sessions=sessionFeed.items;
+    if(state.currentId===session.id)selectBlank();
+  }else{
+    const result=await api(`/api/sessions/${encodeURIComponent(session.id)}`,{method:'PATCH',body:JSON.stringify(action==='pin'?{pinned:!session.pinned}:{title})});
+    Object.assign(session,result);const cached=state.cache.get(session.id);if(cached)Object.assign(cached,result);
+    if(state.currentId===session.id)renderConversation();
+  }
+  try{await loadSessions();}catch{toast('操作已保存，列表暂时无法同步，可点击重试。');}
+}});
+let sessionObserver;
+if('IntersectionObserver' in window){
+  sessionObserver=new IntersectionObserver(entries=>{if(entries.some(entry=>entry.isIntersecting) && !sessionFeed.error)void loadSessions({more:true}).catch(()=>{});},{root:ui.sessions,rootMargin:'0px 0px 100px 0px'});
 }
+async function loadSessions(options) {return sessionFeed.load(options);}
+ui.sessions.addEventListener('scroll',()=>{
+  if(!sessionObserver && ui.sessions.scrollTop+ui.sessions.clientHeight>=ui.sessions.scrollHeight-100)void loadSessions({more:true}).catch(()=>{});
+},{passive:true});
+window.addEventListener('focus',()=>{if(!state.initializing && !document.querySelector('dialog[open]') && !sessionFeed.loading)void loadSessions().catch(()=>{});});
 
 function persistDraft() { state.drafts.set(draftKey(), ui['composer-input'].value); }
 function resetRecipe() {
@@ -782,7 +789,7 @@ function renderConversation(forceScroll = false) {
   const nearBottom = ui.conversation.scrollHeight - ui.conversation.scrollTop - ui.conversation.clientHeight < 100;
   const openedLogs = new Set([...ui.messages.querySelectorAll('details[open][data-log-key]')].map((node) => node.dataset.logKey));
   ui['chat-title'].textContent = ({journal:'食光手记',recipes:'菜谱中心',settings:'设置'})[ui.app.dataset.page]
-    || (!blankTitle(session?.title) ? session.title : '个性化烹饪助手');
+    || (!blankTitle(session?.title) ? session.title : '新对话');
   ui.welcome.hidden = messages.length > 0;
   ui.messages.hidden = !messages.length;
   ui.messages.replaceChildren();
@@ -816,7 +823,7 @@ function renderConversation(forceScroll = false) {
     const typedViews = shownViews(message);
     if (typedViews.length) {
       const components = element('div', 'message-components');
-      const relevant = typedViews.filter(view=>view.kind!=='task_progress');
+      const relevant = messageViewsForStage(typedViews,workspace.entry(state.currentId).snapshot?.stage || session?.conversation_state?.stage);
       const inlineIds = new Set(relevant.filter(view=>view.placement==='inline').slice(-(Number(state.uiPreferences.inline_limit)===1?1:2)).map(view=>view.id));
       for (const view of relevant) {
         if (lastViewMessage.get(view.id) !== index) continue;
@@ -1081,7 +1088,7 @@ async function sendMessage(text, retry = false, replacedMessage = null, options 
   session.messages.push(assistant);
   session.running = true;
   workspace.setRunning(id,true);
-  if (blankTitle(session.title)) session.title = input.slice(0, 26) || '图片对话';
+  if (blankTitle(session.title) && !session.title_custom) session.title = input.slice(0, 26) || '图片对话';
   const controller = new AbortController();
   const run = { sessionId: id, controller, message: assistant, input, requestId: crypto.randomUUID(),
     status: '正在理解需求…', done: false, resultReceived: false, httpRejected: false };
@@ -1426,7 +1433,7 @@ async function initialize() {
   setTab('workspace'); renderRecipeEmpty(); renderConversation(); backdrop();
   const results = await Promise.allSettled([loadStatus(), loadSessions(), loadComponents()]);
   if (results[1].status === 'rejected') toast('会话列表暂时无法读取，请刷新页面重试。');
-  const initial = state.sessions.find(session=>session.id===storedSession()) || state.sessions[0];
+  const initial = storedSession()?{id:storedSession()}:state.sessions[0];
   if (initial && epoch === state.selectionEpoch && !state.creating && !state.currentId) await openSession(initial.id);
   try {
     const timers=await api('/api/timer-sessions');

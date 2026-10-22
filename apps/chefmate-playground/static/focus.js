@@ -38,6 +38,8 @@ export class CookingFocus {
     this.status = document.getElementById('focus-activity'); this.assistant = document.getElementById('focus-assistant');
     this.work = document.getElementById('focus-workspace'); this.workToggle = document.getElementById('focus-work-toggle');
     this.tools = document.getElementById('focus-tools');
+    this.stepActions=node('div','focus-step-actions');this.stepActions.hidden=true;
+    this.content.after(this.stepActions);
     this.overview = node('details', 'focus-overview-pane');
     this.overviewSummary = node('summary', '', '全部项目'); this.overviewBody = node('div', 'focus-overview-body');
     this.overview.append(this.overviewSummary, this.overviewBody); this.overview.hidden = true;
@@ -212,6 +214,9 @@ export class CookingFocus {
       if (focusedTool) this.workFocusKey = focusedTool;
       else if (document.activeElement !== document.body) this.workFocusKey = null;
       const blocks = contentBlocks(renderView(view, ctx)).filter(block => !cooking || !block.matches('.ui-recipe-name,.cooking-overview'));
+      const pinnedActions=cooking && !listMode?blocks.filter(block=>block.classList.contains('cooking-step-actions')):[];
+      this.stepActions.replaceChildren(...pinnedActions);this.stepActions.hidden=!pinnedActions.length;
+      this.stepActions.querySelectorAll('button').forEach((button,index)=>{button.dataset.controlKey ||= `step-action:${displayedStep?.id}:${index}`;});
       const toolBlock = block => block.matches('.step-navigator,.workflow-mode-bar,.cooking-recipe-scope');
       this.tools.replaceChildren(...blocks.filter(toolBlock));
       this.work.classList.toggle('with-step-tools', Boolean(this.tools.children.length));
@@ -221,7 +226,7 @@ export class CookingFocus {
       this.overviewBody.replaceChildren(...(overview ? [overview] : [])); this.overviewBody.scrollTop = overviewScroll;
       this.overview.hidden = !overview; this.work.classList.toggle('with-overview', Boolean(overview));
       this.overviewSummary.textContent = '全部步骤';
-      const units = blocks.filter(block => !toolBlock(block) && block !== overview).map((block, index) => ({ node: block,
+      const units = blocks.filter(block => !toolBlock(block) && block !== overview && !pinnedActions.includes(block)).map((block, index) => ({ node: block,
         key: block.dataset.focusKey || block.querySelector('[data-control-key]')?.dataset.controlKey || `content-${index}` }));
       this.listMode = listMode;
       this.content.classList.toggle('focus-list-content', this.listMode);

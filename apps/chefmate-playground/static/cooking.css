@@ -95,3 +95,5 @@
 .cooking-recipe-scope>.ui-text-button{flex:none;min-height:34px;padding:6px 10px;font-size:12px;color:var(--color-muted);border:0;border-radius:7px}
 .cooking-recipe-scope>.ui-text-button[aria-pressed=true]{background:var(--color-accent-soft);color:var(--color-accent);opacity:1;font-weight:550}
 .focus-tools .cooking-recipe-scope{margin:0}
+.workflow-step-done{color:var(--color-success)}
+.workflow-step-done:after{content:' ✓';font-size:10px}

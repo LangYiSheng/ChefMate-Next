@@ -415,20 +415,16 @@ function cookingGuide(view, ctx) {
     overview.append(node('h4', '', '全部步骤'));
     allSteps.forEach((step, index) => {
       const row = node('div', 'workflow-overview-row'); row.dataset.selected = String(index === stepIndex);
-      const checkbox = node('input'); checkbox.type = 'checkbox'; checkbox.checked = step.status === 'done';
-      checkbox.disabled = ctx.locked || ctx.stage !== 'cooking'; checkbox.dataset.controlKey = `overview-step:${step.id}`;
-      checkbox.setAttribute('aria-label', `第 ${index + 1} 步已完成`);
-      checkbox.addEventListener('change', () => ctx.action('complete_step', { recipe_id: data.recipe_id, step_id: step.id, completed: checkbox.checked })
-        .catch(() => { checkbox.checked = step.status === 'done'; }));
       const jump = button('', () => { ctx.viewState.stepIndex = index; ctx.onViewState(); }, false, 'workflow-step-jump');
-      jump.setAttribute('aria-label', `查看第 ${index + 1} 步`);
-      jump.append(node('span', 'workflow-step-index', String(index + 1).padStart(2, '0')),
+      jump.setAttribute('aria-label', `查看第 ${index + 1} 步${step.status==='done'?'，已完成':''}`);
+      if(index===stepIndex)jump.setAttribute('aria-current','step');
+      const number=node('span','workflow-step-index',String(index+1).padStart(2,'0'));
+      if(step.status==='done')number.classList.add('workflow-step-done');
+      jump.append(number,
         node('span', 'workflow-step-summary', step.adapted_instruction || step.instruction));
-      row.append(checkbox, jump); overview.append(row);
+      row.append(jump); overview.append(row);
     }); root.append(overview);
   }
-  const note=hint(ctx.stage==='cooking'?'做完后点“完成这一步”，计时结束不会代你确认步骤。':'当前可以浏览做法，进入烹饪后再确认步骤和计时。');
-  note.classList.add('cooking-step-note');if(!ctx.focused)root.append(note);
   const finish = completeMealControl(ctx); if (finish) root.append(finish);
   return root;
 }

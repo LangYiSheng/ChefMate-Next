@@ -6,7 +6,7 @@
   <meta name="color-scheme" content="light">
   <meta name="theme-color" content="#f2f1ee">
   <title>ChefMate · 您的个性化烹饪助手</title>
-  <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
+  <link rel="icon" href="/static/brand/chef-buddy.svg" type="image/svg+xml">
   <link rel="stylesheet" href="/static/colors.css">
   <link rel="stylesheet" href="/static/styles.css">
   <link rel="stylesheet" href="/static/workspace.css">
@@ -23,6 +23,7 @@
   <link rel="stylesheet" href="/static/timer-popover.css">
   <link rel="stylesheet" href="/static/typography.css">
   <link rel="stylesheet" href="/static/pane-resize.css">
+  <link rel="stylesheet" href="/static/session-navigation.css">
   <script type="module" src="/static/app.js"></script>
 </head>
 <body class="app-page">
@@ -31,29 +32,29 @@
     <aside class="sidebar" id="sidebar" aria-label="会话导航">
       <div class="brand-row">
         <a class="brand" href="/" aria-label="ChefMate 首页">
-          <img class="brand-icon" data-chefmate-icon src="/static/brand/friendly-pot.svg" alt="">
+          <img class="brand-icon" data-chefmate-icon src="/static/brand/chef-buddy.svg" alt="">
           <span class="brand-copy"><strong>ChefMate</strong><small>您的个性化烹饪助手</small></span>
         </a>
         <button class="icon-button desktop-only" id="collapse-sidebar" type="button" aria-label="收起侧栏" aria-controls="sidebar" aria-expanded="true" data-icon="panel-left-close"></button>
+        <button class="rail-brand desktop-only" id="expand-sidebar" type="button" aria-label="展开侧栏" title="展开侧栏" aria-controls="sidebar" aria-expanded="false"><span class="brand-icon" data-chefmate-icon aria-hidden="true"></span><span class="rail-expand-icon" data-icon="panel-left-open" aria-hidden="true"></span></button>
         <button class="icon-button mobile-only" id="close-sidebar" type="button" aria-label="收起会话导航" data-icon="x"></button>
       </div>
-      <button class="new-chat" id="new-chat" type="button"><span data-icon="plus" aria-hidden="true"></span><span class="new-chat-label">新会话</span></button>
       <nav id="primary-navigation" class="primary-navigation" aria-label="厨房空间">
-        <button type="button" data-primary-page="journal"><span data-icon="utensils" aria-hidden="true"></span><span>食光手记</span></button>
-        <button type="button" data-primary-page="recipes"><span data-icon="book-open" aria-hidden="true"></span><span>菜谱中心</span></button>
+        <button class="new-chat" id="new-chat" type="button" title="新对话" aria-label="新对话"><span data-icon="plus" aria-hidden="true"></span><span class="new-chat-label">新对话</span></button>
+        <button type="button" data-primary-page="journal" title="食光手记" aria-label="食光手记"><span data-icon="utensils" aria-hidden="true"></span><span>食光手记</span></button>
+        <button type="button" data-primary-page="recipes" title="菜谱中心" aria-label="菜谱中心"><span data-icon="book-open" aria-hidden="true"></span><span>菜谱中心</span></button>
       </nav>
       <div class="sidebar-heading">最近会话</div>
       <nav class="sessions" id="sessions" aria-label="最近会话"></nav>
-      <div class="sidebar-footer"><a class="settings-link" href="/settings"><span data-icon="settings" aria-hidden="true"></span><span>设置</span></a></div>
+      <div class="sidebar-footer"><a class="settings-link" href="/settings" title="设置" aria-label="设置"><span data-icon="settings" aria-hidden="true"></span><span>设置</span></a></div>
       <div id="sidebar-resize" class="sidebar-resize" role="separator" aria-label="调整侧栏宽度" aria-orientation="vertical" aria-valuemin="208" aria-valuemax="360" aria-valuenow="248" tabindex="0"></div>
     </aside>
 
     <main class="main">
       <header class="topbar">
         <div class="topbar-title">
-          <button class="icon-button expand-sidebar desktop-only" id="expand-sidebar" type="button" aria-label="展开侧栏" aria-controls="sidebar" data-icon="panel-left-open"></button>
           <button class="icon-button mobile-only" id="open-sidebar" type="button" aria-label="展开会话导航" aria-controls="sidebar" aria-expanded="false" data-icon="panel-left"></button>
-          <span id="chat-title">菜谱助手</span>
+          <span id="chat-title">新对话</span>
           <span class="conversation-stage" id="conversation-stage" hidden></span>
         </div>
         <div class="topbar-actions">
@@ -67,7 +68,7 @@
       <div class="connection-banner" id="connection-banner" role="status" hidden></div>
       <div class="conversation" id="conversation" tabindex="-1" aria-label="聊天记录">
         <section class="welcome" id="welcome">
-          <img class="welcome-icon" data-chefmate-icon src="/static/brand/friendly-pot.svg" alt="">
+          <img class="welcome-icon" data-chefmate-icon src="/static/brand/chef-buddy.svg" alt="">
           <h1>今天想吃什么？</h1>
           <p>说说食材、时间和人数，<br class="welcome-break">一起选菜、备菜，把这顿饭做好。</p>
           <div id="welcome-templates" class="starter-templates" aria-label="试试这些开场"></div>

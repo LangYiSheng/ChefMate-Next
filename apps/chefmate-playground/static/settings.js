@@ -369,6 +369,7 @@ function render() {
   } else if (current === "components") {
     const examples={'meal-planning':'5个人，帮我搭配4道家常菜。','pantry-preparation':'这些菜要先准备什么？','cooking-guide':'这一步要计时多久？','recipe-authoring':'把这张菜谱截图整理成我的菜谱。','personal-memory':'记住我不吃香菜。','food-journal':'这是今天的午饭，帮我记一下。'};
     const pageNames={journal:'食光手记',recipes:'菜谱中心',memory:'长期记忆设置'},uiNames={preference_form:'用餐条件',recipe_choices:'菜品选择',recipe_detail:'菜谱详情',meal_plan:'餐单与份量',prep_checklist:'备菜清单',cooking_guide:'烹饪步骤',timers:'计时器',task_progress:'任务进度',food_log:'饮食记录',nutrition_summary:'营养统计'};
+    const dependencyNames={retrieval:'菜谱检索',cookbook:'个人菜谱存储',memory:'长期记忆存储',journal:'饮食记录存储'};
     $('settings-form').append(node('p','components-intro','决定小锅搭子能帮你做什么。关闭后保留已有记录。'));
     for (const component of loaded.components || []) {
       const entry=node('section','settings-component'),input=field(component.name,component.id,{type:'checkbox',note:component.description}),row=input.closest('.setting-field');entry.append(row);
@@ -378,7 +379,7 @@ function render() {
       body.append(node('h3','','可执行功能'));const tools=node('ul','component-tool-list');for(const tool of component.tools || []){const item=node('li');item.append(node('span','',TOOL_NAMES[tool] || tool),node('code','',tool));tools.append(item);}body.append(tools);
       const interfaces=[...(component.ui?.kinds || []).map(key=>uiNames[key] || key),...(component.ui?.pages || []).map(key=>pageNames[key] || key)];
       body.append(node('h3','','界面与组成'),node('p','',interfaces.length?interfaces.join('、'):'在当前对话内使用'));
-      const technical=node('dl','component-manifest');for(const [label,value]of [['组件ID',component.id],['指南',component.instructions?.entrypoint || '未提供'],['加载方式',component.instructions?.loading==='on_demand'?'按需读取':component.instructions?.loading || '未提供'],['依赖',(component.dependencies || []).join('、') || '无额外依赖'],['状态',component.available===false?'依赖尚未就绪':'已就绪']]){technical.append(node('dt','',label),node('dd','',value));}body.append(technical);details.append(body);entry.append(details);$('settings-form').append(entry);
+      const technical=node('dl','component-manifest');for(const [label,value]of [['组件ID',component.id],['指南',component.instructions?.entrypoint || '未提供'],['加载方式',component.instructions?.loading==='on_demand'?'按需读取':component.instructions?.loading || '未提供'],['依赖',(component.dependencies || []).map(key=>dependencyNames[key] || key).join('、') || '无额外依赖'],['状态',component.available===false?'依赖尚未就绪':'已就绪']]){technical.append(node('dt','',label),node('dd','',value));}body.append(technical);details.append(body);entry.append(details);$('settings-form').append(entry);
     }
     $('settings-form').append(node('p','settings-note','开关同时控制组件指南与工具权限。'));
   } else if (['usage','about'].includes(current)) {

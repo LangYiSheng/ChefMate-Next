@@ -112,7 +112,7 @@ class TurnManager:
                     current["messages"].append(user)
                 elif snapshot is not None:
                     tail["ui_context"] = snapshot
-                if current["title"] == "新对话":
+                if current["title"] == "新对话" and not current.get('title_custom'):
                     current["title"] = message[:32] or "图片对话"
                 current.update(running=True, last_status="running", last_error=None, updated_at=now(),
                                active_turn={"id": turn.id, "request_id": turn.request_id, "message": message,

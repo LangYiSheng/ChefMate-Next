@@ -90,7 +90,7 @@ export function initShell({ onSettingsClose = () => {} } = {}) {
   const mobile = matchMedia('(max-width:760px)');
   const detailResizer=resizeRightPane({root:app,handle:document.getElementById('detail-resize'),key:'chefmate:detail-width',observe:[sidebar],
     enabled:()=>!mobile.matches,
-    bounds:()=>panelBounds(window.innerWidth-(app.classList.contains('sidebar-collapsed')?0:sidebar.getBoundingClientRect().width)-24,{remaining:window.innerWidth>1180?420:40})});
+    bounds:()=>panelBounds(window.innerWidth-sidebar.getBoundingClientRect().width-24,{remaining:window.innerWidth>1180?420:40})});
   let collapsed = false, width = 248, lastFocus;
   function applyPage(page, previous) {
     const settingsOpen = page === 'settings';
@@ -138,12 +138,13 @@ export function initShell({ onSettingsClose = () => {} } = {}) {
     app.classList.toggle('sidebar-collapsed', collapsed && !mobile.matches);
     app.style.setProperty('--sidebar-width', `${width}px`);
     toggle.setAttribute('aria-expanded', String(!collapsed));
+    expand.setAttribute('aria-expanded', String(!collapsed));
     resize.setAttribute('aria-valuenow', String(width));
     detailResizer.paint();
   }
   function setCollapsed(value) {
     collapsed = value; paint(); persist();
-    (value ? expand : toggle).focus();
+    if(!mobile.matches)(value ? expand : toggle).focus();
   }
   toggle.addEventListener('click', () => setCollapsed(true));
   expand.addEventListener('click', () => setCollapsed(false));

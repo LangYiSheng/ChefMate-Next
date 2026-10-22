@@ -36,6 +36,25 @@ class SettingsRequest(BaseModel):
     values: dict
 
 
+class SessionUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+    title: str | None = Field(default=None, min_length=1, max_length=80)
+    pinned: bool | None = None
+
+    @field_validator('title', mode='before')
+    @classmethod
+    def clean_title(cls, value):
+        if not isinstance(value, str):
+            raise ValueError('请输入对话名称。')
+        return value.strip()
+
+    @model_validator(mode='after')
+    def has_change(self):
+        if self.title is None and self.pinned is None:
+            raise ValueError('请选择要修改的对话信息。')
+        return self
+
+
 class TurnRequest(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
     message: str = Field(default="", max_length=8000)
@@ -224,10 +243,14 @@ def create_app(config: PlaygroundConfig | None = None, *, service=None, agent=No
         }
 
     @app.get("/api/sessions")
-    async def sessions():
+    async def sessions(limit: int = Query(default=20, ge=1, le=100), cursor: str | None = Query(default=None, max_length=1024)):
+        try:
+            states, next_cursor = await asyncio.to_thread(repo.page, limit=limit, cursor=cursor)
+        except ValueError as error:
+            raise HTTPException(422, str(error)) from None
         return {"items": [{key: value for key, value in public_session(state).items()
-                           if key in {"id", "title", "updated_at", "running", "last_status", "conversation_state", "awaiting_user", "pending_question"}}
-                          for state in repo.list() if state.get("messages")]}
+                           if key in {"id", "title", "pinned", "updated_at", "running", "last_status", "conversation_state", "awaiting_user", "pending_question"}}
+                          for state in states], "next_cursor": next_cursor}
 
     @app.get("/api/timer-sessions")
     async def timer_sessions():
@@ -497,6 +520,15 @@ def create_app(config: PlaygroundConfig | None = None, *, service=None, agent=No
     @app.get("/api/sessions/{session_id}")
     async def get_session(session_id: str):
         return public_session(require_session(session_id), reply_suggestions=settings.reply_suggestions)
+
+    @app.patch('/api/sessions/{session_id}')
+    async def edit_session(session_id: str, payload: SessionUpdate):
+        try:
+            saved = await asyncio.to_thread(repo.update_metadata, session_id, title=payload.title, pinned=payload.pinned)
+        except KeyError:
+            raise HTTPException(404, '对话不存在。') from None
+        return {key: saved.get(key, False if key == 'pinned' else None)
+                for key in ('id', 'title', 'title_custom', 'pinned')}
 
     @app.get("/api/components")
     async def components():
