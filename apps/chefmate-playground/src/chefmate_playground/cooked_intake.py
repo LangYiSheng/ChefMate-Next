@@ -14,7 +14,8 @@ from uuid import NAMESPACE_URL, uuid5
 
 from pydantic import Field
 
-from .meal_logging import CHAT_COMPONENT_PRESENTATION, FoodLogModel, MACROS, _encoded, _turn_guard
+from .food_log_models import CHAT_COMPONENT_PRESENTATION, FoodLogModel, MACROS, _encoded
+from .food_log_evidence import _turn_guard
 
 
 class CookedMealIdentity(FoodLogModel):

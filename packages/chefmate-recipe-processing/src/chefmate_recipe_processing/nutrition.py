@@ -4,6 +4,8 @@ import hashlib
 import json
 from decimal import Decimal
 
+from chefmate_food_data.nutrients import NUTRIENT_IDS as NUTRIENT_IDS, parse_nutrients as parse_nutrients
+
 from .estimation import ESTIMATE_KEY, valid_estimate
 from .schemas import Nutrients, TagThresholds
 from .schemas import ConvertedIngredient, ConvertedRecipe
@@ -111,6 +113,3 @@ def calculate(document: ConvertedRecipe, snapshots: dict, thresholds: TagThresho
         "thresholds": thresholds.model_dump(),
         "note": "按可食克重计算；带 estimated 标记的值含 AI 估算，仅供参考。未能估算的未知值不按0计，不模拟烹饪损耗。营养预览随整篇菜谱一并审核。",
     }
-
-
-from chefmate_food_data.nutrients import NUTRIENT_IDS as NUTRIENT_IDS, parse_nutrients as parse_nutrients
