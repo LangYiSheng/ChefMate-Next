@@ -60,9 +60,11 @@ test('application updates all roles, browser chrome and cross-window/system chan
   const storage={value:JSON.stringify({...DEFAULT_APPEARANCE,theme:'system',dark_palette:'deep-blue'}),getItem(){return this.value;}};
   globalThis.localStorage=storage;globalThis.matchMedia=()=>media;
   globalThis.document={documentElement:{dataset,style:{setProperty:(key,value)=>tokens.set(key,value)}},querySelector:()=>meta};
-  globalThis.window={matchMedia:()=>media,addEventListener:(name,fn)=>events[name]=fn};
+  const appearanceEvents=[];
+  globalThis.window={matchMedia:()=>media,addEventListener:(name,fn)=>events[name]=fn,dispatchEvent:event=>appearanceEvents.push(event.type)};
   initAppearance();assert.equal(dataset.palette,'ink');assert.equal(dataset.fontPairing,'mixed');
   assert.equal(dataset.showEstimates,'true');
+  assert.ok(appearanceEvents.includes('chefmate:appearance'));
   media.matches=true;media.change();assert.equal(dataset.palette,'deep-blue');assert.equal(meta.content,'#151e29');
   storage.value=JSON.stringify({...DEFAULT_APPEARANCE,light_palette:'rose',font_pairing:'wenkai'});
   events.storage({key:'chefmate:ui-settings'});assert.equal(dataset.palette,'rose');assert.equal(dataset.fontPairing,'wenkai');

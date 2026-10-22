@@ -20,11 +20,18 @@ export const TOOL_NAMES = Object.freeze({create_food_log_draft:'整理饮食记�
   show_prep_checklist:'整理备菜清单',show_cooking_guide:'整理烹饪步骤',set_cooking_timer:'设置计时',show_timers:'查看计时',
   get_cooking_workspace:'核对当前进度',advance_cooking_stage:'更新会话阶段',update_cooking_guidance:'调整当前做法',
   request_recipe_deletion:'确认删除个人菜谱',confirm_recipe_deletion:'处理菜谱删除确认',
+  create_recipe_draft:'整理个人菜谱草稿',search_custom_recipes:'搜索个人菜谱',
+  suggest_replies:'提供对话建议',
+  read_long_term_memory:'读取长期记忆',maintain_memory_summary:'维护助手记忆',search_personal_history:'查找个人历史',
   update_preferences:'保存用餐条件',select_recipes:'更新菜品选择',update_prep_items:'确认备菜状态',ask_user:'向你确认细节',load_skill:'读取组件指南',list_skills:'查看组件指南'});
 export function viewChoices(views, stage) {
   const preferred = {idea:'preference_form',planning:'meal_plan',shopping:'prep_checklist',prep:'prep_checklist',cooking:'cooking_guide',completed:'meal_plan'}[stage];
   return views.filter(v => VIEW_LABELS[v.kind] && !(v.kind === 'recipe_choices' && ['prep','cooking','completed'].includes(stage)))
     .sort((a,b) => Number(b.kind === preferred)-Number(a.kind === preferred));
+}
+export function messageViewsForStage(views,stage){
+  const finishedPlanning=['cooking','completed'].includes(stage);
+  return views.filter(view=>view.kind!=='task_progress' && !(finishedPlanning && ['prep_checklist','preference_form','recipe_choices'].includes(view.kind)));
 }
 export function pageWindow(items, page = 0, size = 4) {
   const pages = Math.max(1,Math.ceil(items.length/size));

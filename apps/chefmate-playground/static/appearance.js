@@ -19,6 +19,7 @@ export function applyAppearance(preferences = readAppearance()) {
   for(const [token,value]of Object.entries(appearanceTokens(palette,fonts)))root.style.setProperty(token,value);
   const color = document.querySelector('meta[name="theme-color"]');
   if (color) color.content = palette.background;
+  window.dispatchEvent(new CustomEvent('chefmate:appearance'));
 }
 
 export function initAppearance() {

@@ -11,17 +11,33 @@ export const STARTERS=[
   {id:'preferences',icon:'list-filter',prefix:'这顿饭不吃',blank:'香菜和辣椒',hint:'先记住口味，再推荐',text:value=>`这顿饭不吃${value}，帮我整理用餐偏好，再推荐几道合适的菜。`},
   {id:'image',icon:'image-plus',title:'看看冰箱里的食材',hint:'附一张图片，一起想想吃什么',images:true,text:()=> '请看看我附上的食材图片，告诉我有哪些适合的菜；拿不准的食材先向我确认。'},
   {id:'cooking-photo',icon:'image-plus',title:'这一步做对了吗',hint:'拍下锅里的状态，一起判断',images:true,text:()=> '我会附上一张烹饪中的图片，请帮我看看当前状态，接下来该怎么做？'},
+  {id:'recipe-text',category:'recipes',icon:'book-open',title:'留住家里的拿手菜',hint:'粘贴做法，整理成个人菜谱草稿',text:()=> '我想把家里的拿手菜整理成个人菜谱。我接下来会发做法，信息不全的地方请问我，先生成草稿让我核对。'},
+  {id:'recipe-image',category:'recipes',icon:'images',title:'收藏这张菜谱截图',hint:'从图片整理，核对后再保存',images:true,text:()=> '我会附上一张菜谱截图，请整理成个人菜谱草稿，缺少的人数、时间和克重保留未知，等我核对后再保存。'},
+  {id:'recipe-reuse',category:'recipes',icon:'search',prefix:'再做一次我的',blank:'番茄炒蛋',hint:'找回个人菜谱，接着备菜做饭',text:value=>`请帮我搜索个人菜谱里的「${value}」，先让我看看实际做法，再安排这顿饭。`},
+  {id:'journal-text',category:'journal',icon:'utensils',prefix:'刚刚吃了',blank:'一碗米饭和一份炒青菜',hint:'先整理饮食草稿，确认后记入',text:value=>`我刚刚吃了${value}。帮我整理饮食记录草稿，份量不清楚的先问我，估算要标明，等我确认后再保存。`},
+  {id:'journal-image',category:'journal',icon:'camera',title:'拍照记下这一餐',hint:'看图核对食物、份量和营养',images:true,text:()=> '我想记录照片里的这一餐。请先识别食物并向我确认份量，再整理饮食草稿，估算和未知值分别保留，等我确认。'},
+  {id:'journal-review',category:'journal',icon:'layers',title:'这一周吃得怎么样',hint:'回顾真实记录，看看营养趋势',text:()=> '请根据我最近七天实际保存的饮食记录，回顾营养和饮食习惯；没有记录的日子不要猜测，给我几条适合下一餐的小建议。'},
+  {id:'memory',category:'memory',icon:'list-filter',prefix:'以后做饭请记住',blank:'喜欢清淡，少放辣椒',hint:'让口味偏好陪着每一次推荐',text:value=>`我的做饭偏好是：${value}。请帮我维护长期记忆，先核对要记住的内容。`},
+  {id:'history',category:'memory',icon:'message-circle',title:'找回上次做饭的灵感',hint:'查找真实历史，再聊聊这次怎么做',text:()=> '帮我找找最近聊过或做过的菜，结合实际历史说说哪一道适合再做一次。没有相关记录就告诉我。'},
 ];
 
-export function drawStarters(supportsImages,random=Math.random) {
-  const pool=STARTERS.filter(item=>!item.images || supportsImages);
+export function drawStarters(supportsImages,random=Math.random,category='all') {
+  const pool=STARTERS.filter(item=>(!item.images || supportsImages) && (category==='all' || (item.category || 'kitchen')===category));
   for(let i=pool.length-1;i>0;i--){const j=Math.floor(random()*(i+1));[pool[i],pool[j]]=[pool[j],pool[i]];}
   return pool.slice(0,3);
 }
 
-export function renderStarters(container,{supportsImages,onUse,random}={}) {
+export function renderStarters(container,{supportsImages,onUse,random,category=container.dataset.category || 'all'}={}) {
+  container.dataset.category=category;
+  let filters=container.previousElementSibling;
+  if(!filters?.classList.contains('starter-categories')){filters=document.createElement('div');filters.className='starter-categories';filters.setAttribute('aria-label','按用途查看开场示例');container.before(filters);}
+  filters.replaceChildren();
+  for(const [key,label]of [['all','随便看看'],['kitchen','选菜做饭'],['recipes','个人菜谱'],['journal','饮食记录'],['memory','了解你']]){
+    const filter=document.createElement('button');filter.type='button';filter.textContent=label;filter.setAttribute('aria-pressed',String(category===key));
+    filter.onclick=()=>{renderStarters(container,{supportsImages,onUse,random,category:key});filters.querySelector(`[aria-pressed="true"]`)?.focus();};filters.append(filter);
+  }
   container.replaceChildren();
-  for(const template of drawStarters(supportsImages,random)) {
+  for(const template of drawStarters(supportsImages,random,category)) {
     const card=document.createElement('article');card.className='starter-card';card.dataset.template=template.id;
     const mark=document.createElement('span');mark.className='starter-icon';mark.append(icon(template.icon));
     const title=document.createElement('div');title.className='starter-title';

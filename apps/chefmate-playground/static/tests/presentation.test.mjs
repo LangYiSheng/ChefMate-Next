@@ -1,6 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {pageWindow,viewChoices,activityRows,latestActivity,conversationLabel,snapshotStatus} from '../presentation.js';
+import {pageWindow,viewChoices,activityRows,latestActivity,conversationLabel,snapshotStatus,messageViewsForStage} from '../presentation.js';
+
+test('cooking and completed chats prioritize steps over obsolete preparation receipts',()=>{
+  const views=['preference_form','recipe_choices','prep_checklist','cooking_guide','meal_plan'].map(kind=>({kind}));
+  assert.equal(messageViewsForStage(views,'prep').length,5);
+  for(const stage of ['cooking','completed'])assert.deepEqual(messageViewsForStage(views,stage).map(view=>view.kind),['cooking_guide','meal_plan']);
+});
 
 test('session labels follow model-owned selection and active dish state',()=>{
   assert.equal(conversationLabel({stage:'idea'}),'闲聊');

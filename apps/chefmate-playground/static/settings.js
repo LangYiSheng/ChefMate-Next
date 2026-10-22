@@ -45,6 +45,7 @@ let memorySaving = false;
 let closeWaitMessage = '';
 let insights = null;
 let appearanceSettings = null;
+let footerNotice = null;
 window.addEventListener('chefmate:memory-busy', event => {
   memorySaving = event.detail?.busy === true;
   updateFooter();
@@ -93,9 +94,11 @@ async function api(path, options = {}) {
   return result;
 }
 function message(text, ok = false) {
-  $("settings-message").hidden = !text;
+  footerNotice=text?{text,ok}:null;
+  $("settings-message").hidden = !text || ok;
   $("settings-message").className = ok ? "settings-success" : "settings-error";
   $("settings-message").textContent = text;
+  updateFooter();
 }
 function changed() {
   dirty.add(current);
@@ -115,13 +118,16 @@ function updateFooter() {
   $("reload-settings").disabled = busy || testing;
   $("save-settings").disabled =
     !loaded || !dirty.has(current) || busy || testing;
-  $("save-state").textContent = testing
+  const text = testing
     ? "正在验证原生工具调用…"
     : busy
       ? busyMessage
       : dirty.has(current)
         ? "当前页有未保存修改"
-        : current==='usage'?'按服务端报告统计':current==='about'?'ChefMate 本地工作台':"设置已同步";
+        : footerNotice?.text || (current==='usage'?'按服务端报告统计':current==='about'?'ChefMate 本地工作台':"设置已同步");
+  const kind=testing||busy?'busy':dirty.has(current)?'dirty':footerNotice?.ok===false?'error':'saved';
+  const status=$("save-state");status.dataset.state=kind;
+  status.replaceChildren(icon(({busy:'loader-circle',dirty:'circle-alert',error:'circle-x',saved:'circle-check'})[kind]),node('span','',text));
   if ($("test-model")) $("test-model").disabled = busy || testing;
   const fieldsLocked = busy || testing || current === 'memory' && memorySaving;
   for (const input of $("settings-form").querySelectorAll('input, select, textarea')) {

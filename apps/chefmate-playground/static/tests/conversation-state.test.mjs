@@ -3,6 +3,13 @@ import assert from 'node:assert/strict';
 import {moveDrafts,releaseImages,imageMetadata,suggestedReplies,matchesDraft,recoverLocalImages,PANTRY_REPLY} from '../conversation-state.js';
 import {drawStarters,STARTERS} from '../welcome.js';
 
+test('new starters cover personal recipes, journals and memory without offering unavailable images',()=>{
+  for(const category of ['kitchen','recipes','journal','memory']){
+    const selected=drawStarters(false,()=>.5,category);
+    assert.ok(selected.length>=2);assert.ok(selected.every(item=>!item.images && (item.category || 'kitchen')===category));
+  }
+});
+
 test('first-send draft migration retains attachments and does not touch another conversation',()=>{
   const image={id:'local:photo',blob:{size:20},previewUrl:'blob:preview',local:true};
   const text=new Map([['draft:one','今晚吃什么'],['other','另一段草稿']]);

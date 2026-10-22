@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="83 95 346 313">
+  <title>ChefMate 小锅搭子</title>
+  <defs>
+    <mask id="face">
+      <rect x="83" y="95" width="346" height="313" fill="white"/>
+      <circle cx="215" cy="291" r="10" fill="black"/>
+      <circle cx="297" cy="291" r="10" fill="black"/>
+      <path d="M232 326Q256 349 280 326" fill="none" stroke="black" stroke-width="11" stroke-linecap="round"/>
+    </mask>
+  </defs>
+  <g fill="currentColor" color="#343d38" mask="url(#face)">
+    <path d="M180 228V204C156 204 140 190 140 169C140 147 158 130 180 130C185 130 190 131 195 133C204 107 234 97 256 112C280 96 316 107 327 134C334 131 342 131 349 134C366 141 375 160 370 177C367 195 352 205 332 205V228Z"/>
+    <path d="M143 272H123A22 22 0 0 0 123 316H143M369 272H389A22 22 0 0 1 389 316H369" fill="none" stroke="currentColor" stroke-width="20" stroke-linecap="round"/>
+    <path d="M155 246H357C365 246 371 252 371 260V313C371 362 326 396 256 396C186 396 141 362 141 313V260C141 252 147 246 155 246Z"/>
+  </g>
+</svg>
