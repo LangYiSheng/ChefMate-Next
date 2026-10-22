@@ -117,7 +117,9 @@ uvicorn.run(create_app(config), host="127.0.0.1", port=18766)
 
 ## 检查命令
 
-发布新版本时更新 App 的 `pyproject.toml` 和锁文件，并在 [releases.json](../../apps/chefmate-playground/releases.json) 最前面追加日志。设置里的“版本更新日志”读取这一份内容；“关于”和 OpenAPI 从同一项目版本读取。各可复用包的版本独立管理。
+每次较大更新都要升级 App 的 `pyproject.toml` 版本、同步锁文件，并在 [releases.json](../../apps/chefmate-playground/releases.json) 最前面追加日志。日志用直白的话介绍用户能看到的功能、使用体验和问题修复；后端整理等工程细节记入工程档案。设置里的“版本更新日志”读取这一份内容；“关于”和 OpenAPI 从同一项目版本读取。各可复用包的版本独立管理。
+
+完成相应检查后自动提交并推送，保留无关的本地改动，推送后核对本地与远端提交一致。详细约定见[版本与发布](../design/engineering.md#版本与发布)。
 
 在仓库根目录运行，先确保临时目录父路径存在：
 
