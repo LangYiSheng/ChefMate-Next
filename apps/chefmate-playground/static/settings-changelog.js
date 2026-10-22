@@ -16,7 +16,14 @@ export function renderChangelog(host, data) {
     const date=node('time','changelog-date',release.date);
     date.dateTime=release.date;
     header.append(date);
-    article.append(header,node('p','changelog-title',release.title));
+    article.append(header);
+    if(release.source?.branch && release.source?.commit){
+      const source=node('p','changelog-source'),commit=node('code','',release.source.commit.slice(0,7));
+      commit.setAttribute('title',release.source.commit);
+      source.append(node('span','',`分支 ${release.source.branch} · 提交 `),commit);
+      article.append(source);
+    }
+    article.append(node('p','changelog-title',release.title));
     if(release.summary)article.append(node('p','changelog-summary',release.summary));
     for(const section of release.sections || []){
       const group=node('section','changelog-group'),list=node('ul','changelog-items');

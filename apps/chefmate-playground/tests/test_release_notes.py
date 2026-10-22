@@ -1,6 +1,7 @@
 """Release information stays readable without a model or recipe database."""
 
 import json
+import re
 import tomllib
 from datetime import date
 
@@ -26,6 +27,9 @@ def test_release_page_uses_the_same_version_as_about_and_openapi_without_configu
         assert date.fromisoformat(release["date"]) == date(2026, 10, 22)
         assert release["title"] and release["summary"]
         assert all(section["title"] and all(section["items"]) for section in release["sections"])
+        for entry in body["releases"]:
+            assert entry["source"]["branch"]
+            assert re.fullmatch(r"[0-9a-f]{40}", entry["source"]["commit"])
         assert client.get("/api/sessions").json()["items"] == []
         assert client.put("/api/changelog", json={"current_version": "9.9.9"}).status_code == 405
         assert client.get("/api/changelog").json() == body

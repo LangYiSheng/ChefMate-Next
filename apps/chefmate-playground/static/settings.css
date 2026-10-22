@@ -5,6 +5,8 @@
 #settings-form .changelog-version{margin:0;font-family:var(--font-numeric);font-size:22px;font-weight:600}
 .changelog-current{padding:3px 9px;border-radius:6px;background:var(--color-accent-soft);color:var(--color-accent);font-size:11px;line-height:1.5}
 .changelog-date{margin-left:auto;color:var(--color-muted);font-size:12px}
+.changelog-source{margin:10px 0 0;color:var(--color-muted);font-size:12px;line-height:1.7;overflow-wrap:anywhere}
+.changelog-source code{font-family:var(--font-numeric);font-size:inherit}
 .changelog-title{margin:16px 0 8px;font-family:var(--font-title);font-size:23px;font-weight:var(--font-title-weight);line-height:1.5}
 .changelog-summary{margin:0 0 24px;color:var(--color-muted);line-height:1.8}
 .changelog-group{margin:22px 0 0}
