@@ -1,5 +1,6 @@
 import {node} from './ui-components.js';
 import {icon} from './icons.js';
+import {brandImage} from './branding.js';
 import {PALETTES,FONT_PAIRINGS,resolveAppearance,appearanceTokens} from './appearance-presets.js';
 
 function setTokens(element,palette,fonts) {
@@ -53,7 +54,7 @@ export class AppearanceSettings {
     const heading=node('summary','appearance-preview-heading');heading.append(node('span','','效果预览'));
     this.previewName=node('span');this.previewName.setAttribute('aria-live','polite');heading.append(this.previewName,icon('chevron-down'));
     this.preview=node('div','appearance-preview');
-    const bar=node('div','appearance-preview-bar');bar.append(icon('cooking-pot'),node('span','','ChefMate'));
+    const bar=node('div','appearance-preview-bar');bar.append(brandImage('appearance-brand-icon'),node('span','','ChefMate'));
     const body=node('div','appearance-preview-body');
     body.append(node('h3','appearance-preview-title','把每一餐，照顾好。'),node('span','appearance-preview-caption','今日饮食 · 示例数据'));
     const metrics=node('dl','appearance-preview-metrics');

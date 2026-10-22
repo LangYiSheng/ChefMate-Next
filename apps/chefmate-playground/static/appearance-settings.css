@@ -14,3 +14,4 @@
 
 .appearance-preview-bar{font-weight:var(--font-title-weight)}
 .appearance-preview-heading{position:relative;list-style:none;padding-right:22px;cursor:pointer}.appearance-preview-heading::-webkit-details-marker{display:none}.appearance-preview-heading>svg{position:absolute;right:0;top:2px;width:16px;height:16px;color:var(--color-muted)}.appearance-preview-area[open] .appearance-preview-heading>svg{transform:rotate(180deg)}.appearance-preview-heading:focus-visible{outline:2px solid var(--color-accent);outline-offset:3px;border-radius:3px}
+.appearance-preview-bar .appearance-brand-icon{width:22px;height:22px}
