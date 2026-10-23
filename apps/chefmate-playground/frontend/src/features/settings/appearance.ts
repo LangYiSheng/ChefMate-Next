@@ -1,6 +1,19 @@
 import {normalizeAppearance, resolveAppearance, appearanceTokens} from './appearance-presets';
 export {PALETTES, FONT_PAIRINGS, THEME_MODES, resolveTheme} from './appearance-presets';
 
+let faviconSource: Promise<string> | null = null;
+let faviconGeneration = 0;
+async function updateFavicon(accent: string) {
+  const generation = ++faviconGeneration;
+  try {
+    faviconSource ||= fetch('/static/brand/chef-buddy.svg').then(response => {if (!response.ok) throw new Error('Brand unavailable'); return response.text();});
+    const source = await faviconSource;
+    if (generation !== faviconGeneration) return;
+    const tinted = source.replace(/color=(["'])#343d38\1/gi, `color="${accent}"`);
+    document.querySelector<HTMLLinkElement>('link[rel="icon"]')?.setAttribute('href', `data:image/svg+xml,${encodeURIComponent(tinted)}`);
+  } catch {faviconSource = null;}
+}
+
 export function readAppearance(storage: Pick<Storage, 'getItem'> | undefined = globalThis.localStorage) {
   try { return normalizeAppearance(JSON.parse(storage?.getItem('chefmate:ui-settings') || '{}')); }
   catch { return normalizeAppearance(); }
@@ -15,6 +28,7 @@ export function applyAppearance(preferences = readAppearance()) {
   root.style.colorScheme = theme;
   for (const [token, value] of Object.entries(appearanceTokens(palette, fonts))) root.style.setProperty(token, value);
   document.querySelector<HTMLMetaElement>('meta[name="theme-color"]')?.setAttribute('content', palette.background);
+  void updateFavicon(palette.accent);
   window.dispatchEvent(new CustomEvent('chefmate:appearance'));
 }
 

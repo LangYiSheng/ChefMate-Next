@@ -4,7 +4,9 @@
 当前默认是 **浅色 `light` + 暖白墨黑 `ink` + 宋黑搭配 `mixed`**，已有有效偏好继续保留；缺失或非法值按同一默认规则修复。
 默认值与可选组合以 [appearance-presets.ts](../../apps/chefmate-playground/frontend/src/features/settings/appearance-presets.ts) 为准，历史默认颜色和字体不作为现行规则。
 
-界面由 React 19.3.1 组件和 TypeScript 状态服务实现，Vite 8 负责构建。组件源码在 `frontend/src/`；本地 CSS、字体、品牌与图标资源在 `frontend/public/`，生产页面由后端从 `web/` 构建目录提供。
+界面由 React 19.3.1 组件和 TypeScript 状态服务实现，Vite 8 负责构建。组件和样式位于 `frontend/src/`；`frontend/public/` 只保存字体、品牌与第三方图标资源，生产页面由后端从 `web/` 构建目录提供。
+
+[main.tsx](../../apps/chefmate-playground/frontend/src/main.tsx) 统一导入 [styles/index.css](../../apps/chefmate-playground/frontend/src/styles/index.css)，其下按基础角色、公共控件、页面框架、聊天和详情分层。设置、个人中心与厨房各自管理作用域 CSS，使用同一套颜色与字体角色；控件样式不跨功能域覆盖。
 
 ## 主题和语义颜色
 
@@ -12,7 +14,7 @@
 暖白墨黑、鼠尾草绿、燕麦奶咖等是可选方案，绿色不再是全局固定默认色。
 配色选择、预览和应用使用同一份预设，禁止在页面另维护一套近似色值。
 
-基础颜色在 [colors.css](../../apps/chefmate-playground/frontend/public/colors.css)，预设通过 `appearanceTokens()` 覆盖以下角色：
+基础颜色在 [foundation.css](../../apps/chefmate-playground/frontend/src/styles/foundation.css)，预设通过 `appearanceTokens()` 覆盖以下角色：
 
 | 变量 | 用途 |
 | --- | --- |
@@ -31,13 +33,13 @@
 
 ## 字体按角色选择
 
-字体定义与覆盖在 [typography.css](../../apps/chefmate-playground/frontend/public/typography.css)，字体文件随应用提供。
+字体声明、基础角色与默认排版在 [foundation.css](../../apps/chefmate-playground/frontend/src/styles/foundation.css)，字体文件随应用提供；功能域样式按具体用途使用角色变量。
 新样式优先使用角色变量，避免某个页面写死宋体后覆盖用户的阅读选择。
 
 | 角色 | 变量 | 默认 `mixed` |
 | --- | --- | --- |
 | 大标题与主要菜名 | `--font-title/--font-title-weight` | 加粗宋体，字重 700 |
-| 聊天正文、说明和烹饪步骤 | `--font-reading` | 黑体 |
+| 聊天正文、说明和烹饪步骤 | `--font-body/--font-reading` | 黑体；阅读角色沿用正文选择 |
 | 营养指标、计时和步骤数值 | `--font-numeric` | 黑体，适用处使用等宽数字 |
 | 导航、表单、按钮、单位、注释和小标题 | `--font-ui` | 黑体 |
 | 代码与技术片段 | 独立等宽字体 | Consolas 等系统等宽回退 |
@@ -53,7 +55,7 @@
 
 布局常用 8、12、16、24、32px 间距。桌面侧栏与底色相接，主工作区使用有限圆角和细边界；长内容在所属主区域滚动。
 移动端取消外框留白，正文与输入区保留边距；控件输入字号保持 16px，避免手机聚焦放大。
-具体断点与宽度由 [shell.css](../../apps/chefmate-playground/frontend/public/shell.css)、[react.css](../../apps/chefmate-playground/frontend/src/react.css) 和对应功能域 CSS 管理。
+主框架、侧栏与抽屉断点由 [shell.css](../../apps/chefmate-playground/frontend/src/styles/shell.css) 管理；聊天和详情分别由 [chat.css](../../apps/chefmate-playground/frontend/src/styles/chat.css)、[details.css](../../apps/chefmate-playground/frontend/src/styles/details.css) 管理，功能域布局由其作用域 CSS 管理。
 
 侧栏默认 248px，可在 208–360px 之间拖动或用键盘调整。
 桌面折叠后保留紧凑导航与展开入口，窄屏使用抽屉，桌面折叠偏好不剥夺手机导航。
@@ -69,7 +71,7 @@
 
 ## 控件和保存反馈
 
-设置和个人中心使用 React 受控输入，[设置字段](../../apps/chefmate-playground/frontend/src/features/settings/SettingsFields.tsx)与[中心控件](../../apps/chefmate-playground/frontend/src/features/centers/CenterControls.tsx)遵循同一份 [form-controls.css](../../apps/chefmate-playground/frontend/public/form-controls.css)。
+设置和个人中心使用 React 受控输入，[设置字段](../../apps/chefmate-playground/frontend/src/features/settings/SettingsFields.tsx)与[中心控件](../../apps/chefmate-playground/frontend/src/features/centers/CenterControls.tsx)遵循同一份 [controls.css](../../apps/chefmate-playground/frontend/src/styles/controls.css)。功能布局分别放在 [settings-react.css](../../apps/chefmate-playground/frontend/src/features/settings/settings-react.css)、[centers-react.css](../../apps/chefmate-playground/frontend/src/features/centers/centers-react.css)；厨房协议卡片、问题和计时使用 [workspace.css](../../apps/chefmate-playground/frontend/src/features/workspace/workspace.css)。
 字段名称置于输入上方，输入和选择使用轻填充表面；数字保留原生输入并提供增减，开关支持键盘空格，密码可切换可见性。
 未知数字留空，必填、禁用和错误有明确说明，不能用零代替未知。
 
@@ -98,8 +100,10 @@
 推荐回复默认三条，可按设置调整数量；它们以轻量标题放在输入区上方，点击只替换草稿。
 确认条件、选菜和回答问题的按钮有明确提交语义，保存成功后才自动续轮；关闭推荐隐藏当前与历史建议，不删除服务端记录。
 
+每条回复按 `inline_limit` 默认展开一项或最多两项内容，优先当前可编辑视图；其余保留摘要、展开与适用的全屏入口。手动展开保留用户的查看意图。相同组件在多条消息出现时，只有最新所属消息能操作当前任务，历史展示使用当时快照并保持只读。[消息组件](../../apps/chefmate-playground/frontend/src/features/workspace/index.tsx)
+
 待回答问题暂时替换输入区，选项、自填和确认按可用高度组织，跨页选择保留。
-确认操作稳定可达，长问题和选项保留全文；短屏缩减辅助留白，自填输入保持 16px。
+确认操作位于选项滚动区外，长问题和选项保留全文；短屏分页显示选项，自填与多选草稿跨页保留，缩减辅助留白，自填输入保持 16px。
 会话提示点配“等你回答”文字，刷新或切换后恢复同一问题；全屏场景共用这套状态。[问答协议](agent-ui.md#待回答问题)
 
 ## 备料与烹饪工作区
@@ -110,25 +114,26 @@
 
 烹饪提供逐步阅读与完整步骤列表；“当前执行步骤”“正在浏览步骤”“完成状态”用文字区分。
 逐步内容和完整列表在所属区域内滚动，不能把“所有全屏内容禁止滚动”作为全局规则。
-长说明保留完整信息，主要执行动作位置稳定；浏览步骤不完成步骤，明确确认后才跟随下一步。
+全屏长说明按可用空间分页，保留全部字符与滚动兜底，调整窗口时保留阅读位置。说明翻页与步骤浏览分别提供导航，主要执行动作位置稳定；浏览步骤不完成步骤，明确确认后才跟随下一步。[阅读分页](../../apps/chefmate-playground/frontend/src/features/workspace/ReadingPages.tsx)
 大纲用于浏览，步骤完成仍有独立动作；进入烹饪后收起过时条件、选菜与备料入口。
 
 专注模式以模态场景保留页面底色，厨房内容和助手交流可切换，底部输入共享文字、图片草稿和停止状态。
 关闭时恢复原焦点；打开或关闭专注模式不等于启动或停止模型轮次。
-烹饪文本使用当前阅读字体，控件、步骤编号与数值使用各自角色。[专注组件](../../apps/chefmate-playground/frontend/src/features/workspace/index.tsx) · [专注样式](../../apps/chefmate-playground/frontend/public/focus.css)
+烹饪文本使用当前阅读字体，控件、步骤编号与数值使用各自角色。手机输入保持完整宽度，横屏缩减辅助留白并保留可滚动内容与执行动作。[专注组件](../../apps/chefmate-playground/frontend/src/features/workspace/index.tsx) · [厨房作用域样式](../../apps/chefmate-playground/frontend/src/features/workspace/workspace.css)
 
 完成本次菜肴先检查并保存全餐状态，再退出执行场景和续聊。
 饮食反馈必须区分制作完成、单人自动登记、多人待补本人份额与同步待重试，不能在失败或等待时统一显示“已经记入摄入”。[个人登记规则](agent-ui.md#制作量与个人摄入)
+若完成动作已经保存而记录同步失败，保留原动作标识并提供重试；厨房快照里的成功动作记录不能单独证明后续个人登记已完成。
 
 ## 计时与提醒
 
 聊天和全屏右上角提供计时入口，浮层管理暂停、继续、结束与分钟/秒输入；步骤保留启动或查看入口。
-新计时及时展示，多计时保留可滚动列表。每步优先展示一个适用计时器，当前策略和剩余名额来自服务端。
+新计时保存成功后自动展示，多计时保留可滚动列表。每步优先展示一个适用计时器并提供打开浮层的入口，当前策略和剩余名额来自服务端。
 默认上限三个运行/暂停计时，可选单计时及真实步骤改变时清理；降低上限保留已有计时，默认不自动清理。
 
-倒数按服务端 UTC 截止时间校准页面时钟，暂停保留剩余量，刷新后恢复。
+倒数由单一状态服务按服务端 UTC 截止时间与单调经过时间校准，暂停保留剩余量，刷新后恢复。聊天与专注模式共用时钟和提醒状态，组件重挂载不新增独立倒数或重复响铃。
 到期可打开提醒，但保留输入焦点、草稿和对话状态；Escape 优先关浮层，不能意外退出烹饪。
-响铃不代替步骤完成；声音遵守设置和浏览器交互解锁要求，页面关闭期间不承诺闹钟通知。
+后台会话可提醒，查看提醒才切换会话，不自动替换正在做的菜。响铃不代替步骤完成；声音遵守设置和浏览器交互解锁要求，同次检查中多个计时到期共用一次提示声，页面关闭期间不承诺闹钟通知。[计时服务](../../apps/chefmate-playground/frontend/src/features/workspace/store.ts) · [计时浮层](../../apps/chefmate-playground/frontend/src/features/workspace/Timers.tsx)
 
 ## 开发者观察与可访问性验证
 

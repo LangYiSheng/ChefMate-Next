@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { WorkspaceStore } from './store';
-import { answerPayload, makeAction, messageViews, safeReference, timerClock, timerPresentation, manualTimerSeconds, type View } from './protocol';
+import { answerPayload, makeAction, messageViews, safeReference, timerClock, timerPresentation, manualTimerSeconds, completionText, type View } from './protocol';
 
 const preference = (revision = 1, id = 'preferences'): View => ({ id, kind: 'preference_form', revision, editable: true, data: { values: { servings: 2 }, fields: [{ name: 'servings', input_type: 'number', label: '用餐人数' }] } });
 const response = (revision: number, views: View[] = [preference(revision)], extra = {}) => ({ status: 'ok', workspace: { revision, stage: 'planning', selected_recipe_ids: [], recent_actions: [], ...extra }, views });
@@ -91,6 +91,41 @@ describe('workspace transactions', () => {
   it('deduplicates the global timer interval and cleans it only after the final owner unmounts', () => {
     vi.useFakeTimers(); const store = new WorkspaceStore(), before = vi.getTimerCount(), first = store.initialize(), second = store.initialize();
     expect(vi.getTimerCount()).toBe(before + 1); first(); expect(vi.getTimerCount()).toBe(before + 1); second(); expect(vi.getTimerCount()).toBe(before); vi.useRealTimers();
+  });
+  it('opens the saved timer through a single service event after a start succeeds', async () => {
+    const timer = { id: 'new-timer', label: '汤', seconds: 60, status: 'running', remaining_seconds: 60 };
+    const request = vi.fn().mockResolvedValue(response(2, [{ id: 'timers', kind: 'timers', revision: 2, editable: true, data: { timers: [timer] } }]));
+    const store = new WorkspaceStore(request); store.receive('s', response(1, [], { stage: 'cooking' }));
+    await store.dispatch('s', 'start_timer', { label: '汤', seconds: 60 });
+    expect(store.getSnapshot().timerEvent).toEqual({ sequence: 1, sessionId: 's', timerId: 'new-timer', reason: 'started' });
+  });
+  it('does not treat workflow completion alone as proof of successful journal registration after 503', async () => {
+    const continued = vi.fn(), request = vi.fn().mockRejectedValueOnce(Object.assign(new Error('登记失败'), { status: 503 }))
+      .mockResolvedValueOnce({ ...response(2, [], { stage: 'completed' }), cooking_intake: { status: 'ok', intake_status: 'awaiting_portions' } });
+    const store = new WorkspaceStore(request, continued); store.receive('s', response(1, [], { stage: 'cooking' }));
+    await expect(store.dispatch('s', 'complete_meal', {}, undefined, { continuation: '核对本人份额' })).rejects.toThrow();
+    const actionId = store.entry('s').failed!.request.action_id;
+    store.receive('s', response(2, [], { stage: 'completed', recent_actions: [{ action_id: actionId }] }));
+    expect(store.entry('s').failed).not.toBeNull(); expect(continued).not.toHaveBeenCalled();
+    await store.retryFailed('s'); expect(JSON.parse(request.mock.calls[1][1].body).action_id).toBe(actionId);
+    expect(continued).toHaveBeenCalledTimes(1); expect(completionText(store.entry('s').completion)).toContain('等待你补充');
+    expect(completionText(store.entry('s').completion)).not.toContain('已按记录份额计入');
+  });
+  it('requires audio interaction unlock, respects sound preferences, and chimes once for simultaneous expiry', async () => {
+    const oscillator = () => ({ type: '', frequency: { value: 0 }, connect: vi.fn(), start: vi.fn(), stop: vi.fn(), disconnect: vi.fn(), onended: null });
+    const gain = () => ({ gain: { setValueAtTime: vi.fn(), linearRampToValueAtTime: vi.fn(), exponentialRampToValueAtTime: vi.fn() }, connect: vi.fn(), disconnect: vi.fn() });
+    const createOscillator = vi.fn(oscillator), close = vi.fn().mockResolvedValue(undefined);
+    class AudioMock { state = 'suspended'; currentTime = 0; destination = {}; createOscillator = createOscillator; createGain = gain; close = close; resume = vi.fn(async () => { this.state = 'running'; }); }
+    vi.stubGlobal('AudioContext', AudioMock);
+    const store = new WorkspaceStore(), cleanup = store.initialize(); let now = Date.parse('2026-01-01T00:00:00Z');
+    const timers = ['one', 'two'].map(id => ({ id, label: id, status: 'running', seconds: 3, deadline_at: '2026-01-01T00:00:03Z' }));
+    store.receive('s', response(1, [{ id: 'timers', kind: 'timers', revision: 1, data: { timers } }])); store.entry('s').clock = () => now;
+    store.tick(); expect(createOscillator).not.toHaveBeenCalled();
+    document.dispatchEvent(new Event('pointerdown')); await Promise.resolve(); now += 4000; store.tick(); store.tick();
+    expect(createOscillator).toHaveBeenCalledTimes(4); expect(store.getSnapshot().reminders).toHaveLength(2);
+    localStorage.setItem('chefmate:kitchen-preferences', JSON.stringify({ timer_sound: false }));
+    store.receive('s', response(2, [{ id: 'timers', kind: 'timers', revision: 2, data: { timers: [{ ...timers[0], id: 'muted' }] } }])); store.entry('s').clock = () => now; store.tick();
+    expect(createOscillator).toHaveBeenCalledTimes(4); cleanup(); expect(close).toHaveBeenCalledTimes(1); vi.unstubAllGlobals();
   });
 });
 describe('workspace protocol boundaries', () => {

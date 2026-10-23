@@ -2,7 +2,7 @@ import { useSyncExternalStore } from 'react';
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ChefStore } from '../runtime/store';
-import { Composer } from './Composer';
+import { Composer, type EditorPositions } from './Composer';
 
 const runtime = vi.hoisted(() => ({ current: null as ChefStore | null }));
 vi.mock('../runtime/store', async importOriginal => {
@@ -20,10 +20,10 @@ const requests: { path: string; init: RequestInit }[] = [];
 const notify = vi.fn();
 let requestId = '';
 
-function ConnectedComposer() {
+function ConnectedComposer({ positions }: { positions?: EditorPositions }) {
   const store = runtime.current!;
   const state = useSyncExternalStore(store.subscribe, store.getSnapshot);
-  return <Composer state={state} notify={notify} />;
+  return <Composer state={state} notify={notify} positions={positions} />;
 }
 
 beforeEach(async () => {
@@ -49,13 +49,31 @@ afterEach(() => { cleanup(); runtime.current?.dispose(); runtime.current = null;
 describe('Composer with the real external store', () => {
   it('keeps the textarea controlled by the correct chat draft across selections', async () => {
     const store = runtime.current!; await store.openSession('a'); render(<ConnectedComposer />);
-    const input = screen.getByRole('textbox', { name: '告诉 ChefMate 你想吃什么' });
+    let input = screen.getByRole('textbox', { name: '告诉 ChefMate 你想吃什么' });
     fireEvent.change(input, { target: { value: 'A 的未发送内容' } });
     expect(store.getSnapshot().drafts.a).toBe('A 的未发送内容');
     await act(() => store.openSession('b'));
+    input = screen.getByRole('textbox', { name: '告诉 ChefMate 你想吃什么' });
     expect(input).toHaveValue(''); fireEvent.change(input, { target: { value: 'B 的未发送内容' } });
     await act(() => store.openSession('a'));
+    input = screen.getByRole('textbox', { name: '告诉 ChefMate 你想吃什么' });
     expect(input).toHaveValue('A 的未发送内容'); expect(store.getSnapshot().drafts.b).toBe('B 的未发送内容');
+  });
+  it('restores per-session selection before the shorter next draft can clamp it', async () => {
+    const store = runtime.current!, positions: EditorPositions = new Map();
+    await store.openSession('a'); store.setDraft('aaaaaaaaaa');
+    const view = render(<ConnectedComposer positions={positions} />);
+    let input = screen.getByRole('textbox') as HTMLTextAreaElement;
+    input.setSelectionRange(7, 9); fireEvent.select(input);
+    await act(() => store.openSession('b'));
+    fireEvent.change(screen.getByRole('textbox'), { target: { value: 'bb' } });
+    expect(positions.get('a')).toEqual({ start: 7, end: 9 });
+    await act(() => store.openSession('a'));
+    input = screen.getByRole('textbox') as HTMLTextAreaElement;
+    expect([input.selectionStart, input.selectionEnd]).toEqual([7, 9]);
+    view.unmount(); render(<ConnectedComposer positions={positions} />);
+    input = screen.getByRole('textbox') as HTMLTextAreaElement;
+    expect([input.selectionStart, input.selectionEnd]).toEqual([7, 9]);
   });
 
   it('submits Enter once, keeps Shift+Enter for editing, and clears an accepted draft', async () => {

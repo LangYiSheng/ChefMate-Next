@@ -15,12 +15,18 @@ describe('center data invariants', () => {
     const previous = {name: '鸡蛋', amount: '2个', grams: 100, amount_evidence: '2个', scalable: true, usda_query: 'egg', allergens: ['egg']};
     expect(updateRecipeIngredient(previous, 'amount', '3个')).toMatchObject({grams: null, amount_evidence: '', usda_query: 'egg', allergens: ['egg']});
     expect(updateRecipeIngredient(previous, 'name', '番茄')).toMatchObject({grams: null, usda_query: '', allergens: []});
+    expect(updateRecipeIngredient(previous, 'name', ' 鸡蛋 ', previous)).toMatchObject({grams: 100, usda_query: 'egg', allergens: ['egg']});
+    const renamed = updateRecipeIngredient(previous, 'name', '番茄', previous);
+    expect(updateRecipeIngredient(renamed, 'name', '鸡蛋', previous)).toMatchObject({grams: 100, amount_evidence: '2个', usda_query: 'egg'});
   });
   it('keeps unknown nutrients null while scaling grams and invalidates nutrition on text edits', () => {
     const scaled = updateFoodItem(food(), 'amount_g', '200');
     expect(scaled.nutrition).toMatchObject({calories_kcal: 240, protein_g: 6, fat_g: null}); expect(scaled.nutrition_basis).toBe('estimated'); expect(scaled.portion).toBe('200 克');
     const renamed = updateFoodItem(food(), 'name', '面条'); expect(renamed.amount_g).toBeNull(); expect(Object.values(renamed.nutrition).every(value => value === null)).toBe(true); expect(renamed.nutrition_basis).toBe('unknown');
     const summary = intakeMetric({total: {protein_g: null}, known_total: {protein_g: 0}}, 'protein_g'); expect(summary).toMatchObject({value: 0, partial: true});
+    const reference = {...food(), nutrition: {...food().nutrition, calories_kcal: 100.001}};
+    const reduced = updateFoodItem(reference, 'amount_g', '33', reference);
+    expect(updateFoodItem(reduced, 'amount_g', '100', reference).nutrition.calories_kcal).toBe(100.001);
   });
   it('requires real portions and evidence before confirming known nutrition', () => {
     expect(validateFood({title: '午饭', items: [{...food(), portion: ''}]})).toContain('份量');
@@ -32,7 +38,7 @@ describe('center data invariants', () => {
 describe('center request lifecycles', () => {
   it('retains accepted recipe revision when publish fails and retries publication without a second PUT', async () => {
     const initial = recipe(), accepted = {...initial, revision: 3, document: {...initial.document, name: '茶叶蛋'}}; let publications = 0;
-    request.mockImplementation((path: string, options: RequestInit) => {if (options.method === 'PUT') return Promise.resolve(accepted); publications++; return publications === 1 ? Promise.reject(new Error('发布未完成')) : Promise.resolve({...accepted, status: 'saved'});});
+    request.mockImplementation((_path: string, options: RequestInit) => {if (options.method === 'PUT') return Promise.resolve(accepted); publications++; return publications === 1 ? Promise.reject(new Error('发布未完成')) : Promise.resolve({...accepted, status: 'saved'});});
     const handlers = callbacks(); render(<RecipeEditor initial={initial} {...handlers}/>);
     fireEvent.change(screen.getByLabelText('菜名'), {target: {value: '茶叶蛋'}}); fireEvent.click(screen.getByRole('button', {name: '确认保存菜谱'}));
     await waitFor(() => expect(handlers.onStatus).toHaveBeenCalledWith('发布未完成', true));
@@ -70,5 +76,32 @@ describe('center request lifecycles', () => {
     fireEvent.click(await screen.findByRole('button', {name: '核对草稿'})); fireEvent.change(await screen.findByLabelText('菜名'), {target: {value: '还未保存'}});
     fireEvent.click(screen.getByRole('button', {name: '返回对话'})); fireEvent.click(screen.getByRole('button', {name: '放弃修改'}));
     expect(onReturn).toHaveBeenCalledOnce(); expect(navigation?.defaultPrevented).toBe(false); expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
+  });
+
+  it('starts cooking through the chat workflow instead of merely opening another detail pane', () => {
+    const record = {...recipe(), status: 'saved'}, handlers = callbacks(), onChat = vi.fn(), onRecipe = vi.fn();
+    render(<RecipeEditor initial={record} {...handlers} onChat={onChat} onRecipe={onRecipe}/>);
+    fireEvent.click(screen.getByRole('button', {name: '就做这道菜'}));
+    expect(onChat).toHaveBeenCalledWith('我想做我保存的自定义菜谱「煮蛋」。请先检索并读取真实菜谱，再帮我安排。'); expect(onRecipe).not.toHaveBeenCalled();
+  });
+
+  it('does not expose a delete action on a foundation recipe', () => {
+    const record = {...recipe(), recipe_id: 'catalog-1', status: 'saved'}; render(<RecipeEditor initial={record} {...callbacks()}/>);
+    expect(screen.queryByRole('button', {name: '移到回收站'})).not.toBeInTheDocument();
+  });
+
+  it('ignores a late recipe detail after opening a different recipe', async () => {
+    const responses: Record<string, (value: any) => void> = {};
+    request.mockImplementation((path: string) => path.startsWith('/api/cookbook?') ? Promise.resolve({items: [{recipe_id: 'custom-1', name: '煮蛋', status: 'draft', origin: 'user'}, {recipe_id: 'custom-2', name: '炒蛋', status: 'draft', origin: 'user'}], total: 2}) : new Promise(resolve => {responses[path] = resolve;}));
+    render(<KitchenCenters page="recipes"/>); fireEvent.click(await screen.findByRole('button', {name: '核对煮蛋'})); fireEvent.click(screen.getByRole('button', {name: '核对炒蛋'}));
+    await act(async () => {responses['/api/cookbook/custom-2']({...recipe(), recipe_id: 'custom-2', document: {...recipe().document, name: '炒蛋'}});});
+    expect(await screen.findByLabelText('菜名')).toHaveValue('炒蛋'); await act(async () => {responses['/api/cookbook/custom-1'](recipe());}); expect(screen.getByLabelText('菜名')).toHaveValue('炒蛋');
+  });
+
+  it('updates the inspector title after accepting an edited draft', async () => {
+    const initial = recipe(), accepted = {...initial, revision: 3, document: {...initial.document, name: '新菜名'}};
+    request.mockImplementation((path: string, options: RequestInit = {}) => Promise.resolve(options.method === 'PUT' ? accepted : path.startsWith('/api/cookbook?') ? {items: [{recipe_id: 'custom-1', name: '煮蛋', status: 'draft', origin: 'user'}], total: 1} : initial));
+    render(<KitchenCenters page="recipes"/>); fireEvent.click(await screen.findByRole('button', {name: '核对草稿'})); fireEvent.change(await screen.findByLabelText('菜名'), {target: {value: '新菜名'}}); fireEvent.click(screen.getByRole('button', {name: '保存草稿'}));
+    await screen.findByRole('heading', {name: '新菜名'}); expect(screen.getByLabelText('菜名')).toHaveValue('新菜名');
   });
 });

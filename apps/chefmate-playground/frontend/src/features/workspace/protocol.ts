@@ -28,7 +28,8 @@ export function messageViews(message: Json): View[] {
 export function compareVersions(a: Json, b: Json) { return (a.revision ?? -1) - (b.revision ?? -1) || (a.presentation_revision ?? 0) - (b.presentation_revision ?? 0); }
 export function viewChoices(views: View[], stage: string): View[] {
   const preferred = ({ idea: 'preference_form', planning: 'meal_plan', prep: 'prep_checklist', cooking: 'cooking_guide', completed: 'meal_plan' } as Record<string, string>)[stage];
-  return views.filter(view => view.kind !== 'task_progress' && !(view.kind === 'recipe_choices' && ['prep', 'cooking', 'completed'].includes(stage))).sort((a, b) => Number(b.kind === preferred) - Number(a.kind === preferred));
+  return views.filter(view => view.kind !== 'task_progress' && !(view.kind === 'recipe_choices' && ['prep', 'cooking', 'completed'].includes(stage))
+    && !(['cooking', 'completed'].includes(stage) && ['preference_form', 'prep_checklist'].includes(view.kind))).sort((a, b) => Number(b.kind === preferred) - Number(a.kind === preferred));
 }
 export function clockText(seconds: number | null): string {
   if (seconds == null) return '--:--';
@@ -52,6 +53,13 @@ export function workspaceTimers(views: View[]): Timer[] {
   for (const view of [...views.filter(v => v.kind === 'cooking_guide'), ...views.filter(v => v.kind === 'timers')]) for (const timer of view.data.timers || []) unique.set(timer.id, timer);
   return [...unique.values()];
 }
+export function timerCapacity(snapshot: Json | null | undefined, views: View[], now: number) {
+  const timers = workspaceTimers(views), server = snapshot?.timer_capacity;
+  const limit = server?.limit ?? snapshot?.cooking_settings?.timer_limit ?? 3;
+  const active = Math.max(0, (server?.active_count ?? timers.filter(timer => ['running', 'paused'].includes(timer.status)).length)
+    - timers.filter(timer => timer.status === 'running' && timerPresentation(timer, now).expired).length);
+  return { limit, active, available: Math.max(0, limit - active) };
+}
 export function manualTimerSeconds(minutes: string | number, seconds: string | number): number | null {
   if (minutes === '' && seconds === '') return null;
   const m = Number(minutes || 0), s = Number(seconds || 0), total = m * 60 + s;
@@ -71,3 +79,6 @@ export function answerMessage(question: Json, payload: Json) {
   return `关于“${question.question}”，我的回答是：${[...names, payload.text].filter(Boolean).join('；')}。请按这个答案继续。`;
 }
 export function safeReference(value: string): string | null { try { const url = new URL(value); return ['http:', 'https:'].includes(url.protocol) && !url.username && !url.password ? url.href : null; } catch { return null; } }
+export function completionText(receipt: Json | null | undefined) {
+  return ({ saved: '制作记录已保存，本餐已按记录份额计入个人营养。', awaiting_portions: '制作记录已保存，个人营养等待你补充本人吃了哪些、吃了多少。', not_eaten: '制作记录已保存，本次未食用，未计入个人摄入。', deleted: '制作记录已保存，个人摄入记录已移除，未自动恢复。' } as Record<string, string>)[receipt?.intake_status] || '制作记录已保存，个人营养登记状态还需核对。';
+}

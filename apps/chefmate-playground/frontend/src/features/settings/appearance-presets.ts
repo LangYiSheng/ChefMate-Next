@@ -32,7 +32,8 @@ export function normalizeAppearance(value?:Record<string,any>): Record<string,an
     light_palette:PALETTES.some(p=>p.id===saved.light_palette && p.mode==='light')?saved.light_palette:DEFAULT_APPEARANCE.light_palette,
     dark_palette:PALETTES.some(p=>p.id===saved.dark_palette && p.mode==='dark')?saved.dark_palette:DEFAULT_APPEARANCE.dark_palette,
     font_pairing:FONT_PAIRINGS.some(f=>f.id===saved.font_pairing)?saved.font_pairing:DEFAULT_APPEARANCE.font_pairing,
-    show_estimates:typeof saved.show_estimates==='boolean'?saved.show_estimates:true};
+    show_estimates:typeof saved.show_estimates==='boolean'?saved.show_estimates:true,
+    inline_limit:saved.inline_limit===1?1:2,density:saved.density==='compact'?'compact':'comfortable'};
 }
 export function resolveTheme(mode:string,darkSystem=false) { return mode==='dark' || mode==='system' && darkSystem?'dark':'light'; }
 export function resolveAppearance(value?:Record<string,any>,darkSystem=false) {
@@ -49,7 +50,7 @@ export function appearanceTokens(palette:Palette,fonts:FontPairing) {
     '--color-warning':dark?'#e7c48d':'#816024','--color-warning-soft':dark?'#3c3425':'#fbf7ef',
     '--color-danger':dark?'#f0aca2':'#a34138','--color-danger-soft':dark?'#432f2b':'#fcf2ef',
     '--color-overlay':dark?'#050c08b3':'#17281e80','--color-shadow':dark?'#00000033':'#17281e12',
-    '--font-ui':fonts.ui,'--font-title':fonts.title,'--font-title-weight':String(fonts.titleWeight),'--font-reading':fonts.reading,'--font-numeric':fonts.numeric};
+    '--font-ui':fonts.ui,'--font-title':fonts.title,'--font-title-weight':String(fonts.titleWeight),'--font-body':fonts.reading,'--font-reading':fonts.reading,'--font-numeric':fonts.numeric};
 }
 
 export type Palette = (typeof PALETTES)[number];

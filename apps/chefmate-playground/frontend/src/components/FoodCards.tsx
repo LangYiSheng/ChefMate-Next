@@ -42,12 +42,12 @@ function FoodCard({ receipt, locked, onAsk }: { receipt: Data; locked: boolean; 
     <span className={`chat-food-state ${record.status === 'saved' ? 'saved' : ''}`}>{record.status === 'saved' ? '已记录' : '待确认'}</span></header>
     <ul className="chat-food-items">{doc?.items?.map((item: Data, index: number) => <li key={item.id || index}><span><strong>{item.name}</strong><small>{item.portion || '份量待补充'}</small></span>
       <span className="chat-food-item-energy">{Number.isFinite(item.nutrition?.calories_kcal) ? `${item.nutrition.calories_kcal} kcal` : '营养待补充'}</span></li>)}</ul>
-    <Metrics summary={record.nutrition} /><p className="chat-food-note">{record.nutrition?.estimated && '营养含估算；'}{record.status === 'saved' ? '已计入个人饮食。' : '尚未计入营养统计。可以直接告诉我哪里要改。'}</p>
+    <Metrics summary={record.nutrition} /><p className="chat-food-note">{record.nutrition?.estimated && <span className="estimate-marker">营养含估算；</span>}{record.status === 'saved' ? '已计入个人饮食。' : '尚未计入营养统计。可以直接告诉我哪里要改。'}</p>
     {doc && <details className="chat-food-source"><summary>来源与估算依据</summary>{doc.items?.map((item: Data, index: number) => <div key={index}><h4>{item.name}</h4><p>{item.evidence}</p>
       {item.assumptions?.map((text: string, i: number) => <p key={i}>{text}</p>)}</div>)}<p>{doc.notes}</p></details>}
-    <div className="chat-food-actions">{record.status === 'draft' && <><button type="button" disabled={locked || saving || !doc} onClick={publish}>{saving ? '正在确认…' : '确认记录'}</button>
-      <button type="button" disabled={locked || saving} onClick={() => onAsk(`我想调整${record.date}的“${doc?.title || '这顿饭'}”：`)}>修改这顿饭</button></>}
-      <button type="button" disabled={locked} onClick={() => onAsk('请查看我最近7天已确认饮食的营养统计。')}>查看最近营养</button></div>
+    <div className="chat-food-actions">{record.status === 'draft' && <><button type="button" className="primary-button" disabled={locked || saving || !doc} onClick={publish}>{saving ? '正在确认…' : '确认记录'}</button>
+      <button type="button" className="secondary-button" disabled={locked || saving} onClick={() => onAsk(`我想调整${record.date}的“${doc?.title || '这顿饭'}”：`)}>修改这顿饭</button></>}
+      <button type="button" className="text-button" disabled={locked} onClick={() => onAsk('请查看我最近7天已确认饮食的营养统计。')}>查看最近营养</button></div>
     {notice && <p role="status" className="chat-food-note">{notice}</p>}
   </section>;
 }

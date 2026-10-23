@@ -18,7 +18,7 @@ uv run --project apps/chefmate-playground chefmate-playground
 使用 `chefmate-playground --port 18766` 可选择其他端口。启动器只监听 `127.0.0.1`。
 应用连接调用方准备的 PostgreSQL，启动时不下载 USDA、不启动数据库、不迁移或替换菜谱数据。
 
-前端为 React 19.3.1、TypeScript 7 和 Vite 8。源码在 [frontend/src](../../apps/chefmate-playground/frontend/src/)，CSS、字体、品牌与 Lucide sprite 在 [frontend/public](../../apps/chefmate-playground/frontend/public/)。构建生成 `apps/chefmate-playground/web/`，后端从此提供 SPA 页面并挂载 `/static`。直接使用 uv 启动前先构建，修改源码后也需重新构建；`npm --prefix apps/chefmate-playground/frontend run dev` 仅用于前端开发，其 `/api` 代理到默认后端端口。
+前端为 React 19.3.1、TypeScript 7 和 Vite 8。源码与样式在 [frontend/src](../../apps/chefmate-playground/frontend/src/)，全局样式入口是 [styles/index.css](../../apps/chefmate-playground/frontend/src/styles/index.css)，功能域保留自己的作用域样式。[frontend/public](../../apps/chefmate-playground/frontend/public/) 只保存字体、品牌与 Lucide sprite 等静态资源。构建生成 `apps/chefmate-playground/web/`，后端从此提供 SPA 页面并挂载 `/static`。直接使用 uv 启动前先构建，修改源码后也需重新构建；`npm --prefix apps/chefmate-playground/frontend run dev` 仅用于前端开发，其 `/api` 代理到默认后端端口。
 
 | 数据 | 位置与所有者 |
 | --- | --- |
@@ -85,6 +85,7 @@ uv run --project apps/chefmate-playground chefmate-playground
 
 工作流展示支持 `display=inline|workspace|none`。服务端生成受控组件；前端使用当前可信投影交互，历史卡片中的原始 JSON 不作为写入依据。
 厨房组件包括偏好、候选、详情、餐单、备料、步骤、计时和进度，饮食组件另含 `food_log`、`nutrition_summary`，等待点使用 `pending_question`。
+浏览器显示偏好 `inline_limit` 取 1 或 2，控制每条回复默认展开的界面数量；当前可编辑内容优先，其余保留摘要及展开入口。相同组件在多条消息出现时，只允许最新所属消息提供当前任务操作。
 完整模型字段见[工作流参考](workflow.md)与[智能界面设计](../design/agent-ui.md)。
 
 ## 会话、图片与厨房 API
@@ -197,8 +198,9 @@ API Key、数据库密码、图片字节和供应商隐藏推理不进入调试�
 ## 界面与验证入口
 
 设置可内嵌打开，保留会话与未发送文字、图片草稿；菜谱中心和手记中的聊天入口创建新对话，旧草稿仍可恢复。
-备料清单待备项靠前、已确认项沉底，步骤与当前提示沿用冻结菜谱；计时到期不会自动确认步骤。
-计时保存 UTC 截止时间和暂停剩余量，页面刷新可恢复；发声依赖浏览器解锁声音及页面运行。
+备料使用完整可滚动清单，待备项靠前，已备齐或明确跳过的项目划线沉底。步骤与当前提示沿用冻结菜谱；逐步阅读支持长说明分页，完整步骤列表也保留，浏览和翻页不会自动完成步骤。
+计时保存 UTC 截止时间和暂停剩余量，页面刷新可恢复；新计时与到期提醒可自动展开，保留正在编辑的草稿和焦点，Escape 优先关闭浮层。发声遵守声音设置、浏览器交互解锁与页面运行条件，计时到期不会自动确认步骤。
+完成烹饪与个人营养登记分别反馈；若厨房动作已完成而后续记录同步失败，使用原 `action_id` 重试完成请求，补齐记录同步后再续聊。
 图片原位预览、桌面侧栏宽度、窄屏抽屉、主题配色和字体约定见[视觉规范](../design/ui.md)。
 
 ```powershell

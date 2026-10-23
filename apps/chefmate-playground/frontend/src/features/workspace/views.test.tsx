@@ -1,9 +1,10 @@
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { CookingFocus, KitchenTimers, MessageViews, QuestionPanel, WorkspacePanel } from './index';
 import { workspaceStore } from './store';
 import { chefStore } from '../../runtime/store';
 import type { View } from './protocol';
+import { ReadingPages, splitReadingText } from './ReadingPages';
 
 const form: View = { id: 'prefs', kind: 'preference_form', revision: 1, title: '用餐条件', editable: true, data: { fields: [{ name: 'servings', input_type: 'number', label: '用餐人数' }], values: { servings: 2 } } };
 const snapshot = (views: View[], stage = 'planning', extra = {}) => ({ status: 'ok', workspace: { revision: 1, stage, selected_recipe_ids: [], ...extra }, views });
@@ -65,5 +66,70 @@ describe('React workspace behavior', () => {
     const dispatch = vi.spyOn(workspaceStore, 'dispatch').mockResolvedValue({ status: 'ok' }); render(<KitchenTimers sessionId={id} />);
     fireEvent.click(screen.getByRole('button', { name: /厨房计时：汤/ })); expect(screen.getByLabelText('剩余 45 秒')).toHaveTextContent('0:45');
     fireEvent.click(screen.getByRole('button', { name: '继续汤' })); expect(dispatch).toHaveBeenCalledWith(id, 'resume_timer', { timer_id: 'soup' }, expect.objectContaining({ id: 'timers' }));
+  });
+  it('renders every preparation item, orders pending first, and keeps same-name ingredient identities distinct', () => {
+    const items = [{ id: 'done', canonical_name: '鸡蛋', amount_text: '2个', status: 'ready' }, { id: 'skip', canonical_name: '盐', status: 'skipped' }, ...Array.from({ length: 5 }, (_, index) => ({ id: `pending-${index}`, canonical_name: index ? `食材${index}` : '鸡蛋', amount_text: '1个', status: 'pending' }))];
+    const view: View = { id: 'prep', kind: 'prep_checklist', revision: 1, editable: true, data: { items } }, id = seed([view], 'prep');
+    const dispatch = vi.spyOn(workspaceStore, 'dispatch').mockResolvedValue({ status: 'ok' }); render(<WorkspacePanel sessionId={id} running={false} onContinue={() => {}} />);
+    const list = screen.getByRole('list', { name: '完整备料清单' }); expect(list.children).toHaveLength(7);
+    expect(list.children[0]).toHaveAttribute('data-prep-id', 'pending-0'); expect(list.children[5]).toHaveClass('prep-resolved');
+    expect(screen.queryByRole('tablist', { name: '步骤显示方式' })).not.toBeInTheDocument(); expect(screen.queryByRole('navigation', { name: '备菜分页' })).not.toBeInTheDocument();
+    fireEvent.click(screen.getAllByRole('checkbox', { name: '鸡蛋已备齐' })[0]);
+    expect(dispatch).toHaveBeenCalledWith(id, 'check_prep_item', { item_id: 'pending-0', status: 'ready' }, view);
+  });
+  it('automatically reveals a new timer without stealing the current text input', () => {
+    const id = seed([], 'cooking'); render(<><textarea aria-label="交流草稿" /><KitchenTimers sessionId={id} /></>);
+    const input = screen.getByRole('textbox', { name: '交流草稿' }); input.focus();
+    act(() => workspaceStore.receive(id, { ...snapshot([{ id: 'timers', kind: 'timers', revision: 2, editable: true, data: { timers: [{ id: 'soup', label: '汤', seconds: 60, remaining_seconds: 60, status: 'running' }] } }], 'cooking'), workspace: { revision: 2, stage: 'cooking' } }));
+    expect(screen.getByRole('dialog', { name: '厨房计时' })).toBeInTheDocument(); expect(document.activeElement).toBe(input);
+  });
+  it('keeps a timer-name draft and focus when a timer expires, and Escape closes the popover before focus mode', () => {
+    Object.defineProperty(HTMLDialogElement.prototype, 'showModal', { configurable: true, value: function (this: HTMLDialogElement) { this.open = true; } });
+    Object.defineProperty(HTMLDialogElement.prototype, 'close', { configurable: true, value: function (this: HTMLDialogElement) { this.open = false; } });
+    const timer = { id: 'soup', label: '汤', seconds: 5, status: 'running', deadline_at: '2026-01-01T00:00:05Z' }, id = seed([{ id: 'timers', kind: 'timers', revision: 1, editable: true, data: { timers: [timer] } }], 'cooking'), onClose = vi.fn();
+    let now = Date.parse('2026-01-01T00:00:00Z'); workspaceStore.entry(id).clock = () => now;
+    render(<CookingFocus sessionId={id} onClose={onClose} onContinue={() => {}}><textarea aria-label="交流草稿" /></CookingFocus>);
+    fireEvent.click(screen.getByRole('button', { name: /厨房计时：汤/ })); fireEvent.click(screen.getByRole('button', { name: '添加计时器' }));
+    const popup = screen.getByRole('dialog', { name: '厨房计时' });
+    const name = within(popup).getByRole('textbox', { name: '计时名称' }); fireEvent.change(name, { target: { value: '下一锅汤' } }); name.focus();
+    act(() => { now += 6000; workspaceStore.tick(); }); expect(within(popup).getByRole('textbox', { name: '计时名称' })).toHaveValue('下一锅汤'); expect(document.activeElement).toBe(name);
+    const composer = screen.getByRole('textbox', { name: '交流草稿' }); composer.focus(); fireEvent.keyDown(composer, { key: 'Escape' });
+    expect(screen.queryByRole('dialog', { name: '厨房计时' })).not.toBeInTheDocument(); expect(onClose).not.toHaveBeenCalled(); expect(document.activeElement).toBe(composer);
+  });
+  it('keeps multi-choice answers across short-screen pages and submits selections from all pages', async () => {
+    const oldHeight = window.innerHeight; Object.defineProperty(window, 'innerHeight', { configurable: true, value: 450 });
+    const question = { id: 'paged', question: '这餐要考虑哪些？', multiple: true, allow_custom: true, options: [{ id: 'a', label: '少油' }, { id: 'b', label: '少盐' }] }, id = seed([], 'idea', { pending_question: question });
+    const dispatch = vi.spyOn(workspaceStore, 'dispatch').mockResolvedValue({ status: 'ok' }); render(<QuestionPanel sessionId={id} running={false} />);
+    fireEvent.click(screen.getByRole('checkbox', { name: '少油' })); fireEvent.click(screen.getByRole('button', { name: '下一页' })); fireEvent.click(screen.getByRole('checkbox', { name: '少盐' }));
+    fireEvent.click(screen.getByRole('button', { name: '下一页' })); fireEvent.change(screen.getByRole('textbox'), { target: { value: '不要葱' } });
+    fireEvent.click(screen.getByRole('button', { name: '确认并继续' }));
+    await waitFor(() => expect(dispatch).toHaveBeenCalledWith(id, 'answer_question', { question_id: 'paged', option_ids: ['a', 'b'], text: '不要葱' }, undefined, expect.anything()));
+    Object.defineProperty(window, 'innerHeight', { configurable: true, value: oldHeight });
+  });
+  it('preserves every character in long cooking directions across reading pages', () => {
+    const text = '翻炒均匀，保持小火。\n注意锅底，不要烧干。🥘'.repeat(90), pages = splitReadingText(text, 120);
+    expect(pages.length).toBeGreaterThan(1); expect(pages.join('')).toBe(text);
+    render(<ReadingPages text={text} label="步骤说明" />); expect(screen.getByRole('navigation', { name: '步骤说明分页' })).toBeInTheDocument();
+    const first = document.querySelector('.workspace-reading-viewport')!.textContent;
+    fireEvent.click(screen.getByRole('button', { name: '下一页' })); expect(document.querySelector('.workspace-reading-viewport')!.textContent).not.toBe(first);
+  });
+  it('applies inline expansion limits immediately and keeps explicit reveal controls for other views', () => {
+    localStorage.setItem('chefmate:ui-settings', JSON.stringify({ inline_limit: 1 }));
+    const choice: View = { id: 'choices-limit', kind: 'recipe_choices', revision: 1, editable: true, title: '候选菜品', data: { recipes: [] } };
+    const detail: View = { id: 'detail-limit', kind: 'recipe_detail', revision: 1, editable: false, title: '菜谱详情', data: { recipe: { name: '鸡蛋' } } };
+    const views = [form, choice, detail], id = seed(views), message = { actions: views.map(component => ({ kind: 'show_component', component })) };
+    const rendered = render(<MessageViews message={message} sessionId={id} running={false} onContinue={() => {}} />);
+    expect(document.querySelectorAll('.workspace-inline-view')).toHaveLength(1); expect(document.querySelector('.workspace-inline-view [data-view-id]')).toHaveAttribute('data-view-id', 'choices-limit');
+    act(() => { localStorage.setItem('chefmate:ui-settings', JSON.stringify({ inline_limit: 2 })); window.dispatchEvent(new Event('chefmate:appearance')); });
+    expect(document.querySelectorAll('.workspace-inline-view')).toHaveLength(2);
+    fireEvent.click(screen.getByRole('button', { name: /菜谱详情.*鸡蛋/ })); expect(document.querySelectorAll('.workspace-inline-view')).toHaveLength(3);
+    rendered.unmount(); localStorage.removeItem('chefmate:ui-settings');
+  });
+  it('keeps an empty quantity draft empty, reports validation, and discards edits restored to baseline', () => {
+    const view: View = { id: 'plan', kind: 'meal_plan', revision: 1, editable: true, data: { recipes: [{ recipe_id: 'egg', name: '炒鸡蛋', target_servings: 2 }] } }, id = seed([view]);
+    const dispatch = vi.spyOn(workspaceStore, 'dispatch').mockResolvedValue({ status: 'ok' }); render(<WorkspacePanel sessionId={id} running={false} onContinue={() => {}} />);
+    const input = screen.getByRole('spinbutton', { name: '炒鸡蛋的配方等效份量' }); fireEvent.change(input, { target: { value: '' } }); expect(input).toHaveValue(null);
+    fireEvent.click(screen.getByRole('button', { name: '保存份量' })); expect(screen.getByRole('alert')).toHaveTextContent('0.1 到 100'); expect(dispatch).not.toHaveBeenCalled();
+    fireEvent.change(input, { target: { value: '2' } }); expect(workspaceStore.entry(id).drafts.plan).toBeUndefined();
   });
 });

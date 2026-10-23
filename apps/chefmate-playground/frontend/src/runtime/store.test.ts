@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ChefStore } from './store';
-import type { ApiData, AttachmentPersistence, ImageDraft, StoreOptions } from './types';
+import type { AttachmentPersistence, ImageDraft, StoreOptions } from './types';
 
 const json = (data: any, status = 200) => new Response(JSON.stringify(data), { status, headers: { 'Content-Type': 'application/json' } });
 const stream = (events: any[]) => new Response(events.map(event => `data: ${JSON.stringify(event)}\n\n`).join(''), { headers: { 'Content-Type': 'text/event-stream' } });
@@ -268,5 +268,114 @@ describe('React conversation store lifecycle', () => {
     store.setDraft('还没发送'); expect((await store.sendMessage()).error).toContain('先回答');
     store.setDraft('丢失会话的草稿', 'missing'); await store.openSession('missing');
     expect(store.getSnapshot().currentId).toBeNull(); expect(store.getSnapshot().drafts[store.getSnapshot().blankId]).toBe('丢失会话的草稿');
+  });
+
+  it('reconciles a background continuation across dispose/start and ignores its old completion', async () => {
+    const headers = deferred<Response>(); let requestId = '', restarting = false;
+    const { store, requests } = harness((path, options) => {
+      if (path.endsWith('/turn')) { requestId = JSON.parse(options.body as string).request_id; return headers.promise; }
+      if (path === '/api/sessions/a' && restarting) return json({ id: 'a', last_status: 'completed', last_run: { request_id: requestId }, messages: [{ role: 'assistant', content: '后台确认已完成' }] });
+    });
+    await store.start(); await store.openSession('a'); await store.openSession('b');
+    store.enqueueContinuation('a', '确认后继续', 'confirm:background');
+    await vi.waitFor(() => expect(requestId).toBe('confirm:background'));
+    expect(store.getSnapshot().continuations.a.stage).toBe('sending');
+    store.dispose(); expect(store.getSnapshot().continuations.a.stage).toBe('queued');
+    restarting = true; await store.start();
+    expect(store.getSnapshot().continuations.a).toBeUndefined(); expect(store.getSnapshot().currentId).toBe('b');
+    headers.resolve(json({ detail: '旧连接失败' }, 503)); await flush();
+    expect(store.getSnapshot().continuations.a).toBeUndefined(); expect(store.getSnapshot().cache.a.messages.at(-1)?.content).toBe('后台确认已完成');
+    expect(requests.filter(item => item.path.endsWith('/turn'))).toHaveLength(1);
+  });
+
+  it('does not let a GET begun before a metadata save overwrite the new name and pin', async () => {
+    const late = deferred<Response>(); let reads = 0;
+    const { store } = harness((path, options) => {
+      if (path === '/api/sessions/a' && options.method === 'PATCH') return json({ id: 'a', title: '新的名字', pinned: true, title_custom: true });
+      if (path === '/api/sessions/a' && !options.method && ++reads === 2) return late.promise;
+    });
+    await store.start(); await store.openSession('a');
+    const refreshing = store.refreshSession('a'); await store.renameSession('a', '新的名字');
+    late.resolve(json({ id: 'a', title: '旧的名字', pinned: false, messages: [{ role: 'assistant', content: '真实消息' }] })); await refreshing;
+    expect(store.getSnapshot().session).toMatchObject({ title: '新的名字', pinned: true, title_custom: true });
+    expect(store.getSnapshot().session?.messages.at(-1)?.content).toBe('真实消息');
+  });
+
+  it('exposes list retry state and keeps the authoritative cursor and items after a failed next page', async () => {
+    let initialFailure = true, moreFailure = true;
+    const { store } = harness(path => {
+      if (!path.startsWith('/api/sessions?')) return;
+      if (!path.includes('cursor=')) return initialFailure ? json({ detail: '列表暂时不可用' }, 503) : json({ items: Array.from({ length: 20 }, (_, index) => ({ id: index ? `filler-${index}` : 'a', title: '对话' })), next_cursor: 'cursor-a' });
+      return moreFailure ? json({ detail: '下一页失败' }, 503) : json({ items: [{ id: 'b', title: 'B' }], next_cursor: null });
+    });
+    await store.start(); expect(store.getSnapshot().sessionsError).toContain('列表暂时不可用'); expect(store.getSnapshot().sessionsLoading).toBe(false);
+    initialFailure = false; await store.loadSessions(); expect(store.getSnapshot().sessionsError).toBeNull();
+    await expect(store.moreSessions()).rejects.toThrow('下一页失败');
+    expect(store.getSnapshot().sessions).toHaveLength(20); expect(store.getSnapshot().sessions[0].id).toBe('a'); expect(store.getSnapshot().nextCursor).toBe('cursor-a');
+    moreFailure = false; await store.moreSessions();
+    expect(store.getSnapshot().sessions).toHaveLength(21); expect(store.getSnapshot().sessions.at(-1)?.id).toBe('b'); expect(store.getSnapshot().sessionsError).toBeNull();
+  });
+
+  it('blocks sends before selection is loaded and rejects the stale read when revisiting the same chat', async () => {
+    const late = deferred<Response>(); let reads = 0;
+    const { store, requests } = harness(path => path === '/api/sessions/a'
+      ? ++reads === 1 ? late.promise : json({ id: 'a', title: '最新的 A', messages: [] }) : undefined);
+    await store.start(); const first = store.openSession('a');
+    expect(store.getSnapshot().sessionLoading.a).toBe(true);
+    expect((await store.sendMessage('太快的发送')).error).toContain('等待');
+    await store.openSession('b'); await store.openSession('a');
+    late.resolve(json({ id: 'a', title: '过期的 A', messages: [] })); await first;
+    expect(store.getSnapshot().currentId).toBe('a'); expect(store.getSnapshot().session?.title).toBe('最新的 A');
+    expect(store.getSnapshot().sessionLoading.a).toBeUndefined(); expect(requests.some(item => item.path.endsWith('/turn'))).toBe(false);
+  });
+
+  it('preserves metadata save success when only the subsequent sidebar refresh fails', async () => {
+    let saved = false;
+    const { store } = harness((path, options) => {
+      if (path === '/api/sessions/a' && options.method === 'PATCH') { saved = true; return json({ id: 'a', title: '保存成功', pinned: false }); }
+      if (path.startsWith('/api/sessions?') && saved) return json({ detail: '列表失败' }, 503);
+    });
+    await store.start(); await store.openSession('a');
+    await expect(store.renameSession('a', '保存成功')).resolves.toBeUndefined();
+    expect(store.getSnapshot().session?.title).toBe('保存成功'); expect(store.getSnapshot().error).toContain('操作已保存');
+    expect(store.getSnapshot().sessionsError).toContain('列表失败');
+  });
+
+  it('locks a remote attachment removal against send and cannot restore a deleted chat from a late response', async () => {
+    const removed = deferred<Response>();
+    const { store, requests } = harness(path => path.endsWith('/images/photo') ? removed.promise : undefined,
+      { attachments: { load: async () => ({ a: [{ id: 'photo', name: 'photo.jpg', local: false }] }), save: async () => {} } });
+    await store.start(); await store.openSession('a'); store.setDraft('用这张图片');
+    const removing = store.removeImage('photo');
+    expect(store.getSnapshot().imageUploads.a).toBe(true); expect((await store.sendMessage()).error).toContain('等待');
+    await store.deleteSession('a'); removed.resolve(json({ deleted: true })); await removing;
+    expect(store.getSnapshot().imageDrafts.a).toBeUndefined(); expect(store.getSnapshot().cache.a).toBeUndefined();
+    expect(requests.some(item => item.path.endsWith('/turn'))).toBe(false);
+  });
+
+  it('offers an unaccepted first-message draft after leaving its empty server session', async () => {
+    const { store } = harness(path => path.endsWith('/turn') ? json({ detail: '模型暂时不可用' }, 503) : undefined);
+    await store.start(); store.setDraft('先帮我选一道菜'); await store.sendMessage();
+    expect(store.getSnapshot().currentId).toBe('created'); expect(store.getSnapshot().sessions).toEqual([]);
+    store.newSession(); expect(store.recoverableDraftKey()).toBe('created');
+    store.resumeDraft(); await flush();
+    expect(store.getSnapshot().currentId).toBe('created'); expect(store.getSnapshot().drafts.created).toBe('先帮我选一道菜');
+  });
+
+  it('waits for an in-flight session refresh before starting a saved confirmation', async () => {
+    const refreshed = deferred<Response>(); let reads = 0, requestId = '';
+    const { store, requests } = harness((path, options) => {
+      if (path === '/api/sessions/a' && !options.method) {
+        if (++reads === 2) return refreshed.promise;
+        if (requestId) return json({ id: 'a', last_status: 'completed', last_run: { request_id: requestId }, messages: [{ role: 'assistant', content: '继续完成' }] });
+      }
+      if (path.endsWith('/turn')) { requestId = JSON.parse(options.body as string).request_id; return stream([{ type: 'result', result: { status: 'completed', text: '继续完成' } }, { type: 'done', status: 'completed' }]); }
+    });
+    await store.start(); await store.openSession('a'); const refresh = store.refreshSession('a');
+    store.enqueueContinuation('a', '确认后继续', 'confirm:wait-for-read'); await flush();
+    expect(store.getSnapshot().continuations.a.stage).toBe('queued'); expect(requests.some(item => item.path.endsWith('/turn'))).toBe(false);
+    refreshed.resolve(json({ id: 'a', last_status: 'idle', messages: [] })); await refresh;
+    await vi.waitFor(() => expect(store.getSnapshot().cache.a.messages.at(-1)?.content).toBe('继续完成'));
+    expect(store.getSnapshot().continuations.a).toBeUndefined(); expect(requestId).toBe('confirm:wait-for-read');
   });
 });

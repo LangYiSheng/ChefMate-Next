@@ -15,14 +15,14 @@ export function recipeDraft(record: Data) {
   const recipe = record.document;
   return {name: recipe.name, description: recipe.description || '', servings: recipe.servings, servings_evidence: recipe.servings_evidence || '', prep_time_min: recipe.prep_time_min, cook_time_min: recipe.cook_time_min, total_time_min: recipe.total_time_min, time_evidence: record.time_evidence || '', source_kind: record.source_kind, source_text: record.source_text || '', warnings: [...(recipe.warnings || [])], steps: [...recipe.steps], ingredients: recipe.ingredients.map((food: Data) => ({name: food.canonical_name || '', amount: food.raw_amount ? `${food.raw_amount}${food.raw_unit || ''}` : '适量', grams: food.grams, amount_evidence: food.amount_evidence || '', scalable: food.scalable, usda_query: food.usda_query || '', allergens: food.allergens || []}))};
 }
-export function updateRecipeIngredient(previous: Data, key: string, value: string) {
-  if (previous[key] === value) return previous;
-  return {...previous, [key]: value, grams: null, amount_evidence: '', ...(key === 'name' ? {usda_query: '', allergens: []} : {})};
+export function updateRecipeIngredient(previous: Data, key: string, value: string, reference: Data = previous) {
+  const next = {...previous, [key]: value}, sameName = next.name.trim() === reference.name.trim(), unchanged = sameName && next.amount.trim() === reference.amount.trim();
+  return {...next, grams: unchanged ? reference.grams : null, amount_evidence: unchanged ? reference.amount_evidence : '', usda_query: sameName ? reference.usda_query : '', allergens: sameName ? reference.allergens : []};
 }
 export function emptyFoodItem() {
   return {name: '', portion: '', amount_g: null, portion_basis: 'unknown', nutrition: Object.fromEntries(nutritionKeys.map(key => [key, null])), nutrition_basis: 'unknown', evidence: '', assumptions: []};
 }
-export function updateFoodItem(previous: Data, key: string, value: any): Data {
+export function updateFoodItem(previous: Data, key: string, value: any, reference: Data = previous): Data {
   const item = structuredClone(previous);
   if (key === 'name' || key === 'portion') {
     if (item[key] === value) return item;
@@ -31,12 +31,12 @@ export function updateFoodItem(previous: Data, key: string, value: any): Data {
     if (key === 'name' && item.portion_basis === 'estimated') item.assumptions = ['份量描述沿用原估计；食物名称已修改，仍需重新核对。'];
   } else if (key === 'amount_g') {
     const grams = numeric(value);
-    if (grams !== null && grams > 0 && item.amount_g > 0) {
-      item.nutrition = Object.fromEntries(nutritionKeys.map(key => [key, Number.isFinite(item.nutrition[key]) ? rounded(item.nutrition[key] * grams / item.amount_g) : null]));
+    if (grams !== null && grams > 0 && reference.amount_g > 0) {
+      item.nutrition = Object.fromEntries(nutritionKeys.map(key => [key, Number.isFinite(reference.nutrition[key]) ? rounded(reference.nutrition[key] * grams / reference.amount_g) : null]));
       const known = nutritionKeys.some(key => item.nutrition[key] !== null);
       item.nutrition_basis = known ? 'estimated' : 'unknown';
       item.evidence = known ? '按原克重与营养同比例换算，未重新测量食材或烹饪差异。' : '';
-      if (known) item.assumptions = [...(item.assumptions || []).filter((line: string) => !line.startsWith('假定食材组成和烹饪用油比例不变，按 ')), `假定食材组成和烹饪用油比例不变，按 ${item.amount_g} 克换算至 ${grams} 克。`];
+      if (known) item.assumptions = [...(item.assumptions || []).filter((line: string) => !line.startsWith('假定食材组成和烹饪用油比例不变，按 ')), `假定食材组成和烹饪用油比例不变，按 ${reference.amount_g} 克换算至 ${grams} 克。`];
     } else {item.nutrition = Object.fromEntries(nutritionKeys.map(key => [key, null])); item.nutrition_basis = 'unknown'; item.evidence = '';}
     item.amount_g = grams;
     if (grams !== null && grams > 0) {item.portion = `${grams} 克`; item.portion_basis = 'user_provided';}

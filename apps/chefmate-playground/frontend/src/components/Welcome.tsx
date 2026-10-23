@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useState, type CSSProperties } from 'react';
 import { Brand, Icon } from './Icon';
 
 const starters = [
@@ -26,7 +26,7 @@ function Starter({ item, onUse }: { item: typeof starters[number]; onUse: (text:
   const [value, setValue] = useState(item.blank || '');
   return <article className="starter-card"><span className="starter-icon"><Icon name={item.icon} /></span>
     <div className="starter-title">{item.title}{item.blank && <> <input className="starter-blank" value={value} maxLength={90} aria-label={item.title}
-      onFocus={event => event.currentTarget.select()} onChange={event => setValue(event.target.value)}
+      style={{ '--blank-width': `${Math.max(3, Math.min(18, value.length + 1))}em` } as CSSProperties} onFocus={event => event.currentTarget.select()} onChange={event => setValue(event.target.value)}
       onKeyDown={event => { if (event.key === 'Enter') onUse(item.text(value), item.image); }} /></>}</div>
     <p>{item.hint}</p><button type="button" className="starter-use" onClick={() => onUse(item.text(value), item.image)}>试试这个<Icon name="arrow-up-right" /></button>
   </article>;

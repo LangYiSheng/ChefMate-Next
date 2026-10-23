@@ -34,7 +34,9 @@
 
 前后端共同变化时，运行 Python 测试、`npm --prefix apps/chefmate-playground/frontend test` 与 `npm --prefix apps/chefmate-playground/frontend run build`，并检查真实 HTTP、构建资源加载、浏览器控制台与桌面/窄屏/横屏。使用隔离会话数据库；数据库写测试使用随机 schema，模型验收明确标出真实调用。
 
-前端源文件在 `frontend/src/`，CSS、字体、品牌与图标资源在 `frontend/public/`；生成的 `web/` 由 FastAPI 提供 SPA 页面和 `/static` 资源。直接使用 uv 启动前先运行 `npm ci` 和构建；`run.ps1` 自动按这个顺序执行。
+前端源码和样式位于 `frontend/src/`。`main.tsx` 导入 [styles/index.css](../../apps/chefmate-playground/frontend/src/styles/index.css)，由 `foundation/controls/shell/chat/details.css` 分别管理颜色与字体角色、公共控件、页面框架、聊天及详情布局。设置、个人中心和厨房样式随功能域组织，并限定在各自根容器；使用共享的 `--color-*`、`--font-*`，避免跨页面覆盖同名控件。
+
+`frontend/public/` 只保存字体、品牌和第三方图标资源。生成的 `web/` 由 FastAPI 提供 SPA 页面和 `/static` 资源，不手工修改构建输出。直接使用 uv 启动前先运行 `npm ci` 和构建；`run.ps1` 自动按这个顺序执行。视觉验收同时检查浅色、深色、字体角色、估算开关、窄屏和横屏，以及实际加载的构建资源。
 
 当前规范放在 `docs/design`，原理与案例放在 `docs/guide`，参数放在 `docs/reference`，计划和验收放在 `docs/engineering`。README 保持产品入口与运行路径，用链接承接详细合同，避免不断追加日期小节。
 

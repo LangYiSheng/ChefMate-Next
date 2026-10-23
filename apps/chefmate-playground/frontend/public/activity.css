@@ -1,6 +1,0 @@
-.activity-label{display:inline-flex;align-items:center;gap:8px;min-width:0;color:var(--color-muted)}
-.activity-spinner{width:15px;height:15px;flex:none;animation:activity-spin 1s linear infinite}
-.activity-text{overflow-wrap:anywhere}
-.trace-orbit.active{animation:activity-spin 1s linear infinite}
-@keyframes activity-spin{to{transform:rotate(360deg)}}
-@media(prefers-reduced-motion:reduce){.activity-spinner,.trace-orbit.active{animation:none}}

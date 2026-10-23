@@ -1,16 +1,17 @@
 import { api } from '../../runtime/http';
 import { chefStore } from '../../runtime/store';
-import { type Action, type Json, type View, type Timer, clone, changedValues, compareVersions, makeAction, validView, timerClock, workspaceTimers, timerPresentation } from './protocol';
+import { type Action, type Json, type View, type Timer, clone, changedValues, compareVersions, makeAction, validView, timerClock, workspaceTimers, timerPresentation, completionText } from './protocol';
 
 export type Draft = Json & { kind: string; baseRevision: number; conflict?: boolean };
 type PendingAction = { request: Action; kind?: string; clearDraft?: string; continuation?: string; requestId?: string };
-export type Entry = { snapshot: Json | null; views: View[]; drafts: Record<string, Draft>; loading: boolean; saving: boolean; running: boolean; error: string; activeKind: string | null; failed: PendingAction | null; conflict: PendingAction | null; pending: Json | null; acknowledged: string[]; timerStates: Record<string, string>; clock: () => number; version: number };
-type State = { entries: Record<string, Entry>; reminders: { sessionId: string; timer: Timer }[]; tick: number };
+export type Entry = { snapshot: Json | null; views: View[]; drafts: Record<string, Draft>; loading: boolean; saving: boolean; running: boolean; error: string; activeKind: string | null; failed: PendingAction | null; conflict: PendingAction | null; pending: Json | null; acknowledged: string[]; timerStates: Record<string, string>; clock: () => number; version: number; completion: Json | null };
+export type TimerEvent = { sequence: number; sessionId: string; timerId?: string; reason: 'started' | 'expired' | 'inspect' };
+type State = { entries: Record<string, Entry>; reminders: { sessionId: string; timer: Timer }[]; tick: number; timerEvent: TimerEvent | null };
 const storageKey = (id: string) => `chefmate:react-workspace:${id}`;
 function readSaved(id: string): Json { try { return JSON.parse(localStorage.getItem(storageKey(id)) || '{}'); } catch { return {}; } }
-const defaultEntry = (id: string): Entry => { const saved = readSaved(id); return { snapshot: null, views: [], drafts: saved.drafts || {}, loading: false, saving: false, running: false, error: '', activeKind: null, failed: saved.failed || null, conflict: null, pending: null, acknowledged: saved.acknowledged || [], timerStates: {}, clock: () => Date.now(), version: 0 }; };
+const defaultEntry = (id: string): Entry => { const saved = readSaved(id); return { snapshot: null, views: [], drafts: saved.drafts || {}, loading: false, saving: false, running: false, error: '', activeKind: null, failed: saved.failed || null, conflict: null, pending: null, acknowledged: saved.acknowledged || [], timerStates: {}, clock: () => Date.now(), version: 0, completion: saved.completion || null }; };
 export class WorkspaceStore {
-  private state: State = { entries: {}, reminders: [], tick: 0 };
+  private state: State = { entries: {}, reminders: [], tick: 0, timerEvent: null };
   private listeners = new Set<() => void>();
   private loads = new Map<string, Promise<Json | null>>();
   private refreshAfterLoad = new Set<string>();
@@ -29,7 +30,7 @@ export class WorkspaceStore {
     else this.state = { ...this.state };
     this.listeners.forEach(listener => listener());
   }
-  private persist(id: string) { const entry = this.entry(id); try { localStorage.setItem(storageKey(id), JSON.stringify({ drafts: entry.drafts, failed: entry.failed, acknowledged: entry.acknowledged.slice(-100) })); } catch { /* State remains in memory when storage is unavailable. */ } }
+  private persist(id: string) { const entry = this.entry(id); try { localStorage.setItem(storageKey(id), JSON.stringify({ drafts: entry.drafts, failed: entry.failed, acknowledged: entry.acknowledged.slice(-100), completion: entry.completion })); } catch { /* State remains in memory when storage is unavailable. */ } }
   initialize(notify?: (text: string) => void) {
     if (notify) this.notify = notify;
     this.mounts++;
@@ -68,14 +69,17 @@ export class WorkspaceStore {
     } catch { /* A blocked audio device must not stop the reminder. */ }
   }
   tick() {
-    let hasTimers = false; const reminders = [...this.state.reminders];
+    let hasTimers = false, chime = false; const reminders = [...this.state.reminders];
     for (const [sessionId, entry] of Object.entries(this.state.entries)) for (const timer of workspaceTimers(entry.views)) {
       hasTimers = true; const display = timerPresentation(timer, entry.clock()), previous = entry.timerStates[timer.id];
-      if (display.expired && !entry.acknowledged.includes(timer.id) && previous !== 'expired' && !reminders.some(item => item.sessionId === sessionId && item.timer.id === timer.id)) { reminders.push({ sessionId, timer }); this.notify(`${timer.label}时间到，看看锅里的状态。`); this.sound(); }
+      if (display.expired && !entry.acknowledged.includes(timer.id) && previous !== 'expired' && !reminders.some(item => item.sessionId === sessionId && item.timer.id === timer.id)) { reminders.push({ sessionId, timer }); this.notify(`${timer.label}时间到，看看锅里的状态。`); this.timerEvent(sessionId, timer.id, 'expired'); chime = true; }
       entry.timerStates[timer.id] = display.state;
     }
+    if (chime) this.sound();
     if (hasTimers || reminders.length !== this.state.reminders.length) { this.state = { ...this.state, reminders, tick: this.state.tick + 1 }; this.emit(); }
   }
+  private timerEvent(sessionId: string, timerId: string | undefined, reason: TimerEvent['reason']) { this.state = { ...this.state, timerEvent: { sequence: (this.state.timerEvent?.sequence || 0) + 1, sessionId, timerId, reason } }; }
+  openTimers(sessionId: string, timerId?: string) { this.timerEvent(sessionId, timerId, 'inspect'); this.emit(); }
   acknowledge(id: string, timerId: string) { const entry = this.entry(id); entry.acknowledged = [...new Set([...entry.acknowledged, timerId])]; this.state = { ...this.state, reminders: this.state.reminders.filter(item => item.sessionId !== id || item.timer.id !== timerId) }; this.emit(id); }
   setRunning(id: string, running: boolean) { if (this.removed.has(id)) return; const entry = this.entry(id); if (entry.running === running) return; entry.running = running; if (!running && entry.pending) { const response = entry.pending; entry.pending = null; this.receive(id, response); } this.emit(id); }
   pendingQuestion(id: string) { if (this.removed.has(id)) return null; const entry = this.entry(id); return entry.running ? null : entry.snapshot?.pending_question || null; }
@@ -89,19 +93,33 @@ export class WorkspaceStore {
       if (!pending || compareVersions(snapshot, pending) >= 0) entry.pending = { ...clone(response), _received: received };
       if (!immediate) return false;
     }
+    const hadSnapshot = Boolean(entry.snapshot), oldTimerIds = new Set(workspaceTimers(entry.views).map(timer => timer.id));
     const incoming = (response.views || []).filter(validView) as View[];
     const serverNow = incoming.map(view => view.data.server_now).filter(Boolean).sort().at(-1);
     if (serverNow) entry.clock = timerClock(serverNow, () => performance.now(), received);
     const visible = entry.running ? incoming.filter(view => entry.views.some(old => old.id === view.id) || view.kind === userKind) : incoming;
     entry.views = entry.running ? [...entry.views.filter(old => !visible.some(view => view.id === old.id || userKind && old.kind === userKind && view.kind === userKind)), ...clone(visible)] : clone(visible);
     entry.snapshot = clone(snapshot);
+    if (response.cooking_intake) entry.completion = clone(response.cooking_intake);
+    if (snapshot.stage !== 'completed') entry.completion = null;
+    const introduced = workspaceTimers(entry.views).filter(timer => !oldTimerIds.has(timer.id) && ['running', 'paused'].includes(timer.status));
+    if (hadSnapshot && introduced.length && !entry.saving && !entry.running) this.timerEvent(id, introduced.at(-1)!.id, 'started');
     for (const [oldId, draft] of Object.entries(entry.drafts)) {
       if (draft.kind === 'question') continue;
       if (!entry.views.some(view => view.id === oldId)) { const replacement = entry.views.find(view => view.kind === draft.kind); if (replacement) { entry.drafts[replacement.id] = draft; delete entry.drafts[oldId]; } }
       if (draft.baseRevision !== snapshot.revision) draft.conflict = true;
     }
-    if (entry.failed && !entry.saving && snapshot.recent_actions?.some((action: Json) => action.action_id === entry.failed!.request.action_id)) {
+    if (entry.failed && !entry.saving && entry.failed.request.type !== 'complete_meal' && snapshot.recent_actions?.some((action: Json) => action.action_id === entry.failed!.request.action_id)) {
       const pending = entry.failed; entry.failed = null; entry.error = '';
+      if (pending.request.type === 'change_servings') {
+        const view = entry.views.find(view => view.kind === 'meal_plan'), draft = view && entry.drafts[view.id];
+        const { recipe_id: recipeId, servings } = pending.request.payload;
+        if (view && draft && draft.servings && draft.servings[recipeId] === servings) {
+          delete draft.servings[recipeId]; draft.baseline = { ...(draft.baseline || {}), [recipeId]: servings };
+          draft.baseRevision = snapshot.revision; draft.conflict = false;
+          if (!Object.keys(draft.servings).length) delete entry.drafts[view.id];
+        }
+      }
       if (pending.clearDraft) { delete entry.drafts[pending.clearDraft]; const replacement = entry.views.find(view => view.kind === pending.kind); if (replacement) delete entry.drafts[replacement.id]; }
       if (pending.continuation) queueMicrotask(() => this.continueTurn(id, pending.continuation!, pending.requestId || pending.request.action_id));
     }
@@ -161,6 +179,12 @@ export class WorkspaceStore {
         throw Object.assign(new Error(latest.error), { knownRejected: true });
       }
       latest.failed = null;
+      if (type === 'complete_meal') this.notify(completionText(response.cooking_intake));
+      if (type === 'start_timer') {
+        const timer = [...workspaceTimers(latest.views)].reverse().find(timer => ['running', 'paused'].includes(timer.status)
+          && (payload.step_id ? timer.recipe_id === payload.recipe_id && timer.step_id === payload.step_id : timer.label === payload.label && timer.seconds === payload.seconds));
+        if (timer) this.timerEvent(id, timer.id, 'started');
+      }
       if (options.clearDraft) { delete latest.drafts[options.clearDraft]; const migrated = latest.views.find(item => item.kind === view?.kind); if (migrated && migrated.id !== options.clearDraft) delete latest.drafts[migrated.id]; }
       if (type === 'open_recipe_detail') latest.activeKind = 'recipe_detail';
       succeeded = true; return response;

@@ -29,7 +29,7 @@
 
 ## App 前端
 
-根目录：[`apps/chefmate-playground/frontend`](../../apps/chefmate-playground/frontend)。使用 React 19.3.1、TypeScript 7 和 Vite 8；组件、状态服务和前端测试位于 `src/`，原有视觉资源保留在 `public/`。
+根目录：[`apps/chefmate-playground/frontend`](../../apps/chefmate-playground/frontend)。使用 React 19.3.1、TypeScript 7 和 Vite 8；组件、状态服务、样式和前端测试位于 `src/`，`public/` 保存字体、品牌与第三方图标资源。
 
 | 模块 | 职责 |
 | --- | --- |
@@ -41,9 +41,15 @@
 | `src/features/workspace/` | 厨房状态服务、白名单视图、问答、专注模式与计时 |
 | `src/features/settings/` | 设置读取与保存、外观、记忆、用量与导航保护 |
 | `src/features/centers/` | 菜谱中心、编辑器、食光手记与个人饮食 |
-| `public/colors.css` / `public/form-controls.css` / `src/react.css` | 语义颜色、控件规范与 React 布局 |
+| `src/styles/index.css` / `foundation.css` | 全局样式入口、本地字体声明、语义颜色与字体角色 |
+| `src/styles/controls.css` / `shell.css` | 公共控件、主框架、侧栏、移动抽屉与布局断点 |
+| `src/styles/chat.css` / `details.css` | 聊天、输入、消息卡片、菜谱与调试详情布局 |
+| `src/features/settings/settings-react.css` / `centers/centers-react.css` / `workspace/workspace.css` | 各功能域的作用域样式，复用全局颜色与字体角色 |
+| `public/fonts/` / `brand/` / `vendor/` | 本地字体、品牌矢量与 Lucide sprite，随构建复制 |
 
 组件用 `useSyncExternalStore` 订阅稳定快照，运行中的会话由状态服务持有。组件卸载、切换页面和关闭专注模式都不请求取消后端任务；显式停止才调用取消端点。异步响应核对生命周期和来源会话，避免迟到结果覆盖新选择。新增行为测试随对应模块保存为 `*.test.ts` 或 `*.test.tsx`，由 Vitest 执行。
+
+厨房状态与持久草稿由 `features/workspace/store.ts` 管理；`QuestionPanel.tsx`、`Timers.tsx` 与 `ReadingPages.tsx` 分别负责确认问题、计时浮层与长说明分页。模型轮次完成后才展示新表单，确认动作保存成功后再续轮。计时使用单一状态服务和服务端时钟，React 组件挂载不会新增独立计时循环；备料保留完整列表，步骤浏览与执行确认分开。具体交互见[视觉规范](../design/ui.md)。
 
 `npm run build` 先运行 TypeScript 检查，再将 SPA 与 `public/` 资源输出到 `apps/chefmate-playground/web/`。后端从这个目录提供页面，并把构建资源挂载到 `/static`；`web/` 为生成目录，不手改构建后的文件。
 

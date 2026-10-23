@@ -66,6 +66,8 @@ export interface RuntimeState {
   loading: boolean;
   preparing: boolean;
   sessionsLoading: boolean;
+  sessionsError: string | null;
+  sessionLoading: Record<string, boolean>;
   nextCursor: string | null;
   error: string | null;
 }

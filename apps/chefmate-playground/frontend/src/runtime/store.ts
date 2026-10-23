@@ -57,6 +57,8 @@ export class ChefStore {
   private hydratedImages = false;
   private persistQueue: Promise<void> = Promise.resolve();
   private continuationScheduled = false;
+  private continuationOperations = new Map<string, object>();
+  private metadata = new Map<string, { version: number; values: ApiData }>();
   private pollInterval: number;
   private submissions: Record<string, PendingSubmission>;
   private onFocus = (): void => {
@@ -85,7 +87,7 @@ export class ChefStore {
     this.state = {
       status: null, sessions: [], currentId: this.readString(ACTIVE_KEY), session: null, cache: {},
       blankId: saved.blankId || blankId(), drafts: saved.drafts || {}, imageDrafts: {}, imageUploads: {}, runs: {}, continuations,
-      loading: false, preparing: false, sessionsLoading: false, nextCursor: null, error: null,
+      loading: false, preparing: false, sessionsLoading: false, sessionsError: null, sessionLoading: {}, nextCursor: null, error: null,
     };
   }
 
@@ -108,7 +110,8 @@ export class ChefStore {
   private report(error: unknown): void { this.emit({ error: errorText(error) }); }
   clearError = (): void => { this.emit({ error: null }); };
   draftKey = (id: string | null = this.state.currentId): string => id || this.state.blankId;
-  busy = (id: string | null = this.state.currentId): boolean => Boolean(id && (this.active.has(id) || this.state.cache[id]?.running));
+  busy = (id: string | null = this.state.currentId): boolean => Boolean(id && (this.active.has(id) || this.state.runs[id]
+    || (this.state.cache[id] ? this.state.cache[id].running : this.state.sessions.find(item => item.id === id)?.running)));
   pendingQuestion = (id: string | null = this.state.currentId): ApiData | null => {
     if (!id) return null;
     // An explicit null from the workspace is authoritative after an answer saves.
@@ -153,7 +156,8 @@ export class ChefStore {
         } catch { /* Text-only use is available if local attachment storage is disabled. */ }
       }
       if (!this.valid(lifecycle)) return;
-      const recoverIds = new Set([...Object.keys(this.submissions), ...(this.state.currentId ? [this.state.currentId] : [])]);
+      const recoverIds = new Set([...Object.keys(this.submissions), ...Object.keys(this.state.continuations),
+        ...Object.values(this.state.cache).filter(session => session.running).map(session => session.id), ...(this.state.currentId ? [this.state.currentId] : [])]);
       await Promise.allSettled([this.loadStatus(), this.loadSessions(), ...[...recoverIds].map(id => this.refreshSession(id))]);
       if (!this.valid(lifecycle)) return;
       this.emit({ loading: false });
@@ -170,8 +174,11 @@ export class ChefStore {
     for (const timer of this.polls.values()) clearTimeout(timer);
     this.polls.clear();
     for (const run of this.active.values()) run.controller.abort();
-    this.active.clear(); this.imageOperations.clear();
-    this.emit({ runs: {}, imageUploads: {}, preparing: false, loading: false, sessionsLoading: false });
+    this.active.clear(); this.imageOperations.clear(); this.continuationOperations.clear();
+    const continuations = Object.fromEntries(Object.entries(this.state.continuations).map(([id, item]) => [id,
+      item.stage === 'sending' ? { ...item, stage: 'queued' as const } : item]));
+    this.emit({ runs: {}, imageUploads: {}, preparing: false, loading: false, sessionsLoading: false, sessionLoading: {}, continuations });
+    this.saveContinuations();
   };
 
   loadStatus = async (): Promise<void> => {
@@ -188,7 +195,7 @@ export class ChefStore {
     const target = more ? 20 : Math.max(20, this.state.sessions.length);
     let cursor = more ? this.state.nextCursor : null;
     let items = more ? [...this.state.sessions] : [], received = 0;
-    this.emit({ sessionsLoading: true });
+    this.emit({ sessionsLoading: true, sessionsError: null });
     try {
       do {
         const page = await this.request<ApiData>(`/api/sessions?limit=20${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ''}`);
@@ -202,7 +209,10 @@ export class ChefStore {
       } while (!more && cursor && received < target);
       this.emit({ sessions: items, nextCursor: cursor });
       for (const item of items) if (item.running && !this.active.has(item.id)) this.schedulePoll(item.id);
-    } catch (error) { if (this.valid(lifecycle) && epoch === this.listEpoch) this.report(error); throw error; }
+    } catch (error) {
+      if (this.valid(lifecycle) && epoch === this.listEpoch) this.emit({ sessionsError: errorText(error), error: errorText(error) });
+      throw error;
+    }
     finally { if (this.valid(lifecycle) && epoch === this.listEpoch) this.emit({ sessionsLoading: false }); }
   };
   moreSessions = (): Promise<void> => this.loadSessions(true);
@@ -217,10 +227,12 @@ export class ChefStore {
   recoverableDraftKey = (): string | null => {
     const current = this.draftKey();
     return [...new Set([...Object.keys(this.state.drafts), ...Object.keys(this.state.imageDrafts)])].reverse()
-      .find(key => key !== current && key.startsWith('draft:') && (this.state.drafts[key]?.trim() || this.state.imageDrafts[key]?.length)) || null;
+      .find(key => key !== current && (key.startsWith('draft:') || !this.state.sessions.some(session => session.id === key) && !this.busy(key))
+        && (this.state.drafts[key]?.trim() || this.state.imageDrafts[key]?.length)) || null;
   };
   resumeDraft = (key = this.recoverableDraftKey()): void => {
     if (!key || this.state.preparing) return;
+    if (!key.startsWith('draft:')) { void this.openSession(key).catch(() => undefined); return; }
     this.selectionEpoch++; this.emit({ currentId: null, blankId: key, error: null }); this.saveSelection(); this.saveDrafts();
   };
 
@@ -233,10 +245,13 @@ export class ChefStore {
   refreshSession = async (id: string | null = this.state.currentId): Promise<void> => {
     if (!id || this.active.has(id) || this.deleted.has(id)) return;
     const lifecycle = this.lifecycle, epoch = (this.sessionEpoch.get(id) || 0) + 1;
+    const metadataVersion = this.metadata.get(id)?.version || 0;
     this.sessionEpoch.set(id, epoch);
+    this.emit({ sessionLoading: { ...this.state.sessionLoading, [id]: true } });
     try {
-      const session = normalizeSession(await this.request(url(id)));
+      let session = normalizeSession(await this.request(url(id)));
       if (!this.valid(lifecycle) || this.sessionEpoch.get(id) !== epoch || this.active.has(id) || this.deleted.has(id)) return;
+      if ((this.metadata.get(id)?.version || 0) !== metadataVersion) session = { ...session, ...this.metadata.get(id)!.values };
       this.setCache(id, session); this.adapter?.setRunning?.(id, Boolean(session.running));
       this.reconcileSubmission(id, session);
       if (!session.running && this.state.runs[id]?.recovering) this.emit({ runs: omit(this.state.runs, id) });
@@ -249,6 +264,10 @@ export class ChefStore {
       if (this.state.currentId === id) this.report(error);
       if (this.state.cache[id]?.running || this.state.sessions.some(item => item.id === id && item.running)) this.schedulePoll(id);
       throw error;
+    } finally {
+      if (this.valid(lifecycle) && this.sessionEpoch.get(id) === epoch) {
+        this.emit({ sessionLoading: omit(this.state.sessionLoading, id) }); this.scheduleContinuations();
+      }
     }
   };
 
@@ -264,6 +283,7 @@ export class ChefStore {
 
   private recoverMissing(id: string): void {
     this.stopPoll(id);
+    this.deleted.add(id); this.imageOperations.delete(id); this.touchedImages.add(id);
     this.forgetSubmission(id);
     const key = this.state.currentId === id ? blankId() : `draft:recovered:${id}`;
     const drafts = { ...this.state.drafts }, images = { ...this.state.imageDrafts };
@@ -271,9 +291,11 @@ export class ChefStore {
     if (images[id]) {
       images[key] = images[id].filter(image => image.blob).map(image => ({ ...image, id: `local:${crypto.randomUUID()}`, local: true })); delete images[id];
     }
+    const selected = this.state.currentId === id;
     this.emit({ cache: omit(this.state.cache, id), sessions: this.state.sessions.filter(item => item.id !== id), drafts, imageDrafts: images,
+      runs: omit(this.state.runs, id), imageUploads: omit(this.state.imageUploads, id), sessionLoading: omit(this.state.sessionLoading, id),
       continuations: omit(this.state.continuations, id), ...(this.state.currentId === id ? { currentId: null, blankId: key } : {}),
-      error: '之前的对话已不存在，已打开新对话；未发送的内容已保留。' });
+      ...(selected ? { error: '之前的对话已不存在，已打开新对话；未发送的内容已保留。' } : {}) });
     this.adapter?.remove?.(id); this.saveSelection(); this.saveDrafts(); this.saveImages(); this.saveContinuations();
   }
 
@@ -282,10 +304,14 @@ export class ChefStore {
     try {
       const saved = await this.request<ApiData>(url(id), { method: 'PATCH', body: JSON.stringify(values) });
       if (!this.valid(lifecycle) || this.deleted.has(id)) return;
+      const previous = this.metadata.get(id);
+      this.metadata.set(id, { version: (previous?.version || 0) + 1, values: { ...previous?.values, ...saved } });
       const cached = this.state.cache[id];
       this.emit({ sessions: this.state.sessions.map(item => item.id === id ? { ...item, ...saved } : item),
         cache: cached ? { ...this.state.cache, [id]: { ...cached, ...saved } } : this.state.cache });
-      await this.loadSessions();
+      await this.loadSessions().catch(() => {
+        if (this.valid(lifecycle)) this.emit({ error: '操作已保存，列表暂时无法同步，请重试读取会话列表。' });
+      });
     } catch (error) { if (this.valid(lifecycle)) this.report(error); throw error; }
   };
   renameSession = (id: string, title: string): Promise<void> => this.editSession(id, { title: title.trim() });
@@ -300,7 +326,7 @@ export class ChefStore {
       this.forgetSubmission(id);
       releaseImages(this.state.imageDrafts[id]); this.imageOperations.delete(id); this.touchedImages.add(id);
       this.emit({ cache: omit(this.state.cache, id), sessions: this.state.sessions.filter(item => item.id !== id), drafts: omit(this.state.drafts, id),
-        imageDrafts: omit(this.state.imageDrafts, id), imageUploads: omit(this.state.imageUploads, id), continuations: omit(this.state.continuations, id),
+        imageDrafts: omit(this.state.imageDrafts, id), imageUploads: omit(this.state.imageUploads, id), continuations: omit(this.state.continuations, id), sessionLoading: omit(this.state.sessionLoading, id),
         ...(this.state.currentId === id ? { currentId: null, blankId: blankId() } : {}) });
       this.adapter?.remove?.(id); this.saveSelection(); this.saveDrafts(); this.saveImages(); this.saveContinuations();
     } catch (error) { if (this.valid(lifecycle)) this.report(error); throw error; }
@@ -336,13 +362,21 @@ export class ChefStore {
   removeImage = async (imageId: string, id: string | null = this.state.currentId): Promise<void> => {
     if (this.state.preparing || this.busy(id)) return;
     const key = this.draftKey(id), image = this.state.imageDrafts[key]?.find(item => item.id === imageId), lifecycle = this.lifecycle;
-    if (!image) return;
+    if (!image || this.imageOperations.has(key)) return;
+    const operation = {};
+    this.imageOperations.set(key, operation);
+    if (!image.local && id) this.emit({ imageUploads: { ...this.state.imageUploads, [key]: true } });
     try {
       if (!image.local && id) await this.request(`${url(id)}/images/${encodeURIComponent(imageId)}`, { method: 'DELETE' });
-      if (!this.valid(lifecycle)) return;
+      if (!this.valid(lifecycle) || this.imageOperations.get(key) !== operation) return;
       releaseImages([image]); this.touchedImages.add(key);
       this.emit({ imageDrafts: { ...this.state.imageDrafts, [key]: (this.state.imageDrafts[key] || []).filter(item => item.id !== imageId) } }); this.saveImages();
-    } catch (error) { if (this.valid(lifecycle)) this.report(error); throw error; }
+    } catch (error) { if (this.valid(lifecycle) && this.imageOperations.get(key) === operation) this.report(error); throw error; }
+    finally {
+      if (this.imageOperations.get(key) === operation) {
+        this.imageOperations.delete(key); this.emit({ imageUploads: omit(this.state.imageUploads, key) });
+      }
+    }
   };
 
   private moveDrafts(from: string, to: string): void {
@@ -364,7 +398,7 @@ export class ChefStore {
     this.emit({ cache: { ...this.state.cache, [session.id]: { ...session, messages } }, runs: { ...this.state.runs, [session.id]: this.publicRun(run) } });
   }
   private publicRun(run: ActiveRun): RunState {
-    return { sessionId: run.sessionId, requestId: run.requestId, input: run.input, status: run.status, cancelling: run.cancelling, recovering: run.recovering };
+    return { sessionId: run.sessionId, requestId: run.requestId, input: run.input, status: run.cancelling ? '正在停止，请稍等…' : run.status, cancelling: run.cancelling, recovering: run.recovering };
   }
   private applyEvent(run: ActiveRun, event: ApiData): void {
     this.updateRun(run, message => {
@@ -425,7 +459,7 @@ export class ChefStore {
     const fail = (message: string) => { this.emit({ error: message }); return { error: message }; };
     if (this.pendingQuestion(targetId)) return fail('先回答助手的问题，确认后就会接着处理。');
     if (fromComposer && targetId && this.state.continuations[targetId]) return fail('确认已保存，请先重试继续，或选择“暂不继续”后再发送。');
-    if (this.state.loading || this.state.preparing || this.busy(targetId) || this.state.imageUploads[sourceKey]) return { error: '请等待当前操作结束。' };
+    if (this.state.loading || this.state.preparing || this.busy(targetId) || fromComposer && this.state.imageUploads[sourceKey] || targetId && this.state.sessionLoading[targetId]) return { error: '请等待当前操作结束。' };
     if (!input && !images.length) return { error: '请输入消息或上传图片。' };
     if (!this.state.status?.ready) return fail('请先完成模型与数据库连接。');
     if (input.length > 8000) return fail('消息最多 8000 个字符，请缩短后发送。');
@@ -490,7 +524,7 @@ export class ChefStore {
     this.active.set(id, run);
     this.emit({ cache: { ...this.state.cache, [id]: { ...session, messages, running: true,
       title: !session.title_custom && ['新对话', '新会话', ''].includes(session.title) ? input.slice(0, 26) || '图片对话' : session.title } },
-      runs: { ...this.state.runs, [id]: this.publicRun(run) } });
+      runs: { ...this.state.runs, [id]: this.publicRun(run) }, sessionLoading: omit(this.state.sessionLoading, id) });
     this.adapter?.setRunning?.(id, true);
     if (fromComposer) {
       this.submissions[id] = { requestId, input, imageIds: metadata.map(image => image.id), paired: Boolean(options.message) };
@@ -528,9 +562,11 @@ export class ChefStore {
       message.tool_calls = (message.tool_calls || []).map(call => ({ ...call, running: false, ...(call.status === 'running' ? { status: 'interrupted' } : {}) }));
     });
     let canonical: Session | undefined, recovery = false;
+    const metadataVersion = this.metadata.get(id)?.version || 0;
     try {
-      const saved = normalizeSession(await this.request(url(id)));
+      let saved = normalizeSession(await this.request(url(id)));
       if (!this.valid(run.lifecycle) || this.active.get(id) !== run) return;
+      if ((this.metadata.get(id)?.version || 0) !== metadataVersion) saved = { ...saved, ...this.metadata.get(id)!.values };
       this.reconcileSubmission(id, saved);
       if (saved.running || saved.last_run?.request_id === run.requestId || saved.messages.some(message => message.role === 'user' && message.request_id === run.requestId)) canonical = saved;
       else this.updateRun(run, message => { if (message.error) message.retryAsNew = true; });
@@ -632,18 +668,24 @@ export class ChefStore {
   private async continueNext(): Promise<void> {
     if (!this.started || this.state.loading || this.state.preparing || !this.state.status?.ready) return;
     for (const [id, entry] of Object.entries(this.state.continuations)) {
-      if (entry.stage !== 'queued' || this.busy(id) || this.pendingQuestion(id)) continue;
-      const cached = this.state.cache[id];
-      // On reload, resolve whether the server already accepted this request first.
-      if (!cached) {
-        try { await this.refreshSession(id); } catch { return; }
-        if (this.state.continuations[id] !== entry || this.busy(id)) continue;
-      }
-      this.emit({ continuations: { ...this.state.continuations, [id]: { ...entry, stage: 'sending' } } }); this.saveContinuations();
-      const result = await this.sendMessage(entry.message, { sessionId: id, fromComposer: false, requestId: entry.requestId });
-      if (this.state.continuations[id]?.requestId === entry.requestId) {
-        this.emit({ continuations: { ...this.state.continuations, [id]: { ...entry, stage: 'failed', error: result.error || '确认已保存，下一轮尚未开始。' } } }); this.saveContinuations();
-      }
+      if (entry.stage !== 'queued' || this.busy(id) || this.pendingQuestion(id) || this.state.sessionLoading[id] || this.continuationOperations.has(id)) continue;
+      const operation = {}, lifecycle = this.lifecycle;
+      this.continuationOperations.set(id, operation);
+      try {
+        // On reload, resolve whether the server already accepted this request first.
+        if (!this.state.cache[id]) await this.refreshSession(id);
+        if (!this.valid(lifecycle) || this.continuationOperations.get(id) !== operation) return;
+        if (this.state.continuations[id] !== entry || this.busy(id) || this.pendingQuestion(id) || this.state.preparing) continue;
+        this.emit({ continuations: { ...this.state.continuations, [id]: { ...entry, stage: 'sending' } } }); this.saveContinuations();
+        const result = await this.sendMessage(entry.message, { sessionId: id, fromComposer: false, requestId: entry.requestId });
+        if (this.valid(lifecycle) && this.continuationOperations.get(id) === operation && this.state.continuations[id]?.requestId === entry.requestId) {
+          this.emit({ continuations: { ...this.state.continuations, [id]: { ...entry, stage: 'failed', error: result.error || '确认已保存，下一轮尚未开始。' } } }); this.saveContinuations();
+        }
+      } catch (error) {
+        if (this.valid(lifecycle) && this.continuationOperations.get(id) === operation && this.state.continuations[id]?.requestId === entry.requestId) {
+          this.emit({ continuations: { ...this.state.continuations, [id]: { ...entry, stage: 'failed', error: errorText(error) } } }); this.saveContinuations();
+        }
+      } finally { if (this.continuationOperations.get(id) === operation) this.continuationOperations.delete(id); }
       break;
     }
   }

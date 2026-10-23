@@ -45,7 +45,9 @@ uv run --project apps/chefmate-playground chefmate-playground
 | [frontend/src/App.tsx](frontend/src/App.tsx)、[main.tsx](frontend/src/main.tsx) | React 应用装配、页面导航与启动 |
 | [frontend/src/runtime/](frontend/src/runtime/) | JSON/SSE 传输、会话运行、恢复与浏览器草稿 |
 | [frontend/src/components/](frontend/src/components/)、[features/](frontend/src/features/) | 对话组件、设置、个人中心和烹饪工作区 |
-| [frontend/public/](frontend/public/) | 本地 CSS、字体、品牌资源和 Lucide sprite |
+| [frontend/src/styles/](frontend/src/styles/)、[styles/index.css](frontend/src/styles/index.css) | 全局颜色与字体角色、控件、页面框架、聊天和详情布局 |
+| [settings-react.css](frontend/src/features/settings/settings-react.css)、[centers-react.css](frontend/src/features/centers/centers-react.css)、[workspace.css](frontend/src/features/workspace/workspace.css) | 设置、个人中心、厨房与计时的作用域样式 |
+| [frontend/public/](frontend/public/) | 随构建复制的字体、品牌资源和 Lucide sprite |
 
 ## 验证
 
