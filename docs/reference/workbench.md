@@ -27,7 +27,7 @@ uv run --project apps/chefmate-playground chefmate-playground
 | 图片 | 会话数据库同目录的 `images/`，按会话归属管理 |
 | 应用设置覆盖 | 应用目录 `.runtime/settings.json` |
 | USDA 参考 | 配置指定的本地 SQLite，默认指向清洗子项目的食品库 |
-| 界面显示偏好 | 当前浏览器的本地存储 |
+| 界面显示偏好 | 应用设置覆盖中的安全偏好域；浏览器本地存储作为缓存与首次迁移来源 |
 | 未发送文字、确认后续轮 | 当前浏览器 localStorage，由 React 会话状态服务管理 |
 | 未发送图片 Blob | 当前浏览器 IndexedDB；正式聊天图片仍归服务端会话 |
 
@@ -57,7 +57,7 @@ uv run --project apps/chefmate-playground chefmate-playground
 | `CHEFMATE_MODEL_SUPPORTS_IMAGES` / `CHEFMATE_MODEL_MAX_IMAGES` | `false` / 3；图片上限 1–12，包含保留历史 |
 | `CHEFMATE_TIMER_LIMIT` / `CHEFMATE_CLEAR_TIMER_ON_STEP_CHANGE` | 3 / `false`；计时上限只接受 1 或 3 |
 | `CHEFMATE_PLAYGROUND_PORT` | 18765 |
-| `CHEFMATE_ENABLED_COMPONENTS` | 默认启用全部六个注册组件；逗号分隔 ID |
+| `CHEFMATE_ENABLED_COMPONENTS` | 默认启用全部七个注册组件；逗号分隔 ID；已有显式清单继续按该清单启用 |
 
 字符预算是应用的 JSON 读取预算，不是供应商的 token 窗口声明。
 设置页模型协议支持 `chat_completions` 和 `responses`，默认前者；推荐回复默认开启、数量 3，可配置 1–6。
@@ -66,6 +66,7 @@ uv run --project apps/chefmate-playground chefmate-playground
 `PATCH /api/settings` 使用 `{revision,section,values}`，section 为 `model/runtime/context/interaction/cooking/components`。
 保存先核对设置版本，校验成功再原子写文件并应用；冲突保留用户草稿供复核。
 活跃模型轮次存在时，除 `cooking` 外的分类会返回 409；计时策略使用最新设置读取，不替换当前 Agent。
+普通外观和对话偏好使用独立的 `GET/PATCH /api/ui-preferences`：读取返回 `{revision,initialized,values}`，保存发送 `{revision,changes}`。字段白名单为 `theme/light_palette/dark_palette/font_pairing/density/inline_limit/show_estimates/reply_suggestions/reply_suggestion_count`。该域独立校验版本，可在轮次运行中更新，不暴露模型、开发者、系统或密钥。首次使用将浏览器外观迁入服务端；冲突不自动重放修改。
 查询不返回密钥；同一端点可沿用已有密钥，更换端点需要提供专用密钥。
 模型连接测试验证原生工具请求、结果回传与最终回答，HTTP 200 本身不足以说明协议可用。
 
@@ -79,6 +80,7 @@ uv run --project apps/chefmate-playground chefmate-playground
 - `recipe-authoring`：个人菜谱草稿、保存、删除与恢复。
 - `personal-memory`：用户偏好、助手摘要与历史检索。
 - `food-journal`：照片/文字记餐、营养汇总与已完成餐食的本人份额。
+- `app-preferences`：普通外观和对话偏好的读取与修改；不访问敏感设置。通过同名技能按需提供工具。
 
 关闭组件同时撤去对应模型工具和执行权限，已有记录保留。
 共用的阶段工具按目标阶段核对所属组件；通用提问、工作区读取和技能加载分别保留自己的边界。[组件注册表](../../apps/chefmate-playground/src/chefmate_playground/components.py)
@@ -151,6 +153,8 @@ uv run --project apps/chefmate-playground chefmate-playground
 
 个人菜谱标记 `origin=user`，使用自己的真实快照，基础菜谱仍来自 PostgreSQL。
 草稿复用处理包的结构校验和确定性营养计算；时间、人数、克重缺乏原文依据时留空。
+`get_recipe_draft/revise_recipe_draft` 支持对话内核对和修改；`request_recipe_publication` 发起真实问题，`confirm_recipe_publication` 绑定会话、草稿版本和用户答案执行。修改草稿使旧确认失效，助手自行传入“已批准”不能发布。回复审核卡也会重新读取当前记录，按版本确认保存；已有待回答问题时以问题面板为唯一确认入口。
+个人菜谱采用基础菜谱相同的 `raw_amount/raw_unit/grams` 食材契约。难度仅接受有原文依据的 `beginner/normal/advanced`，否则为未知；编辑器中的手动选择记为用户补充。
 助手删除个人菜谱先发起真实待回答问题，再按对应答案执行；撤销删除走恢复接口。[菜谱服务](../../apps/chefmate-playground/src/chefmate_playground/cookbook.py) · [路由细节](../../apps/chefmate-playground/src/chefmate_playground/routes/library.py)
 
 ## 制作记录、个人饮食与记忆 API

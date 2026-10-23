@@ -18,7 +18,7 @@ def test_release_page_uses_the_same_version_as_about_and_openapi_without_configu
         response = client.get("/api/changelog")
         assert response.status_code == 200
         body = response.json()
-        assert body["current_version"] == expected == "0.2.0"
+        assert body["current_version"] == expected == "0.2.1"
         assert client.get("/api/about").json()["version"] == expected
         assert client.get("/openapi.json").json()["info"]["version"] == expected
         assert body["releases"] == json.loads((APP_ROOT / "releases.json").read_text(encoding="utf-8"))
