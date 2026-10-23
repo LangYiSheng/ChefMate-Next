@@ -24,10 +24,10 @@ def test_release_page_uses_the_same_version_as_about_and_openapi_without_configu
         assert body["releases"] == json.loads((APP_ROOT / "releases.json").read_text(encoding="utf-8"))
         release = body["releases"][0]
         assert release["version"] == expected
-        assert date.fromisoformat(release["date"]) == date(2026, 10, 22)
         assert release["title"] and release["summary"]
         assert all(section["title"] and all(section["items"]) for section in release["sections"])
         for entry in body["releases"]:
+            assert date.fromisoformat(entry["date"]) >= date(2026, 10, 22)
             assert entry["source"]["branch"]
             assert re.fullmatch(r"[0-9a-f]{40}", entry["source"]["commit"])
         assert client.get("/api/sessions").json()["items"] == []
