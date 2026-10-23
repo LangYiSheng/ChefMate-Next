@@ -5,6 +5,7 @@ import type { RuntimeState, Session } from '../runtime/types';
 import { Brand, Icon } from './Icon';
 import { Dialog } from './Dialog';
 import { conversationStage } from './chat-presentation';
+import { ContextMeter } from './ContextMeter';
 
 type Page = 'chat' | 'settings' | 'recipes' | 'journal';
 export function Sidebar({ state, page, collapsed, onCollapse, onClose, navigate, notify, onInspect, developer }: {
@@ -112,9 +113,7 @@ export function Sidebar({ state, page, collapsed, onCollapse, onClose, navigate,
       {state.sessionsError ? <div className="session-error" role="alert">{state.sessionsError}<button type="button" disabled={state.sessionsLoading} onClick={() => void (state.nextCursor ? chefStore.moreSessions() : chefStore.loadSessions()).catch(error => notify(error.message))}>{state.sessionsLoading ? '正在重试…' : '加载失败，重试'}</button></div>
         : (state.nextCursor || state.sessionsLoading) && <button type="button" className="session-load-more" disabled={state.sessionsLoading} onClick={() => void chefStore.moreSessions().catch(error => notify(error.message))}>{state.sessionsLoading ? '正在读取…' : '加载更多对话'}</button>}
     </nav>
-    {developer && context && <details className="context-meter"><summary>本次上下文 <strong>≈ {Number(context.estimated_tokens || 0).toLocaleString()} tokens</strong></summary>
-      <div className="context-meter-body"><dl>{context.categories?.map((row: Record<string, any>) => <div key={row.key}><dt>{row.label || row.key}</dt><dd>≈ {row.estimated_tokens ?? '—'}</dd></div>)}</dl>
-        <p className="context-meter-caption">分类数值为估算 Token，不含图片与服务端封装。</p><button type="button" onClick={onInspect}>查看请求轨迹</button></div></details>}
+    {developer && context && <ContextMeter context={context} onInspect={onInspect} />}
     <div className="sidebar-footer"><button type="button" className="settings-link" title="设置" aria-current={page === 'settings' ? 'page' : undefined} onClick={() => navigate('settings')}><Icon name="settings" /><span>设置</span></button></div>
     {selected && !action && createPortal(<div ref={menuPanel} id="session-menu" className="session-menu" role="menu" aria-label={`对话操作：${selected.title || '新对话'}`} aria-busy={busy} style={position} onKeyDown={menuKeys}>
       <button type="button" role="menuitem" disabled={busy} onClick={() => { setAction('rename'); setName(selected.title || '新对话'); setError(''); }}><Icon name="copy" />重命名</button>

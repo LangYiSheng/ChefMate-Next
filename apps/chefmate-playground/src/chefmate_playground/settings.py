@@ -16,7 +16,7 @@ from .config import APP_ROOT
 from .components import ComponentRegistry, DEFAULT_COMPONENTS, RETRIEVAL_TOOLS, component_metadata
 PERSISTED = {"model", "base_url", "api_key", "api_format", "stream_tool_calls", "supports_images", "max_images", "enabled_components",
              "turn_timeout_s", "model_timeout_s", "model_max_retries", "max_model_rounds", "max_tool_calls",
-             "max_history_chars", "max_tool_result_chars", "reply_suggestions", "reply_suggestion_count", "timer_limit", "clear_timer_on_step_change"}
+             "max_history_chars", "max_tool_result_chars", "reply_suggestions", "reply_suggestion_count", "timer_limit", "clear_timer_on_step_change", "ui_preferences"}
 
 
 class ModelSettings(BaseModel):
@@ -108,7 +108,10 @@ def load_overrides(config):
     interaction = InteractionSettings.model_validate({key: values.get(key, getattr(config, key))
                                                       for key in InteractionSettings.model_fields})
     cooking = CookingSettings.model_validate({key: values.get(key, getattr(config, key)) for key in CookingSettings.model_fields})
-    return replace(config, **updated, **runtime.model_dump(), **context.model_dump(), **interaction.model_dump(), **cooking.model_dump())
+    from .ui_preferences import AppearancePreferences
+    appearance = values.get("ui_preferences", config.ui_preferences)
+    AppearancePreferences.model_validate(appearance)
+    return replace(config, **updated, **runtime.model_dump(), **context.model_dump(), **interaction.model_dump(), **cooking.model_dump(), ui_preferences=appearance)
 
 
 def resolve_model(config, value):
@@ -125,6 +128,7 @@ def resolve_model(config, value):
 
 
 def public_settings(config, *, components=None):
+    from .ui_preferences import preferences_snapshot
     payload = {name: getattr(config, name) for name in PERSISTED}
     revision = hashlib.sha256(json.dumps(payload, sort_keys=True, default=list).encode()).hexdigest()
     payload.pop("api_key")
@@ -137,7 +141,8 @@ def public_settings(config, *, components=None):
             "runtime": {key: payload[key] for key in RuntimeSettings.model_fields},
             "context": {key: payload[key] for key in ContextSettings.model_fields},
             "interaction": {key: payload[key] for key in InteractionSettings.model_fields},
-            "cooking": {key: payload[key] for key in CookingSettings.model_fields}}
+            "cooking": {key: payload[key] for key in CookingSettings.model_fields},
+            "ui_preferences": preferences_snapshot(config)}
 
 
 def persist_settings(config):
@@ -157,12 +162,12 @@ def persist_settings(config):
             temporary.unlink(missing_ok=True)
 
 
-def build_agent(config, service, *, memory=None, cookbook=None, journal=None):
+def build_agent(config, service, *, memory=None, cookbook=None, journal=None, preferences=None):
     from chefmate_agent import AgentConfig, ChefMateAgent
     from chefmate_workflow import UIAction, UISnapshot
 
     components = ComponentRegistry(config.enabled_components, instruction_root=APP_ROOT / "skills",
-                                   resources={"retrieval": service, "memory": memory, "cookbook": cookbook, "journal": journal})
+                                   resources={"retrieval": service, "memory": memory, "cookbook": cookbook, "journal": journal, "preferences": preferences})
     if not config.model_configured or service is None:
         return None, components
     extra_tools = components.build_tools()

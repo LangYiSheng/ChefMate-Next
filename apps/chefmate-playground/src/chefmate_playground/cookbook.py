@@ -39,6 +39,8 @@ class CookbookRepository:
                 id TEXT PRIMARY KEY, session_id TEXT NOT NULL, recipe_id TEXT NOT NULL,
                 recipe_revision INTEGER NOT NULL, question_id TEXT NOT NULL, origin_turn_id TEXT NOT NULL,
                 state TEXT NOT NULL, created_at TEXT NOT NULL)""")
+        from .recipe_publication import RecipePublicationRepository
+        self.publication = RecipePublicationRepository(self)
 
     def _connect(self):
         return sqlite3.connect(self.path, timeout=10)
@@ -81,6 +83,7 @@ class CookbookRepository:
             "source_kind": draft.source_kind,
             "source_image_ids": list(image_ids),
             "time_evidence": draft.time_evidence,
+            "difficulty_evidence": draft.difficulty_evidence,
         }
         stamp = now()
         with self._connect() as db:
@@ -116,11 +119,16 @@ class CookbookRepository:
                 guard()
         return self.get(identity)
 
-    def update_draft(self, recipe_id, values, revision):
+    def update_draft(self, recipe_id, values, revision, *, guard=None, session_id=None, active_turn_id=None):
         draft = RecipeDraftRequest.model_validate(values)
         document = _document(draft)
         with self._connect() as db:
             db.execute("BEGIN IMMEDIATE")
+            if active_turn_id is not None:
+                row = db.execute("SELECT state FROM sessions WHERE id=?", (session_id,)).fetchone()
+                state = json.loads(row[0]) if row else {}
+                if not state.get("running") or (state.get("active_turn") or {}).get("id") != active_turn_id:
+                    raise ValueError("本轮已经结束，没有修改草稿")
             row = db.execute("SELECT * FROM personal_recipes WHERE id=?", (recipe_id,)).fetchone()
             record = self._public(row)
             if not record or record["status"] != "draft" or record["revision"] != revision:
@@ -133,11 +141,16 @@ class CookbookRepository:
                 nutrition=calculate_nutrition(document, {}),
                 source_text=draft.source_text,
                 time_evidence=draft.time_evidence,
+                difficulty_evidence=draft.difficulty_evidence,
             )
+            if guard:
+                guard()
             db.execute(
                 "UPDATE personal_recipes SET body=?,revision=revision+1,updated_at=? WHERE id=?",
                 (json.dumps(old, ensure_ascii=False, allow_nan=False), now(), recipe_id),
             )
+            if guard:
+                guard()
         return self.get(recipe_id)
 
     def publish(self, recipe_id, revision):
@@ -371,11 +384,23 @@ class CookbookRepository:
             "nutrition": record["nutrition"],
         }
         recipe["ingredients"] = [
-            {**item, "ordinal": index, "nutrition": {"estimated": False}}
+            {**item, "ordinal": index, "estimated_grams": False,
+             "nutrition": {"estimated": False, "fdc_id": None, "estimated_nutrients": [],
+                           "per_100g": {key: None for key in record["nutrition"].get("total", {})},
+                           "contribution": {key: None for key in record["nutrition"].get("total", {})}}}
             for index, item in enumerate(document["ingredients"])
         ]
         recipe["allergens"] = sorted({a for item in document["ingredients"] for a in item["allergens"]})
         return recipe
+
+    @staticmethod
+    def summary(record):
+        document = record["document"]
+        return {"recipe_id": record["recipe_id"], "origin": "user", "status": record["status"],
+                "revision": record["revision"], **{key: document.get(key) for key in
+                ("name", "description", "servings", "total_time_min", "difficulty")},
+                "ingredient_count": len(document["ingredients"]),
+                **{key: record[key] for key in ("deleted_from", "deleted_at") if key in record}}
 
     def retrieve(self, recipe_id, expected_snapshot=None):
         record = self.get(recipe_id)

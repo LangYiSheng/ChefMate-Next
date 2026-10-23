@@ -21,19 +21,7 @@ def build_router(context: AppContext) -> APIRouter:
 
         def card(record):
             return {
-                "recipe_id": record["recipe_id"],
-                "name": record["document"]["name"],
-                "origin": "user",
-                "status": record["status"],
-                "revision": record["revision"],
-                **(
-                    {key: record[key] for key in ("deleted_from", "deleted_at")}
-                    if record["status"] == "deleted"
-                    else {}
-                ),
-                "servings": record["document"]["servings"],
-                "total_time_min": record["document"]["total_time_min"],
-                "description": record["document"]["description"],
+                **context.cookbook.summary(record),
                 "favorite": record["recipe_id"] in favorite_ids,
             }
 
@@ -64,7 +52,7 @@ def build_router(context: AppContext) -> APIRouter:
                         {
                             **{
                                 key: recipe.get(key)
-                                for key in ("recipe_id", "name", "servings", "total_time_min", "description")
+                                for key in ("recipe_id", "name", "servings", "total_time_min", "description", "difficulty")
                             },
                             "origin": recipe.get("origin", "system"),
                             "favorite": True,
@@ -96,7 +84,7 @@ def build_router(context: AppContext) -> APIRouter:
         items = [card(item) for item in personal_page]
         items.extend(
             {
-                **{key: item.get(key) for key in ("recipe_id", "name", "servings", "total_time_min", "description")},
+                **{key: item.get(key) for key in ("recipe_id", "name", "servings", "total_time_min", "description", "difficulty")},
                 "origin": "system",
                 "favorite": item["recipe_id"] in favorite_ids,
                 "status": "saved",

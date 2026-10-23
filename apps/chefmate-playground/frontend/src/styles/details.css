@@ -11,4 +11,4 @@
 
 .app.details-open .detail-panel{opacity:1;visibility:visible;transform:translateX(0);transition-delay:0s}
 .app:not(.details-open) .detail-panel{pointer-events:none;margin-right:0;border-width:0;overflow:hidden}
-.app.focus-scene-active .detail-panel{opacity:0;pointer-events:none}
+.app.focus-scene-active .detail-panel{pointer-events:none}

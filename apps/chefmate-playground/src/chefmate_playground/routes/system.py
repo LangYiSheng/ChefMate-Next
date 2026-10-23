@@ -19,6 +19,7 @@ from ..settings import (
 from ..versioning import current_commit, current_version, release_history
 from ..http_models import SettingsRequest
 from ..app_context import AppContext
+from ..ui_preferences import PreferencesUpdateRequest, PreferencesChanged
 
 
 def build_router(context: AppContext) -> APIRouter:
@@ -27,6 +28,21 @@ def build_router(context: AppContext) -> APIRouter:
     @router.get("/api/settings")
     async def get_settings():
         return public_settings(context.config, components=context.components)
+
+    @router.get("/api/ui-preferences")
+    async def get_ui_preferences():
+        return context.preferences.read()
+
+    @router.patch("/api/ui-preferences")
+    async def update_ui_preferences(body: PreferencesUpdateRequest):
+        try:
+            result = await context.preferences.update(body.revision, body.changes)
+            return result["preferences"]
+        except PreferencesChanged:
+            raise HTTPException(409, {"message": "外观偏好已变化，请保留当前草稿并复核。",
+                                      "preferences": context.preferences.read()}) from None
+        except OSError:
+            raise HTTPException(503, "应用偏好未保存，请检查本地配置目录。") from None
 
     @router.post("/api/settings/test-model")
     async def test_model(values: dict):
@@ -75,6 +91,7 @@ def build_router(context: AppContext) -> APIRouter:
                         memory=context.memory,
                         cookbook=context.cookbook,
                         journal=context.journal,
+                        preferences=context.preferences,
                     )
                 )
                 persist_settings(candidate)

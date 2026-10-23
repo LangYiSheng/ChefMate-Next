@@ -90,7 +90,7 @@ def test_action_schema_and_id_collision_cannot_overwrite_values(tmp_path):
         current = client.get(uri + "/workspace").json()["workspace"]
         assert current["revision"] == 1 and current["preferences"]["max_total_time_min"] == 30
         assert {item["id"] for item in client.get("/api/components").json()["items"]} == {
-            "meal-planning", "pantry-preparation", "cooking-guide", "recipe-authoring", "personal-memory", "food-journal"}
+            "meal-planning", "pantry-preparation", "cooking-guide", "recipe-authoring", "personal-memory", "food-journal", "app-preferences"}
 
 
 def test_stage_is_agent_owned_and_published_on_conversation(tmp_path):

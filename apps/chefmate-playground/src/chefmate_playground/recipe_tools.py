@@ -1,7 +1,36 @@
 """Personal recipe tools: grounded drafts and explicit deletion confirmations."""
 
 import re
-from .recipe_drafts import ConfirmRecipeDeletionRequest, CustomSearchRequest, RecipeDeletionRequest, RecipeDraftRequest
+import json
+from .recipe_drafts import (ConfirmRecipeDeletionRequest, CustomSearchRequest, RecipeDeletionRequest,
+                            RecipeDraftRequest, RecipeDraftReadRequest, RecipeDraftRevisionRequest)
+
+
+def _read_draft(messages, recipe_id, revision):
+    for message in reversed(messages):
+        if message.get("role") != "tool" or message.get("name") not in {
+                "create_recipe_draft", "get_recipe_draft", "revise_recipe_draft"}:
+            continue
+        try:
+            result = json.loads(message.get("content", ""))
+        except (TypeError, ValueError):
+            continue
+        if not isinstance(result, dict) or result.get("status") != "ok":
+            continue
+        record = result.get("draft")
+        if isinstance(record, dict) and record.get("recipe_id") == recipe_id and record.get("revision") == revision:
+            return record
+    return None
+
+
+def _turn_guard(host):
+    def guard():
+        if host.cancelled.is_set():
+            raise ValueError("本轮已经结束，没有修改菜谱草稿")
+        state = host.binding.repository.get(host.session_id)
+        if not state or not state.get("running") or (state.get("active_turn") or {}).get("id") != host.turn_id:
+            raise ValueError("本轮已经结束，没有修改菜谱草稿")
+    return guard
 
 
 def make_recipe_tools(cookbook):
@@ -43,7 +72,7 @@ def make_recipe_tools(cookbook):
             return {
                 "status": "ok",
                 "draft": record,
-                "message": "草稿已整理。请在菜谱中心核对食材、份量和时间，再点击确认保存。",
+                "message": "草稿已整理，聊天审核卡会展示当前版本。核对食材、份量、时间及未知项，可继续对话修改；用户确认后才发布。",
             }
         except ValueError as error:
             return {"status": "invalid_recipe", "message": str(error)}
@@ -56,19 +85,90 @@ def make_recipe_tools(cookbook):
             "total": records["total"],
             "items": [
                 {
-                    "recipe_id": item["recipe_id"],
-                    "name": item["document"]["name"],
-                    "origin": "user",
-                    "revision": item["revision"],
-                    "status": item["status"],
+                    **cookbook.summary(item),
                     "snapshot": cookbook.snapshot(item),
-                    "servings": item["document"]["servings"],
-                    "total_time_min": item["document"]["total_time_min"],
                 }
                 for item in records["items"]
             ],
             "message": "使用get_recipe读取单道菜谱后，再用其真实snapshot安排餐单。",
         }
+
+    def read_draft(values, context):
+        request = RecipeDraftReadRequest.model_validate(values)
+        record = cookbook.get(request.recipe_id)
+        if not record:
+            return {"status": "not_found", "message": "个人菜谱不存在或已删除。"}
+        return {"status": "ok", "draft": record,
+                "message": "聊天审核卡展示此真实版本；draft可继续修改，saved已保存，不能用草稿工具覆盖。"}
+
+    def revise_draft(values, context):
+        from .interactions import ScopedWorkspace
+
+        host = context.host_context
+        if not isinstance(host, ScopedWorkspace):
+            return {"status": "session_required", "message": "请在当前对话中修改草稿。"}
+        request = RecipeDraftRevisionRequest.model_validate(values)
+        baseline = _read_draft(context.messages, request.recipe_id, request.revision)
+        if baseline is None:
+            return {"status": "read_required", "message": "请先get_recipe_draft读取这份真实版本，再修改同一个id。"}
+        original = baseline["source_text"]
+        supplied = request.recipe.source_text
+        latest = next((item.get("content", "") for item in reversed(context.messages) if item.get("role") == "user"), "")
+        # Revisions can retain provenance or append the user's actual supplement.
+        if supplied != original:
+            supplement = supplied[len(original):].strip() if supplied.startswith(original) else ""
+            if not supplement or supplement not in latest:
+                return {"status": "invalid_recipe_source", "message": "保留原始来源；新增依据必须来自本轮用户实际补充的文字。"}
+        try:
+            record = cookbook.update_draft(request.recipe_id, request.recipe, request.revision,
+                                           guard=_turn_guard(host), session_id=host.session_id,
+                                           active_turn_id=host.turn_id if hasattr(host.binding.repository, "path") else None)
+            return {"status": "ok", "draft": record,
+                    "message": "已修改同一份草稿，审核卡展示新版本；旧版本的发布确认失效，需要用户重新确认。"}
+        except ValueError as error:
+            return {"status": "recipe_changed", "message": str(error)}
+
+    def request_publication(values, context):
+        from .interactions import ScopedWorkspace
+
+        host = context.host_context
+        if not isinstance(host, ScopedWorkspace):
+            return {"status": "workspace_unavailable", "message": "当前对话无法保存用户确认，没有发布菜谱。"}
+        request = RecipeDeletionRequest.model_validate(values)
+        if _read_draft(context.messages, request.recipe_id, request.revision) is None:
+            return {"status": "review_required", "message": "先get_recipe_draft展示这份草稿当前版本，供用户审核后再请求发布确认。"}
+        record = cookbook.get(request.recipe_id)
+        if not record or record["status"] != "draft" or record["revision"] != request.revision:
+            return {"status": "recipe_changed", "message": "草稿已更新或已保存，请重新读取后核对。"}
+        name = record["document"]["name"].replace("<", "〈").replace(">", "〉")
+        result = host.execute("ask_user", {"title": "确认保存个人菜谱？",
+            "question": f"已核对「{name}」的食材、用量、步骤和未知信息，确认保存第 {request.revision} 版吗？",
+            "options": [{"id": "publish", "label": "确认保存菜谱"}, {"id": "keep", "label": "继续修改草稿"}],
+            "allow_custom": False, "multiple": False}, context)
+        if result.get("status") != "ok" or not isinstance(result.get("pending_question"), dict):
+            return result
+        try:
+            identity = cookbook.publication.prepare(request.recipe_id, request.revision, session_id=host.session_id,
+                question_id=result["pending_question"]["id"], active_turn_id=host.turn_id, cancelled=host.cancelled)
+        except ValueError as error:
+            revision = cookbook.publication.discard_question(host.binding.repository, host.session_id,
+                                                             result["pending_question"]["id"])
+            if revision is not None:
+                host.expected_revision = revision
+            return {"status": "confirmation_expired", "message": str(error)}
+        return {**result, "receipt": {"confirmation_id": identity, "recipe_id": request.recipe_id,
+                "revision": request.revision, "next_tool": "confirm_recipe_publication",
+                "on_answer": "等待用户点击选项，下一轮调用next_tool结清确认；此时尚未发布。"}}
+
+    def confirm_publication(values, context):
+        from .interactions import ScopedWorkspace
+
+        host = context.host_context
+        if not isinstance(host, ScopedWorkspace):
+            return {"status": "workspace_unavailable", "message": "当前对话无法核对用户确认，没有发布菜谱。"}
+        request = ConfirmRecipeDeletionRequest.model_validate(values)
+        return cookbook.publication.confirm(request.confirmation_id, session_id=host.session_id,
+                                            active_turn_id=host.turn_id, cancelled=host.cancelled)
 
     def request_deletion(values, context):
         from .interactions import ScopedWorkspace
@@ -138,7 +238,7 @@ def make_recipe_tools(cookbook):
             name="create_recipe_draft",
             args_schema=RecipeDraftRequest,
             handler=create,
-            description="将用户菜谱文字或本轮图片转写为可核对的自定义菜谱草稿。缺失时间/人数/克重留null，不生成营养数字。用户在菜谱中心确认保存后才可烹饪。",
+            description="将用户文字或本轮图片转写为可在聊天审核的自定义菜谱草稿。缺失时间/人数/克重/难度保留未知，不生成营养数字；用户确认发布后才可烹饪。",
             required_skill="recipe-authoring",
             effect="write",
             side_effects=("保存待确认菜谱草稿",),
@@ -149,6 +249,26 @@ def make_recipe_tools(cookbook):
             handler=search,
             description="按菜名或食材查找个人菜谱，包含精确ID、revision和status。saved已保存可做；draft草稿待审核；all查两者。使用时先get_recipe。",
             required_skill="recipe-authoring",
+        ),
+        InjectedToolSpec(
+            name="get_recipe_draft", args_schema=RecipeDraftReadRequest, handler=read_draft,
+            description="读取一份个人菜谱或草稿的真实完整内容和revision，并在聊天里展示审核卡；修改和发布前先读同一份草稿。",
+            required_skill="recipe-authoring",
+        ),
+        InjectedToolSpec(
+            name="revise_recipe_draft", args_schema=RecipeDraftRevisionRequest, handler=revise_draft,
+            description="修改已经get_recipe_draft读回的同一份草稿，传真实id/revision与完整recipe，保留来源。不会新建或发布，用户需审核新版本。",
+            required_skill="recipe-authoring", effect="write", side_effects=("修改待审核菜谱草稿",),
+        ),
+        InjectedToolSpec(
+            name="request_recipe_publication", args_schema=RecipeDeletionRequest, handler=request_publication,
+            description="对已在聊天展示审核的真实草稿版本发起用户保存确认，生成绑定id、revision的问题并停止本轮；尚未发布。",
+            required_skill="recipe-authoring", effect="wait", side_effects=("保存发布确认问题并等待用户回答",),
+        ),
+        InjectedToolSpec(
+            name="confirm_recipe_publication", args_schema=ConfirmRecipeDeletionRequest, handler=confirm_publication,
+            description="用户回答保存问题后，用request_recipe_publication的confirmation_id结清确认。只认可宿主保存的同一问题选项，不能用approved或文字代替。",
+            required_skill="recipe-authoring", effect="write", side_effects=("用户确认后发布对应版本菜谱",),
         ),
         InjectedToolSpec(
             name="request_recipe_deletion",

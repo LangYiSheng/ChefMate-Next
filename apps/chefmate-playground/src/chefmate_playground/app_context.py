@@ -30,6 +30,7 @@ class AppContext:
     retrieval: Any = None
     agent: Any = None
     components: Any = None
+    preferences: Any = None
     setup_error: str | None = None
     workspace: WorkspaceBinding | None = None
     images: SessionImages = field(init=False)

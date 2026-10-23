@@ -39,8 +39,12 @@ COMPONENTS = (
                   ("cooking_guide", "timers", "task_progress"), factories=("workflow",),
                   dependencies=("retrieval",), stage_targets=("cooking", "completed")),
     ComponentSpec("recipe-authoring", "个人菜谱", "整理、核对并管理自己的菜谱。",
-                  ("create_recipe_draft", "search_custom_recipes", "request_recipe_deletion", "confirm_recipe_deletion"),
-                  pages=("recipes",), factories=("cookbook",), dependencies=("cookbook",)),
+                  ("create_recipe_draft", "search_custom_recipes", "get_recipe_draft", "revise_recipe_draft",
+                   "request_recipe_publication", "confirm_recipe_publication", "request_recipe_deletion", "confirm_recipe_deletion"),
+                  ui_kinds=("recipe_draft",), pages=("recipes",), factories=("cookbook",), dependencies=("cookbook",)),
+    ComponentSpec("app-preferences", "应用偏好", "通过对话调整主题、配色、字体及普通交互偏好。",
+                  ("get_app_preferences", "update_app_preferences"), pages=("settings",),
+                  factories=("preferences",), dependencies=("preferences",)),
     ComponentSpec("personal-memory", "长期记忆", "维护口味偏好并按需查找历史。",
                   ("read_long_term_memory", "maintain_memory_summary", "search_personal_history"),
                   pages=("memory",), factories=("memory",), dependencies=("memory",)),
@@ -140,6 +144,9 @@ class ComponentRegistry:
         if resources.get("journal") is not None:
             from .meal_logging import make_meal_logging_tools
             factories["journal"] = lambda: make_meal_logging_tools(resources["journal"])
+        if resources.get("preferences") is not None:
+            from .ui_preferences import make_preferences_tools
+            factories["preferences"] = lambda: make_preferences_tools(resources["preferences"])
         # Disabled tools stay registered to validate closed historical tool calls.
         # The agent hides and rejects them using the generated ownership bindings.
         tools = []

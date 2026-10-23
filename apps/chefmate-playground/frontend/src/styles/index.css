@@ -1,5 +1,6 @@
 @import './foundation.css';
 @import './controls.css';
+@import '../components/ui/fields.css';
 @import './shell.css';
 @import './chat.css';
 @import './details.css';

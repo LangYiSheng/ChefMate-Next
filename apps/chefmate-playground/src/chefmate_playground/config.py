@@ -32,6 +32,7 @@ class PlaygroundConfig:
     max_images: int = 3
     reply_suggestions: bool = True
     reply_suggestion_count: int = 3
+    ui_preferences: dict = field(default_factory=dict)
     timer_limit: int = 3
     clear_timer_on_step_change: bool = False
     api_format: str = "chat_completions"
@@ -40,6 +41,8 @@ class PlaygroundConfig:
     enabled_components: tuple[str, ...] = DEFAULT_COMPONENTS
 
     def __post_init__(self):
+        from .ui_preferences import AppearancePreferences
+        AppearancePreferences.model_validate(self.ui_preferences)
         if (not isinstance(self.enabled_components, tuple)
                 or any(not isinstance(name, str) or name not in DEFAULT_COMPONENTS for name in self.enabled_components)
                 or len(self.enabled_components) != len(set(self.enabled_components))):

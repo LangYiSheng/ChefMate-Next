@@ -3,6 +3,7 @@
 import asyncio
 import json
 from dataclasses import replace
+from types import SimpleNamespace
 
 import pytest
 from fastapi.testclient import TestClient
@@ -67,13 +68,14 @@ def test_actual_disabled_components_are_hidden_and_reject_fabricated_execution(t
     memory = MemoryRepository(path, journal=journal)
     cookbook = CookbookRepository(path)
     config = PlaygroundConfig(sessions_database=path, api_key="test-key", model="test-model", enabled_components=())
-    agent, components = build_agent(config, Service(), memory=memory, cookbook=cookbook, journal=journal)
+    agent, components = build_agent(config, Service(), memory=memory, cookbook=cookbook, journal=journal,
+                                    preferences=SimpleNamespace(read=lambda: {}))
     context = TurnRuntimeContext(ui_context={"stage": "idea"})
-    hidden = {"read_long_term_memory", "create_recipe_draft", "create_food_log_draft", "get_search_options"}
+    hidden = {"read_long_term_memory", "create_recipe_draft", "create_food_log_draft", "get_search_options", "get_app_preferences"}
     assert hidden.isdisjoint({tool.name for tool in agent._model_tools(context)})
     assert "ask_user" in {tool.name for tool in agent._model_tools(context)}
     for name, request in [("read_long_term_memory", {}), ("get_search_options", {}),
-                          ("advance_cooking_stage", {"stage": "cooking"})]:
+                          ("advance_cooking_stage", {"stage": "cooking"}), ("get_app_preferences", {})]:
         result = asyncio.run(agent._make_tool(name, context, [], "forged").ainvoke(request))
         assert result["status"] == "skill_disabled"
     assert components.enabled_ids == ()

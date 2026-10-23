@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import { chefStore } from '../runtime/store';
 import { Conversation } from './Conversation';
@@ -25,7 +25,7 @@ describe('conversation reading position', () => {
     expect(element.scrollTop).toBe(850);
   });
 
-  it('keeps normal streaming progress at the reply and reserves technical details for developer mode', () => {
+  it('keeps normal streaming progress at the reply and reserves technical details for developer mode', async () => {
     const message: Message = { role: 'assistant', content: '尚未完成的过程文字', streaming: true, process: ['内部执行说明'],
       usage: { model_calls: 7, input_tokens: 12345 }, tool_calls: [{ name: 'record_cooked_meal_intake', running: true, arguments: { internal: '工具内部参数' }, result: { detail: '工具内部结果' } }] };
     const state = { ...chefStore.getSnapshot(), currentId: 'a', session: { id: 'a', title: '本餐', running: true, messages: [message] },
@@ -36,7 +36,10 @@ describe('conversation reading position', () => {
     expect(view.container.querySelector('.assistant-progress')).not.toBeNull(); expect(view.container.querySelector('.execution-trace')).toBeNull();
     for (const hidden of ['内部执行说明', '工具内部参数', '工具内部结果', '12345', '尚未完成的过程文字']) expect(view.container).not.toHaveTextContent(hidden);
     view.rerender(<Conversation {...props} developer />);
-    expect(screen.getByText('执行过程')).toBeInTheDocument(); expect(view.container).toHaveTextContent('工具内部参数'); expect(view.container).toHaveTextContent('12345');
+    expect(screen.getByText('执行过程')).toBeInTheDocument(); expect(view.container).not.toHaveTextContent('工具内部参数');
+    fireEvent.click(screen.getByText('展开完整参数'));
+    await waitFor(() => expect(view.container).toHaveTextContent('工具内部参数'));
+    expect(view.container).toHaveTextContent('12,345'); expect(view.container).not.toHaveTextContent('内部执行说明');
   });
 
   it('does not treat aggregated earlier recipe references as recommendations in a nutrition reply', () => {

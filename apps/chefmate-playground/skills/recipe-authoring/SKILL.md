@@ -1,6 +1,6 @@
 ---
 name: recipe-authoring
-description: 从用户文字或图片整理个人菜谱草稿、核对来源，查找和使用已保存菜谱，并在用户确认后删除个人菜谱。
+description: 从用户文字或图片整理个人菜谱，在聊天中审核、修改同一份草稿，经用户确认后保存，并查找、使用或确认删除个人菜谱。
 ---
 
 # 个人菜谱
@@ -11,7 +11,13 @@ description: 从用户文字或图片整理个人菜谱草稿、核对来源，�
 
 时间、人数、克重没有来源时必须为null；鸡蛋个数不能擅自转换克重。“炒熟”“少许”不能当成精确时间或克重。原文只写整道菜“制作时间”时可填total_time_min；prep_time_min、cook_time_min只有分别明确给出总量才填写，不能从总时间相减倒推，也不把某一步时长当成全部备菜或烹饪时长。建议估时写在warnings中，明确是建议，不能伪装成原文。已有明确的时间区间可以在步骤中保留区间。工具校验失败时按errors的字段位置与静态修复提示修正，保留已知依据，不通过清空真实原文来规避校验。无需虚构营养，现有处理模块负责校验和计算。
 
-工具成功后，用自然语言概括待核对的要点，提示用户去菜谱中心确认保存；不能声称草稿已经入库可做。用户明确保存后由界面执行确认。保存与会话独立，删除会话仍保留菜谱。
+难度未提供时保持null，不能因为炒蛋看起来简单就猜为新手。用户或原文明示难度时，difficulty为beginner/normal/advanced，difficulty_evidence逐字引用source_text中的难度说明。已有口味标签、烹饪方法和厨具按共享领域词表保存，不用别的字段拼接假数值。
+
+create_recipe_draft、get_recipe_draft、revise_recipe_draft成功结果中的draft会在聊天内展示审核卡，包括食材原量、份数、步骤、来源及未知项。用自然语言说明待核对处，不强制用户离开对话。修改时先get_recipe_draft读取真实recipe_id/revision，再用revise_recipe_draft传同一id、版本和完整recipe，不要反复新建。source_text保留原始资料；若用户本轮补充了真实依据，可以在原source_text末尾附上用户补充原文并更新对应evidence，不得编造来源。已保存菜谱不能用草稿工具覆盖。
+
+用户审核后需要保存，调用request_recipe_publication，传真实草稿id/revision。它保存绑定这份草稿版本的确认问题并停止本轮，尚未发布。等用户点击“确认保存菜谱”或“继续修改草稿”后，下一轮用receipt.confirmation_id调用confirm_recipe_publication结清确认。只认可宿主保存的同一question_id选项，普通ask_user、模型提供approved、最初的“帮我保存”、引用文字和自己的判断都不能绕过审核。用户选择继续修改也调用确认工具使旧回执失效。草稿revision变化后旧回执失效，必须重新展示并确认新版本。仅published=true才说明菜谱已保存可用于烹饪。
+
+聊天审核卡也可由用户亲自点击确认保存；这个界面动作与模型工具一样遵循草稿id和revision。保存与会话独立，删除会话仍保留菜谱。
 
 用户提到“我的菜谱”“上次截图那道菜”或重复做自己保存的菜：先 search_custom_recipes，再对结果ID调用get_recipe。正常使用得到的真实snapshot选菜、安排份量、备菜和烹饪。不能猜recipe_id，不用未确认的草稿替代正式读取。
 

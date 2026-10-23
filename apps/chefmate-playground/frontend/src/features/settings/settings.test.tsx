@@ -8,11 +8,14 @@ import {PALETTES, FONT_PAIRINGS, normalizeAppearance, resolveAppearance} from '.
 import {applyAppearance, readAppearance} from './appearance';
 import {SettingsInsights, usageCalendar} from './SettingsInsights';
 
-const {request} = vi.hoisted(() => ({request: vi.fn()}));
+const {request, readPreferences, savePreferences} = vi.hoisted(() => ({request: vi.fn(), readPreferences: vi.fn(), savePreferences: vi.fn()}));
 vi.mock('../../runtime/http', () => ({api: request}));
+vi.mock('../preferences/client', () => ({readUiPreferences: readPreferences, saveUiPreferences: savePreferences}));
 const revision = (value: number) => value.toString(16).padStart(64, '0');
 const fixture = () => ({revision: revision(1), api_key_set: true, model: {base_url: 'https://example.test/v1', model: 'test-model', api_format: 'responses', supports_images: true, max_images: 4, stream_tool_calls: true}, runtime: {turn_timeout_s: 90, model_timeout_s: 60, model_max_retries: 1, max_model_rounds: 10, max_tool_calls: 20}, context: {max_history_chars: 400000, max_tool_result_chars: 60000}, interaction: {reply_suggestions: true, reply_suggestion_count: 3}, cooking: {timer_limit: 3, clear_timer_on_step_change: false}, components: [], available_components: [], enabled_components: []});
-beforeEach(() => {localStorage.clear(); request.mockReset(); request.mockImplementation((path: string) => Promise.resolve(path === '/api/settings' ? fixture() : {ready: true, model: 'test-model', database: {ready: true}}));});
+const preferences = () => ({revision: revision(100), initialized: true, values: {...normalizeAppearance(), reply_suggestions: true, reply_suggestion_count: 3}});
+const choose = (label: string, option: string) => {fireEvent.click(screen.getByRole('combobox', {name: label})); fireEvent.click(screen.getByRole('option', {name: option}));};
+beforeEach(() => {localStorage.clear(); request.mockReset(); readPreferences.mockReset(); savePreferences.mockReset(); readPreferences.mockResolvedValue(preferences()); savePreferences.mockImplementation(async changes => ({...preferences(), revision: revision(101), values: {...preferences().values, ...changes}})); request.mockImplementation((path: string) => Promise.resolve(path === '/api/settings' ? fixture() : {ready: true, model: 'test-model', database: {ready: true}}));});
 
 describe('React settings transactions', () => {
   it('keeps dirty drafts in other categories and advances only accepted revision baselines', async () => {
@@ -26,7 +29,7 @@ describe('React settings transactions', () => {
     fireEvent.click(screen.getByRole('button', {name: '模型连接'}));
     fireEvent.change(screen.getByLabelText('模型名称'), {target: {value: 'next-model'}});
     fireEvent.click(screen.getByRole('button', {name: '烹饪与计时'}));
-    fireEvent.change(screen.getByLabelText('同时进行的计时器'), {target: {value: '1'}});
+    choose('同时进行的计时器', '单计时器');
     fireEvent.click(screen.getByRole('button', {name: '保存修改'}));
     await waitFor(() => expect(settings.revision).toBe(revision(2)));
     await waitFor(() => expect(screen.getByRole('button', {name: /模型连接/})).toBeEnabled());
@@ -56,7 +59,7 @@ describe('React settings transactions', () => {
     let navigation: CustomEvent | undefined;
     const close = vi.fn(() => {navigation = new CustomEvent('chefmate:before-page-change', {cancelable: true, detail: {page: 'chat', resume: vi.fn()}}); window.dispatchEvent(navigation);});
     render(<Settings onClose={close}/>); await screen.findByLabelText('显示模式');
-    fireEvent.change(screen.getByLabelText('内容间距'), {target: {value: 'compact'}});
+    fireEvent.click(screen.getByRole('tab', {name: '对话显示'})); choose('内容间距', '紧凑 · 同一屏显示更多内容');
     fireEvent.click(screen.getByRole('button', {name: '返回工作台'}));
     expect(close).not.toHaveBeenCalled(); fireEvent.click(screen.getByRole('button', {name: '放弃修改'}));
     expect(close).toHaveBeenCalledOnce(); expect(navigation?.defaultPrevented).toBe(false); expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
@@ -90,17 +93,86 @@ describe('React settings transactions', () => {
     expect(createDrafts(fixture()).cooking).toEqual({timer_limit: 3, clear_timer_on_step_change: false, timer_sound: false});
   });
 
-  it('accepts a successful server revision even if the subsequent browser preference write fails', async () => {
-    let settings = fixture();
-    request.mockImplementation((path: string, options: RequestInit = {}) => {if (options.method === 'PATCH') {const body = JSON.parse(options.body as string); expect(body.revision).toBe(settings.revision); settings = {...settings, revision: revision(2), interaction: body.values}; return Promise.resolve(settings);} return Promise.resolve(path === '/api/settings' ? settings : {database: {ready: true}});});
-    const write = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {throw new DOMException('本地存储空间不足', 'QuotaExceededError');});
-    const onSaved = vi.fn(); render(<Settings onClose={vi.fn()} onSaved={onSaved}/>); await screen.findByLabelText('显示模式');
-    fireEvent.change(screen.getByLabelText('显示模式'), {target: {value: 'dark'}}); fireEvent.click(screen.getByRole('switch', {name: '显示推荐回复'})); fireEvent.click(screen.getByRole('button', {name: '保存修改'}));
-    await screen.findAllByText(/服务器设置已保存，本机偏好未保存/); expect(settings.interaction.reply_suggestions).toBe(false);
-    expect(screen.getByRole('button', {name: '保存修改'})).toBeEnabled(); write.mockRestore();
-    fireEvent.click(screen.getByRole('button', {name: '保存修改'})); await waitFor(() => expect(screen.getByRole('button', {name: '保存修改'})).toBeDisabled());
-    expect(request.mock.calls.filter(([, options]) => options?.method === 'PATCH')).toHaveLength(1);
-    expect(JSON.parse(localStorage.getItem('chefmate:ui-settings')!).theme).toBe('dark'); expect(document.documentElement.dataset.theme).toBe('dark'); expect(onSaved).toHaveBeenCalledTimes(2);
+  it('uses server display values and saves only the changed preference fields with their independent revision', async () => {
+    localStorage.setItem('chefmate:ui-settings', JSON.stringify({theme: 'dark', density: 'compact'}));
+    savePreferences.mockImplementation(async changes => {const accepted = {...preferences(), revision: revision(101), values: {...preferences().values, ...changes}}; window.dispatchEvent(new CustomEvent('chefmate:ui-preferences', {detail: accepted})); return accepted;});
+    const onSaved = vi.fn(); render(<Settings onClose={vi.fn()} onSaved={onSaved}/>); await screen.findByRole('combobox', {name: '显示模式'});
+    expect(screen.getByRole('combobox', {name: '显示模式'})).toHaveTextContent('浅色'); choose('显示模式', '深色');
+    fireEvent.click(screen.getByRole('tab', {name: '对话建议'})); fireEvent.click(screen.getByRole('switch', {name: '显示推荐回复'})); fireEvent.click(screen.getByRole('button', {name: '保存修改'}));
+    await waitFor(() => expect(screen.getByRole('button', {name: '保存修改'})).toBeDisabled());
+    expect(savePreferences).toHaveBeenCalledExactlyOnceWith({theme: 'dark', reply_suggestions: false}, revision(100));
+    expect(request.mock.calls.some(([, options]) => options?.method === 'PATCH')).toBe(false); expect(onSaved).toHaveBeenCalledOnce();
+    fireEvent.click(screen.getByRole('tab', {name: '配色与字体'})); expect(screen.getByRole('combobox', {name: '显示模式'})).toHaveTextContent('深色');
+  });
+
+  it('adopts clean external preferences, preserves dirty drafts and revision on conflict, and explicitly reloads only the selected draft', async () => {
+    render(<Settings onClose={vi.fn()}/>); await screen.findByRole('combobox', {name: '显示模式'});
+    const external = {...preferences(), revision: revision(110), values: {...preferences().values, theme: 'dark'}};
+    act(() => {window.dispatchEvent(new CustomEvent('chefmate:ui-preferences', {detail: external}));});
+    expect(screen.getByRole('combobox', {name: '显示模式'})).toHaveTextContent('深色'); choose('显示模式', '跟随系统');
+    const newer = {...external, revision: revision(111), values: {...external.values, theme: 'light'}};
+    act(() => {window.dispatchEvent(new CustomEvent('chefmate:ui-preferences', {detail: newer}));});
+    expect(screen.getByRole('combobox', {name: '显示模式'})).toHaveTextContent('跟随系统');
+    savePreferences.mockRejectedValueOnce(new Error('偏好已在其他位置更新，草稿已保留。'));
+    fireEvent.click(screen.getByRole('button', {name: '保存修改'})); await screen.findAllByText('偏好已在其他位置更新，草稿已保留。');
+    expect(savePreferences).toHaveBeenCalledWith({theme: 'system'}, revision(110));
+    fireEvent.click(screen.getByRole('button', {name: '重新读取'})); fireEvent.click(screen.getByRole('button', {name: '继续编辑'}));
+    expect(screen.getByRole('combobox', {name: '显示模式'})).toHaveTextContent('跟随系统');
+    readPreferences.mockResolvedValue(newer);
+    fireEvent.click(screen.getByRole('button', {name: '重新读取'})); fireEvent.click(screen.getByRole('button', {name: '放弃修改'}));
+    await waitFor(() => expect(screen.getByRole('combobox', {name: '显示模式'})).toHaveTextContent('浅色'));
+    expect(screen.getByRole('button', {name: '保存修改'})).toBeDisabled();
+  });
+
+  it('queues an initial preferences seed event received during loading instead of keeping an uninitialized revision', async () => {
+    let finish!: (value: any) => void;
+    request.mockImplementation((path: string) => path === '/api/settings' ? new Promise(resolve => {finish = resolve;}) : Promise.resolve({ready: true}));
+    readPreferences.mockResolvedValueOnce({...preferences(), revision: revision(0), initialized: false});
+    render(<Settings onClose={vi.fn()}/>);
+    const seeded = {...preferences(), revision: revision(150), values: {...preferences().values, theme: 'dark'}};
+    readPreferences.mockResolvedValue(seeded);
+    act(() => {window.dispatchEvent(new CustomEvent('chefmate:ui-preferences', {detail: seeded}));});
+    await act(async () => {finish(fixture());});
+    expect(await screen.findByRole('combobox', {name: '显示模式'})).toHaveTextContent('深色');
+    choose('显示模式', '跟随系统'); fireEvent.click(screen.getByRole('button', {name: '保存修改'}));
+    await waitFor(() => expect(savePreferences).toHaveBeenCalledWith({theme: 'system'}, revision(150)));
+  });
+
+  it('rechecks authoritative preferences when an older event is queued behind a newer GET and slow settings read', async () => {
+    let finish!: (value: any) => void;
+    const newer = {...preferences(), revision: revision(202), values: {...preferences().values, theme: 'dark'}};
+    const older = {...preferences(), revision: revision(201), values: {...preferences().values, theme: 'light'}};
+    readPreferences.mockResolvedValue(newer);
+    request.mockImplementation((path: string) => path === '/api/settings' ? new Promise(resolve => {finish = resolve;}) : Promise.resolve({ready: true}));
+    render(<Settings onClose={vi.fn()}/>);
+    await act(async () => {});
+    act(() => {window.dispatchEvent(new CustomEvent('chefmate:ui-preferences', {detail: older}));});
+    await act(async () => {finish(fixture());});
+    expect(await screen.findByRole('combobox', {name: '显示模式'})).toHaveTextContent('深色');
+    expect(readPreferences).toHaveBeenCalledTimes(2);
+    choose('显示模式', '跟随系统'); fireEvent.click(screen.getByRole('button', {name: '保存修改'}));
+    await waitFor(() => expect(savePreferences).toHaveBeenCalledWith({theme: 'system'}, revision(202)));
+  });
+
+  it('keeps a dirty display baseline through queued-event revalidation while reloading another category', async () => {
+    const baseline = {...preferences(), revision: revision(202)}, newer = {...preferences(), revision: revision(203), values: {...preferences().values, theme: 'dark'}};
+    readPreferences.mockResolvedValue(baseline);
+    render(<Settings onClose={vi.fn()}/>); await screen.findByRole('combobox', {name: '显示模式'}); choose('显示模式', '跟随系统');
+    fireEvent.click(screen.getByRole('button', {name: '数据与状态'}));
+    let finish!: (value: any) => void;
+    request.mockImplementation((path: string) => path === '/api/settings' ? new Promise(resolve => {finish = resolve;}) : Promise.resolve({ready: true}));
+    readPreferences.mockResolvedValue(newer);
+    fireEvent.click(screen.getByRole('button', {name: '重新读取'}));
+    await act(async () => {});
+    act(() => {window.dispatchEvent(new CustomEvent('chefmate:ui-preferences', {detail: {...baseline, revision: revision(201)}}));});
+    await act(async () => {finish(fixture());});
+    fireEvent.click(screen.getByRole('button', {name: /外观与对话/}));
+    expect(screen.getByRole('combobox', {name: '显示模式'})).toHaveTextContent('跟随系统');
+    savePreferences.mockRejectedValueOnce(new Error('偏好已在其他位置更新，草稿已保留。'));
+    fireEvent.click(screen.getByRole('button', {name: '保存修改'}));
+    await waitFor(() => expect(savePreferences).toHaveBeenCalledWith({theme: 'system'}, revision(202)));
+    await screen.findAllByText('偏好已在其他位置更新，草稿已保留。');
+    expect(screen.getByRole('combobox', {name: '显示模式'})).toHaveTextContent('跟随系统');
   });
 
   it('does not let a local-only save promote other server drafts past an externally changed revision', async () => {

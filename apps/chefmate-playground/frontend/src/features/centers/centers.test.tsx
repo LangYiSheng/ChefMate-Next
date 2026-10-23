@@ -36,6 +36,19 @@ describe('center data invariants', () => {
 });
 
 describe('center request lifecycles', () => {
+  it('preserves recipe metadata on unrelated edits and records manually chosen difficulty as user evidence', async () => {
+    const initial = {...recipe(), document: {...recipe().document, taste_tags: ['清淡'], cooking_methods: ['煮'], required_tools: ['煮锅']}};
+    request.mockImplementation((_path: string, options: RequestInit) => Promise.resolve({...initial, revision: 3, difficulty_evidence: JSON.parse(options.body as string).recipe.difficulty_evidence}));
+    const handlers = callbacks(); render(<RecipeEditor initial={initial} {...handlers}/>);
+    fireEvent.click(screen.getByRole('combobox', {name: '制作难度'}));
+    fireEvent.click(screen.getByRole('option', {name: '新手'}));
+    fireEvent.click(screen.getByRole('button', {name: '保存草稿'}));
+    await waitFor(() => expect(handlers.onSaved).toHaveBeenCalledWith(false));
+    const saved = JSON.parse(request.mock.calls[0][1].body).recipe;
+    expect(saved).toMatchObject({difficulty: 'beginner', difficulty_evidence: '难度：新手', taste_tags: ['清淡'], cooking_methods: ['煮'], required_tools: ['煮锅']});
+    expect(saved.source_text).toBe('鸡蛋 2 个，煮熟\n\n用户补充\n难度：新手');
+    expect(saved.total_time_min).toBeNull();
+  });
   it('retains accepted recipe revision when publish fails and retries publication without a second PUT', async () => {
     const initial = recipe(), accepted = {...initial, revision: 3, document: {...initial.document, name: '茶叶蛋'}}; let publications = 0;
     request.mockImplementation((_path: string, options: RequestInit) => {if (options.method === 'PUT') return Promise.resolve(accepted); publications++; return publications === 1 ? Promise.reject(new Error('发布未完成')) : Promise.resolve({...accepted, status: 'saved'});});

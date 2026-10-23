@@ -5,11 +5,13 @@ import { Composer } from './components/Composer';
 import { Conversation } from './components/Conversation';
 import { Diagnostics, RecipeDetails } from './components/Details';
 import { Icon } from './components/Icon';
+import { DeveloperWatermark } from './components/DeveloperWatermark';
 import { PageBoundary } from './components/PageBoundary';
 import { initAppearance } from './features/settings/appearance';
 import { CookingFocus, KitchenTimers, WorkspacePanel, initializeWorkspace } from './features/workspace';
 import { workspaceStore } from './features/workspace/store';
 import { viewChoices } from './features/workspace/protocol';
+import { initializeUiPreferences } from './features/preferences/client';
 
 type Page = 'chat' | 'settings' | 'recipes' | 'journal';
 const loadSettings = () => import('./features/settings/Settings').then(module => ({ default: module.Settings }));
@@ -54,13 +56,14 @@ export default function App() {
   useEffect(() => {
     const cleanupWorkspace = initializeWorkspace({ notify });
     const cleanupAppearance = initAppearance();
+    const cleanupPreferences = initializeUiPreferences();
     void chefStore.start().catch(error => notify(error.message));
     const preference = () => { setPrefsVersion(value => value + 1); };
     window.addEventListener('storage', preference);
     window.addEventListener('chefmate:appearance', preference);
     window.addEventListener('chefmate:settings-saved', preference);
     return () => {
-      cleanupWorkspace(); if (typeof cleanupAppearance === 'function') cleanupAppearance(); chefStore.dispose();
+      cleanupPreferences(); cleanupWorkspace(); if (typeof cleanupAppearance === 'function') cleanupAppearance(); chefStore.dispose();
       window.removeEventListener('storage', preference); window.removeEventListener('chefmate:appearance', preference);
       window.removeEventListener('chefmate:settings-saved', preference);
       if (toastTimer.current) clearTimeout(toastTimer.current);
@@ -123,6 +126,7 @@ export default function App() {
   const banner = state.status && !state.status.ready ? !state.status.configured ? '模型尚未配置，请到设置里完成模型连接。' : !state.status.database?.ready ? '菜谱数据库暂时不可用，请检查数据库连接。' : '服务暂时未就绪，请稍后重试。' : '';
   const prefs = local<Record<string, any>>('chefmate:ui-settings', {});
   return <>
+    {developer && <DeveloperWatermark />}
     <a className="skip-link" href="#composer-input">跳到输入框</a>
     <div inert={focus} className={`app react-app ${focus ? 'focus-scene-active' : ''} ${resizing ? 'pane-resizing' : ''} ${collapsed ? 'sidebar-collapsed' : ''} ${mobileOpen ? 'sidebar-open' : ''} ${detail ? 'details-open' : ''} ${prefs.density === 'compact' ? 'compact-density' : ''}`}
       data-page={page} data-preferences={prefsVersion} style={{ '--sidebar-width': `${collapsed ? 64 : width}px`, '--detail-width': `${rightWidth}px` } as CSSProperties}>

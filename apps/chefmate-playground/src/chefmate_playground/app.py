@@ -25,6 +25,7 @@ from .routes import mount_routes
 from .runtime import TurnManager
 from .sessions import SessionRepository
 from .settings import build_agent
+from .ui_preferences import AppPreferencesService
 from .versioning import current_version
 
 
@@ -58,6 +59,7 @@ def create_app(
 
     app = FastAPI(title="ChefMate Playground", version=current_version(APP_ROOT), lifespan=lifespan)
     context = AppContext(app, settings, repo, cookbook, journal, memory, retrieval=service)
+    context.preferences = AppPreferencesService(context)
     workspace_binding = (
         WorkspaceBinding(
             repo,
@@ -72,7 +74,7 @@ def create_app(
     component_registry = None
     try:
         configured_agent, component_registry = build_agent(
-            settings, service, memory=memory, cookbook=cookbook, journal=journal
+            settings, service, memory=memory, cookbook=cookbook, journal=journal, preferences=context.preferences
         )
         agent = agent if agent is not None else configured_agent
     except (ValueError, OSError):
@@ -105,7 +107,7 @@ def create_app(
 
     @app.exception_handler(RequestValidationError)
     async def invalid_request(request: Request, error: RequestValidationError):
-        if request.url.path.startswith("/api/settings"):
+        if request.url.path.startswith(("/api/settings", "/api/ui-preferences")):
             return JSONResponse({"detail": "设置请求无效，请检查字段和配置版本。"}, status_code=422)
         return await request_validation_exception_handler(request, error)
 

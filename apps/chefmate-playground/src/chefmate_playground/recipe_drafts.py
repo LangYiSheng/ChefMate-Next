@@ -90,6 +90,11 @@ class RecipeDraftRequest(BaseModel):
         max_length=500,
         description="逐字引用source_text的时间依据；没有原文则时间保持null，可在warnings说明建议估时。",
     )
+    difficulty: Literal["beginner", "normal", "advanced"] | None = None
+    difficulty_evidence: str = Field(default="", max_length=300, description="逐字引用原文的明确难度说明；未提供难度时保留null，不按菜名或步骤猜测。")
+    taste_tags: list[str] = Field(default_factory=list, max_length=30)
+    cooking_methods: list[str] = Field(default_factory=list, max_length=30)
+    required_tools: list[str] = Field(default_factory=list, max_length=30)
     ingredients: list[DraftIngredient] = Field(min_length=1, max_length=80)
     steps: list[str] = Field(
         min_length=1, max_length=80, description="可直接执行的步骤，保留火候和原文时间；推断的安全建议需明确标识。"
@@ -107,6 +112,7 @@ class RecipeDraftRequest(BaseModel):
 
         normalized_source = re.sub(r"\s+", "", self.source_text)
         evidence_fields = [(("servings_evidence",), self.servings_evidence), (("time_evidence",), self.time_evidence)]
+        evidence_fields.append((("difficulty_evidence",), self.difficulty_evidence))
         evidence_fields.extend(
             (("ingredients", index, "amount_evidence"), item.amount_evidence)
             for index, item in enumerate(self.ingredients)
@@ -115,6 +121,12 @@ class RecipeDraftRequest(BaseModel):
         for location, evidence in evidence_fields:
             if evidence and re.sub(r"\s+", "", evidence) not in normalized_source:
                 reject(location, "recipe_evidence_not_quoted", "依据必须逐字引用原文，保留表格和标点")
+        if self.difficulty is not None:
+            choices = {"beginner": r"新手|简单|入门|beginner|easy", "normal": r"普通|中等|normal|medium",
+                       "advanced": r"进阶|困难|advanced|hard"}
+            evidence = re.sub(r"[*_#]", "", self.difficulty_evidence)
+            if not re.search(r"(?:难度|difficulty)\s*[:：]?\s*(?:为|是)?\s*(?:" + choices[self.difficulty] + r")", evidence, re.I):
+                reject(("difficulty",), "recipe_difficulty_unquoted", "难度需要原文明确说明，未提供时保留未知")
         if self.servings is not None:
             if not self.servings_evidence:
                 reject(("servings_evidence",), "recipe_evidence_required", "人数需要原文依据；未写明时保留未知")
@@ -171,6 +183,15 @@ class ConfirmRecipeDeletionRequest(BaseModel):
     confirmation_id: str = Field(min_length=1, max_length=100)
 
 
+class RecipeDraftReadRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+    recipe_id: str = Field(min_length=1, max_length=100)
+
+
+class RecipeDraftRevisionRequest(RecipeDeletionRequest):
+    recipe: RecipeDraftRequest
+
+
 def _document(draft: RecipeDraftRequest) -> RecipeDocument:
     ingredients = []
     for item in draft.ingredients:
@@ -202,12 +223,12 @@ def _document(draft: RecipeDraftRequest) -> RecipeDocument:
             "prep_time_min": draft.prep_time_min,
             "cook_time_min": draft.cook_time_min,
             "total_time_min": draft.total_time_min,
-            "difficulty": None,
+            "difficulty": draft.difficulty,
             "ingredients": ingredients,
             "steps": draft.steps,
-            "taste_tags": [],
-            "cooking_methods": [],
-            "required_tools": [],
+            "taste_tags": draft.taste_tags,
+            "cooking_methods": draft.cooking_methods,
+            "required_tools": draft.required_tools,
             "warnings": draft.warnings,
         }
     )
