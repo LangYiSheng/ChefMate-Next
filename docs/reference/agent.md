@@ -88,7 +88,9 @@ result = await agent.run_turn(
 
 工作流统一使用备菜阶段：已有食材确认、缺料准备与备菜进度属于同一份清单。应用可注入 `update_preferences`、`select_recipes`、`update_prep_items`；模型依据用户明确指示、真实食材/菜谱ID和 `expected_revision` 执行，再用已有展示工具让用户核对。批量更新由领域服务原子校验，版本冲突不盲目重放；系统提示不会把模糊的“小料”分类硬编码成一组ID。
 
-`ask_user` 是等待点。应用保存封闭结构的 `pending_question`，核心通过标准 `StructuredTool(return_direct=True)` 在该条 `ToolMessage` 后结束本轮，不再请求模型。工具必须单独调用；与任何其他工具混在同批时整批拒绝，防止提问后仍有并行写操作。成功结果保留完整闭合历史，并设置 `awaiting_user=true`；工具历史只写问题ID和版本的最小成功收据，完整问题来自已经验证的本轮权威状态，避免大工作区触发输出裁切后把已保存的问题误报为失败。没有保存问题的失败结果不会假装进入等待。用户选项或自由输入先由应用校验、持久化，再以新用户消息和最新状态继续正常轮次，不需要常驻等待任务或隐藏 checkpointer。
+`ask_user` 是等待点。应用保存封闭结构的 `pending_question`，核心通过标准 `StructuredTool(return_direct=True)` 在该条 `ToolMessage` 后结束本轮，不再请求模型。工具必须单独调用；与任何其他工具混在同批时整批拒绝，防止提问后仍有并行写操作。成功结果保留完整闭合历史，并设置 `awaiting_user=true`；工具历史只写 `status/question_id/revision` 的最小成功收据，宿主需要跨轮结清业务确认时还可附带不超过1000字符的 `receipt` 对象。完整问题来自已经验证的本轮权威状态，避免大工作区触发输出裁切后把已保存的问题误报为失败。没有保存问题的失败结果不会假装进入等待。用户选项或自由输入先由应用校验、持久化，再以新用户消息和最新状态继续正常轮次，不需要常驻等待任务或隐藏 checkpointer。
+
+等待点本身只证明问题已保存，不代表某项写入已获批准。需要用户确认的应用工具必须在宿主侧绑定业务对象及版本、会话和真实问题ID，下一轮核对已保存的对应答案；模型参数中的“已批准”、别的问题答案或普通引用文字不能替代确认。个人菜谱的读改、审核与发布回执属于工作台注入能力，见[菜谱中心协议](workbench.md#菜谱中心-api)，不是本包新增的持久化或 HTTP API。
 
 ## 渐进 Skills
 
@@ -96,7 +98,9 @@ result = await agent.run_turn(
 
 名称限制为小写字母、数字、下划线或连字符；路径解析必须保持在已启用目录内，不接受文件路径，不读取辅助文件，不运行脚本。YAML frontmatter 使用 `safe_load`，文件、元数据和整轮正文分别有预算；文件变更后返回 `skill_changed`，要求刷新配置。Skills 仅提供指导，不添加 shell、任意 SQL 或任意文件工具，也不能授予额外权限。
 
-应用通过 `tool_skill_bindings={tool_name: skill_name}` 绑定现有工具，或在 `InjectedToolSpec(required_skill="personal-memory")` 上声明所属技能。`KITCHEN_TOOL_SKILLS` 提供工作台的默认映射。关闭技能后，所属工具从模型本轮绑定中移除，执行边界也返回 `skill_disabled`，历史中的旧工具定义不构成新权限。已注册 schema 保留用于读取闭合的旧对话。通用的工作区读取和提问不属于某个专属技能；自定义菜谱的详情读取还需要 `recipe-authoring`。
+应用通过 `tool_skill_bindings={tool_name: skill_name}` 绑定现有工具，或在 `InjectedToolSpec(required_skill="personal-memory")` 上声明所属技能。`KITCHEN_TOOL_SKILLS` 是可选的厨房工具映射；工作台实际启用的组件、技能目录和工具归属由应用组件清单组装，不由该常量自动启用。关闭技能后，所属工具从模型本轮绑定中移除，执行边界也返回 `skill_disabled`，历史中的旧工具定义不构成新权限。已注册 schema 保留用于读取闭合的旧对话。通用的工作区读取和提问不属于某个专属技能；自定义菜谱的详情读取还需要 `recipe-authoring`。
+
+工作台的 `app-preferences` 仅注入 `get_app_preferences/update_app_preferences`，只读写主题、配色、字体、密度、内联数量、估算标识和推荐回复等明确白名单。它不授予读取或修改模型、供应商、API Key、开发者、系统、运行预算、上下文或组件权限的能力，也不把通用设置接口暴露给模型。具体字段、独立版本和 HTTP 合同见[工作台配置边界](workbench.md#配置来源与默认值)。这是应用工具的权限边界，不能通过技能正文、嵌套字段或其他工具绕过。
 
 跨阶段操作可用 `tool_skill_bindings={tool_name: {target_stage: skill_name}}` 声明目标阶段权限。`advance_cooking_stage` 进入备菜需要 `pantry-preparation`，进入烹饪或完成需要 `cooking-guide`，进入想法或规划需要 `meal-planning`。任一目标技能启用时模型仍可看见这个共用工具，执行时按请求的 `stage` 检查，不能借共用工具进入已关闭技能负责的阶段。
 

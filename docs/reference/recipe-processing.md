@@ -32,6 +32,14 @@ with AIClient(config) as ai:
 
 `ProcessingResult` 包含 recipe、ingredient_matches、estimates、nutrition、issues、processing_metadata。元信息记录来源、包版本、词表哈希和模型；来源 ID 同时用作默认日志实体 ID。原有菜谱 JSON 不含该外层结构。草稿始终需要应用按产品要求确认，结构校验不代表内容已经真实准确。
 
+## 菜谱文档与应用草稿
+
+`recipe` 使用共享 `RecipeDocument`，字段见[JSON 字段说明](recipe-fields.md)。`raw_amount/raw_unit` 保留原始数量和单位，`grams` 单独表示有依据的可食克重；“鸡蛋2个”不能在提取或匹配时直接当成100克。未知份数、时间、难度和克重继续为空，不能用0、新手或营养估算结果填回原始事实。
+
+`validate_recipe` 检查共享结构及必要的克重/份数依据；只有传入 `vocabulary` 才追加启用词表校验。它不会访问原文数据库，也不能证明依据与用户实际来源一致。`RecipeDocument` 不包含 `source_text/time_evidence/difficulty_evidence`、记录状态或发布回执。
+
+工作台在本包之外管理个人菜谱：先校验用户来源与引用依据，再构造同一 `RecipeDocument`，用 `calculate_nutrition` 计算草稿营养，并保存外层来源和版本。用户可在对话中读取、修改、审核同一草稿；发布必须由应用核对用户对相应版本的真实确认。该过程不是 `process_recipe` 的隐藏保存动作，也不改变本包仅支持文本/Markdown 输入的边界；具体工具和 HTTP 合同见[菜谱中心 API](workbench.md#菜谱中心-api)。旧记录缺少难度或依据时保持未知，不在读取时回填推断。
+
 提取失败抛异常；单项匹配/估算失败保留已成功的数据并返回问题。已有有效快照、已确认映射优先复用；模型只能选择候选中真实 ID。未知值不按零计算，不模拟烹饪损耗。估算独立放入 __ai_estimate__，菜谱修改后失效，不进入已确认共享映射。
 
 ## 异步调用和生命周期

@@ -74,6 +74,8 @@ recovery        可选的恢复动作说明
 
 所有组件使用 `kind` 鉴别，结构为 `id/kind/title/revision/presentation_revision/editable/data`；数据来自真实领域投影。模型不能提供 HTML、任意 schema、菜谱步骤或营养内容。偏好字段为 `ingredient_terms`、`exclude_ingredient_terms`、`servings`、`max_total_time_min`、`taste_tags`、`available_tools`、`dietary_notes`、`allow_estimated`。
 
+这里的 `update_preferences` 只修改当前厨房任务的选菜偏好。主题、字体、配色与推荐回复由工作台独立的 `app-preferences` 组件负责；个人菜谱草稿的读改与发布也由应用管理，都不是 `TOOL_CONTRACTS` 或 `UserActionRequest` 中的新工作流命令。其白名单、版本与确认接口见[核心 App 参考](workbench.md)。
+
 短快照包含当前完整偏好、所选 IDs、当前菜谱/步骤、简短组件状态和最近20条操作。`current_actions` 逐工具给出 `available/effect/auto_display/blockers`；`allowed_transitions` 列出可进入的不同阶段，`blockers[目标阶段]` 给出具体 `code/message`。它们与执行共用注册表和阶段校验。历史偏好操作仅记改变了哪些字段，当前偏好值是唯一依据。完整用量、营养、warnings 和源快照保留在界面投影与任务原件中。
 
 ## 用户动作
@@ -106,7 +108,9 @@ recovery        可选的恢复动作说明
 
 开始烹饪时记录真实 `started_at`，完成时记录 `completed_at`；重复完成保持原时间。`meal_record()` 用同一份量/营养投影输出观察到的任务快照，供应用独立保存饮食记录。旧工作区没有观测时间时不回填虚构日期。
 
-`ask_user` 的结构为 `{title?,question,options:[{id,label}],allow_custom:true,multiple:false}`。问题最多500字，标题与选项各80字，至多6个不同选项；没有选项时必须允许自填。待答问题不会被新的提问工具悄悄替换，调用方应停止本轮推理并等用户输入。`answer_question` 使用 `{question_id,option_ids:[],text:""}`，同时携带普通动作的 `action_id/base_revision`；不符合当前问题、多选限制、自填限制或版本的答案不保存。成功后清除 `pending_question`，将题目、选项标签与自填文字存入 `last_answer`，再由应用启动下一轮。
+`ask_user` 的结构为 `{title?,question,options:[{id,label}],allow_custom:true,multiple:false}`，其中 `allow_custom/multiple` 可由调用方明确设置，示例为默认值。问题最多500字，标题与选项各80字，至多6个不同选项；没有选项时必须允许自填。待答问题不会被新的提问工具悄悄替换，调用方应停止本轮推理并等用户输入。`answer_question` 使用 `{question_id,option_ids:[],text:""}`，同时携带普通动作的 `action_id/base_revision`；不符合当前问题、多选限制、自填限制或版本的答案不保存。成功后清除 `pending_question`，将 `question_id/question/option_ids/labels/text` 存入 `last_answer`，再由应用启动下一轮。
+
+`last_answer` 表示服务端已验证的问题答案，本包不会因此自动执行发布或删除等应用操作。应用若把问题作为写入确认，仍须核对同一业务对象及版本、会话、问题ID和所需选项；不能把任意一次回答或模型声称“已确认”作为授权。工作台的个人菜谱确认由专用回执完成，草稿版本变化必须重新审核与确认，见[菜谱中心 API](workbench.md#菜谱中心-api)。
 
 ## 业务边界
 
@@ -116,7 +120,7 @@ recovery        可选的恢复动作说明
 - 源数据没有可靠的必选/可选字段，因此全部食材需要明确确认 `ready` 或用户主动 `skipped`；界面说明该资料边界，不声称已证明食材可省略。
 - 浏览当前步骤不会把步骤标成完成；必须 `complete_step`。所有已选菜谱的步骤都 done 才允许 completed。
 - 烹饪中不允许替换餐单、修改备料或份量。回退后改变人数会使该菜谱的准备和步骤重新待确认，并取消其关联计时。
-- 份量换算仅针对已知数字、可靠人数基准和 `scalable=true` 的项；不猜单位、不把“适量”转零、不倍增不可缩放调味料。营养按单项贡献重算，缺信息保持未知，人数估算继续传递标记。
+- 份量换算仅针对已知数字、可靠人数基准和 `scalable=true` 的项；不猜单位、不把“适量”转零、不倍增不可缩放调味料。原始 `raw_amount/raw_unit` 与可食克重 `grams` 分开保留，数量“2个”不能替代未知克重。当前用量通过 `amount_text/amount_value/unit` 投影，原人数不可靠时保留未知和提示，不伪造换算基准。营养按单项贡献重算，缺信息保持未知，人数估算继续传递标记。
 - `set_checklist_scope` 在统一备菜视图切换整餐/单菜，范围必须来自已选餐单；食材仍保留逐菜ID、目标人数和真实用量，不把另一道菜的同名食材推断为已经确认。
 - `WorkspaceState` 当前格式为 `schema_version=2`。读取v1时将旧shopping阶段和购物组件归一成prep，旧购买勾选按实际 `source_item_ids` 转为准备确认，保留已有ready/skipped；未知归属不猜测。读取不改修订号，下一次有效命令原子保存v2。旧用户消息中的购物快照也可读取，新模型不再得到购物工具。
 - 计时保存 UTC 截止时间；暂停保存剩余秒数，恢复生成新截止时间，读取时依据真实时间判断到期。UI 的直接输入属于用户指定；模型的 `basis=user` 需与可信用户文本明确时长一致，`basis=recipe_text` 需源步骤唯一明确时长，不猜范围或多阶段时间。无后台通知。

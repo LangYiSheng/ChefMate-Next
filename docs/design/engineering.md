@@ -36,6 +36,8 @@
 
 前端源码和样式位于 `frontend/src/`。`main.tsx` 导入 [styles/index.css](../../apps/chefmate-playground/frontend/src/styles/index.css)，由 `foundation/controls/shell/chat/details.css` 分别管理颜色与字体角色、公共控件、页面框架、聊天及详情布局。设置、个人中心和厨房样式随功能域组织，并限定在各自根容器；使用共享的 `--color-*`、`--font-*`，避免跨页面覆盖同名控件。
 
+共享 Select 与文本输入样式归 `components/ui/`；新表单复用既有控件，保持主题、键盘、焦点、禁用和错误提示一致。开发者目录与轨迹归 `components/developer/`，普通对话不显示诊断数据。长设置页索引、弹出菜单与专注动画需在浏览器核对实际滚动容器和命中位置，组件测试不能替代布局验收。
+
 `frontend/public/` 只保存字体、品牌和第三方图标资源。生成的 `web/` 由 FastAPI 提供 SPA 页面和 `/static` 资源，不手工修改构建输出。直接使用 uv 启动前先运行 `npm ci` 和构建；`run.ps1` 自动按这个顺序执行。视觉验收同时检查浅色、深色、字体角色、估算开关、窄屏和横屏，以及实际加载的构建资源。
 
 当前规范放在 `docs/design`，原理与案例放在 `docs/guide`，参数放在 `docs/reference`，计划和验收放在 `docs/engineering`。README 保持产品入口与运行路径，用链接承接详细合同，避免不断追加日期小节。
@@ -44,9 +46,11 @@
 
 ## 版本与发布
 
-版本号只在用户明确要求时升级。日常更新保持当前版本，有用户可见变化时才在 [releases.json](../../apps/chefmate-playground/releases.json) 累计日志，同一版本可以有多条记录。用户要求发版时，再汇总为该版本的更新说明，并保留原始条目供追溯。确定升级版本后，同步修改 App 的 `pyproject.toml` 和锁文件。
+版本号只在用户明确要求时升级。日常更新保持当前版本，有用户可见变化时才在 [releases.json](../../apps/chefmate-playground/releases.json) 累计日志，同一版本可以有多条记录。用户要求发版时，再汇总更新说明，并保留原始提交来源及历史档案供追溯。确定升级版本后，同步修改 App 的 `pyproject.toml`、`uv.lock` 和前端 `package.json`、`package-lock.json` 中的项目版本。
 
 每条更新记录都包含 `source: {branch, commit}`：`branch` 保存当时的 Git 分支名，`commit` 保存被记录的已存在代码快照的完整 SHA，界面展示短提交 ID。来源固定保存在记录中，不在读取时动态取 `HEAD`，也不要求填写承载日志记录的提交自身哈希。
+
+用户要求把近期条目合并到新版本时，使用 `includes: [{branch,commit}, ...]` 保留被合并记录的来源；旧版本中移除这些重复条目，原始历史仍可在 Git 与工程档案追溯。只更新文档时保持当前版本，不给用户更新日志追加内部文档整理。
 
 较大更新完成并检查通过后，自动创建范围明确的提交并推送，无需再次确认；保留无关的本地改动，不提交密钥、个人配置和运行数据。
 

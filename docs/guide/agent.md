@@ -105,6 +105,12 @@ flowchart LR
 模型可以申请显示菜谱候选、备料清单、步骤、提问等界面，实际内容经过应用协议校验。
 例如 `ask_user` 保存待回答问题后结束本轮，用户回答再形成真实动作继续任务。[界面协议设计](../design/agent-ui.md)
 
+个人菜谱也有明确的“整理、修改、确认保存”过程。`create_recipe_draft` 整理用户提供的原文或图片，`get_recipe_draft` 读取真实草稿，`revise_recipe_draft` 按已读取的 ID 和版本修改同一份记录。
+对话审核卡展示服务端当前内容；修改入口只填写输入框，用户发送后才交给助手处理。份数、时间、难度和精确克重需要来源依据，不能按菜名或步骤自行补齐。[草稿合同](../../apps/chefmate-playground/src/chefmate_playground/recipe_drafts.py) · [审核卡](../../apps/chefmate-playground/frontend/src/components/RecipeReview.tsx)
+
+需要由助手发起保存确认时，`request_recipe_publication` 创建与草稿 ID、版本和问题绑定的回执；`confirm_recipe_publication` 再核对真实用户答案后保存，选择继续修改则保留草稿。
+用户也可直接点击审核卡的保存按钮；有待答问题或会话状态尚未同步时，该入口隐藏或禁用。版本冲突要求重新核对，不会自动重试发布。[发布确认](../../apps/chefmate-playground/src/chefmate_playground/recipe_publication.py)
+
 涉及写入、等待或展示的依赖操作要求逐次调用。
 “改人数”和“按新人数确定下一步”需要先拿到修改成功与最新版本，避免模型在一个批次里假定前一步已经生效。
 独立只读工具仍可按照运行时支持的方式调用。[批次策略](../../packages/chefmate-agent/src/chefmate_agent/tool_execution.py)
@@ -129,12 +135,16 @@ flowchart LR
 ## Skills：先知道能做什么，用到时再读细节
 
 系统提示先放启用技能的名称和简介，模型需要具体流程时调用 `load_skill`。
-餐单、备菜、烹饪、个人菜谱、长期记忆和饮食记录分别有应用指引。
+当前七个系统组件——选菜与餐单、备菜与准备、烹饪引导、个人菜谱、应用偏好、长期记忆和饮食记录——分别有应用指引。
 技能加载器只读取显式允许目录中的 `SKILL.md`，检查路径、内容变化和读取预算；应用层再把技能与组件工具绑定。[加载器](../../packages/chefmate-agent/src/chefmate_agent/skills.py) · [组件注册](../../apps/chefmate-playground/src/chefmate_playground/components.py)
 
 例如“历史里只提到电磁炉”不能自动推成“现在只有这一种厨具”。
 餐单指引要求明确菜名优先按名查询，历史偏好谨慎转成约束，确需过滤时先读真实枚举。
 这类领域细节进入按需指引，让核心协议保持稳定，业务经验可以单独维护。[餐单技能](../../apps/chefmate-playground/skills/meal-planning/SKILL.md) · [相关工程记录](../engineering/records/2026-10-22-automatic-intake-and-typography.md)
+
+“应用偏好”组件通过 `get_app_preferences` 读取普通偏好及其版本，再以 `update_app_preferences` 提交用户明确要求修改的字段。
+白名单仅包含主题、浅深配色、字体、密度、内联展开数量、估算标识与推荐回复开关及数量；模型配置、密钥、组件开关、开发者设置和运行预算不在工具权限内。
+陌生字段和过期版本会被拒绝，省略字段保持原值。页面重新读取服务端偏好应用变化，打开历史工具结果不会把外观退回旧值。[偏好服务与工具](../../apps/chefmate-playground/src/chefmate_playground/ui_preferences.py) · [前端同步](../../apps/chefmate-playground/frontend/src/features/preferences/client.ts)
 
 ## 失败时怎样收尾
 
@@ -145,6 +155,10 @@ flowchart LR
 调试事件记录实际请求投影、工具目录、参数完整性诊断与用量。
 可观测性帮助回答“模型这一轮看到了什么、能调用什么、为什么没执行”，敏感字段按规则脱敏。
 实际缓存和 token 用量以服务端可得指标为准，缺失指标保留未知。[调试记录](../../packages/chefmate-agent/src/chefmate_agent/debug.py) · [用量记录](../../packages/chefmate-agent/src/chefmate_agent/telemetry.py)
+
+普通界面只在助手回复位置显示简短活动状态，错误、停止与重试保留。开启开发者模式后，侧栏增加上下文分类估算彩条，回复可展开工具执行时间线，右侧诊断提供中文工具目录、组件依赖状态，以及按会话轮次和模型请求选择的时间线或树视图。
+系统提示词、用户输入、助手消息、工具调用和结果分别标识，参数与结果默认显示概要，完整内容按需展开；报告用量、部分已知统计和请求大小粗估分别说明。
+版本和当前时间水印也只在开发者模式显示；未留存的请求明确标为缺失，不重建历史，也不展示隐藏推理正文。[开发者诊断](../../apps/chefmate-playground/frontend/src/components/developer/Diagnostics.tsx)
 
 ## 如何判断这些设计是否真的有效
 

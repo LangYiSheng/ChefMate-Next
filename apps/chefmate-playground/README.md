@@ -7,9 +7,10 @@
 ## 主要能力
 
 - 真实菜谱检索、共享餐单、可核对的备菜与步骤、持久化计时。
-- 文字/图片输入、个人菜谱草稿、收藏、删除与恢复。
+- 文字/图片输入、对话内菜谱审核与修改、按版本确认保存、收藏、删除与恢复。
 - 食光手记、本人食用份额、长期记忆、独立模型用量账本。
-- 系统组件开关、模型协议与图片能力配置、公开工具轨迹和脱敏观测。
+- 七个系统组件开关、模型协议与图片能力配置；开发者模式提供上下文分类条、工具目录、请求时间线与树视图。
+- 统一主题控件、设置标签页与宽屏目录；普通外观和对话偏好可由助手按白名单读取及修改。
 - 设置中的版本更新日志，按版本查看已发布的功能与改进。
 - 单会话运行、显式停止、失败重试与断线后状态恢复。
 
@@ -41,10 +42,14 @@ uv run --project apps/chefmate-playground chefmate-playground
 | [runtime.py](src/chefmate_playground/runtime.py)、[sessions.py](src/chefmate_playground/sessions.py) | 执行轮次、SSE 与会话聚合 |
 | [interactions.py](src/chefmate_playground/interactions.py) | 可信轮次与厨房领域服务绑定 |
 | [cookbook.py](src/chefmate_playground/cookbook.py)、[meal_logging.py](src/chefmate_playground/meal_logging.py) | 个人菜谱与饮食仓储 |
+| [recipe_publication.py](src/chefmate_playground/recipe_publication.py)、[recipe_tools.py](src/chefmate_playground/recipe_tools.py) | 菜谱审核、修改及绑定用户答案的版本确认 |
+| [ui_preferences.py](src/chefmate_playground/ui_preferences.py) | HTTP 与智能体共用的普通偏好白名单、版本与保存边界 |
 | [cooked_intake.py](src/chefmate_playground/cooked_intake.py)、[memory.py](src/chefmate_playground/memory.py) | 本人份额与长期记忆 |
 | [frontend/src/App.tsx](frontend/src/App.tsx)、[main.tsx](frontend/src/main.tsx) | React 应用装配、页面导航与启动 |
 | [frontend/src/runtime/](frontend/src/runtime/) | JSON/SSE 传输、会话运行、恢复与浏览器草稿 |
 | [frontend/src/components/](frontend/src/components/)、[features/](frontend/src/features/) | 对话组件、设置、个人中心和烹饪工作区 |
+| [frontend/src/components/ui/](frontend/src/components/ui/)、[components/developer/](frontend/src/components/developer/) | 共享 Select 与输入样式、开发者目录和执行轨迹 |
+| [frontend/src/features/preferences/](frontend/src/features/preferences/) | 服务端偏好同步、本地缓存与写入竞态处理 |
 | [frontend/src/styles/](frontend/src/styles/)、[styles/index.css](frontend/src/styles/index.css) | 全局颜色与字体角色、控件、页面框架、聊天和详情布局 |
 | [settings-react.css](frontend/src/features/settings/settings-react.css)、[centers-react.css](frontend/src/features/centers/centers-react.css)、[workspace.css](frontend/src/features/workspace/workspace.css) | 设置、个人中心、厨房与计时的作用域样式 |
 | [frontend/public/](frontend/public/) | 随构建复制的字体、品牌资源和 Lucide sprite |

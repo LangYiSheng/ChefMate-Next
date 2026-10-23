@@ -37,6 +37,7 @@
 | --- | --- | --- |
 | 厨房视图 | `preference_form/recipe_choices/recipe_detail/meal_plan/prep_checklist/cooking_guide/timers/task_progress` | 工作流 `ViewComponent` 与厨房 registry |
 | 对话饮食 | `food_log/nutrition_summary` | 已验证饮食工具结果、个人记录和独立渲染入口 |
+| 个人菜谱审核 | 个人菜谱记录（工具结果 `draft`） | 权威读取与独立审核卡，不扩充厨房视图枚举 |
 | 提问等待 | `pending_question/last_answer` | 持久工作区中的问题与答案，独立于厨房视图枚举 |
 
 厨房 registry 的枚举只覆盖对应领域，不能把其数量当作全应用组件总数。
@@ -113,6 +114,18 @@ SSE 活跃事件带 `session_id/turn_id/sequence`。离开视图只断开订阅�
 不可变 `ComponentSpec` 统一声明组件 ID、中文名称、指引、工具归属、目标阶段、UI 类型与页面、依赖和工厂。
 设置、调试、构建和执行权限从同一清单派生；新增工具漏归属、重复归属、阶段冲突或工厂漏工具会由构建与合同测试拒绝。
 
+0.2.1 当前有七个系统组件：[组件清单](../../apps/chefmate-playground/src/chefmate_playground/components.py)。
+
+| 组件 ID | 能力 |
+| --- | --- |
+| `meal-planning` | 选菜与餐单 |
+| `pantry-preparation` | 备菜与准备 |
+| `cooking-guide` | 烹饪引导 |
+| `recipe-authoring` | 个人菜谱草稿、对话审核、修改与保存确认 |
+| `app-preferences` | 白名单普通应用偏好的读取与修改 |
+| `personal-memory` | 长期记忆与个人历史 |
+| `food-journal` | 饮食草稿、个人摄入与营养统计 |
+
 `SkillRegistry` 只负责按需读取显式允许的指南：先列简介，再按目录、内容版本和预算读取正文。
 指南正文提供指导，执行权限由组件启用状态、阶段与业务条件核对。共用阶段工具按请求的目标阶段检查所属技能。
 新能力建立自己的请求、工具、记录和 UI 边界，先用隔离依赖验证，再进行真实模型验收。[组件合同测试](../../apps/chefmate-playground/tests/test_components.py)
@@ -120,6 +133,12 @@ SSE 活跃事件带 `session_id/turn_id/sequence`。离开视图只断开订阅�
 个人菜谱、收藏、制作历史、个人饮食和长期记忆保存在应用独立表，基础 PostgreSQL 库保持只读。
 个人菜谱先生成带来源依据的草稿，用户核对发布后进入相同的检索引用和冻结流程。
 长期记忆分为用户原文与助手摘要，当前明确需求优先，助手不能覆盖用户原文；按预算注入本轮，历史按需检索。
+
+个人菜谱的 `create_recipe_draft/get_recipe_draft/revise_recipe_draft` 返回真实记录，修改保留同一 `recipe_id` 并核对 `revision`；份数、耗时、难度与精确克重受引用来源校验，未知项不补造。
+对话审核卡按最高版本和最新所属消息去重，展示前 GET 当前记录；修改按钮只填写输入草稿，用户发送后才执行修订。直接保存携带已审核版本，冲突后显式重读，不自动重试发布。[草稿工具](../../apps/chefmate-playground/src/chefmate_playground/recipe_tools.py) · [审核卡](../../apps/chefmate-playground/frontend/src/components/RecipeReview.tsx)
+
+`request_recipe_publication` 保存与草稿版本、会话和问题绑定的确认回执；`confirm_recipe_publication` 必须核对服务端真实用户答案，选择继续修改不会发布。
+会话权威记录或工作区存在待答问题时，审核卡隐藏直接保存入口；已回答的问题按 `last_answer.question_id` 排除旧缓存，读取、保存或续轮未同步时仍禁用直接发布。发布准备失败只撤回仍匹配本次 ID 的新问题，不清除其他问题。[确认事务](../../apps/chefmate-playground/src/chefmate_playground/recipe_publication.py)
 
 ## 制作量与个人摄入
 
@@ -136,13 +155,20 @@ SSE 活跃事件带 `session_id/turn_id/sequence`。离开视图只断开订阅�
 
 ## 设置与工作区导航
 
-设置支持主工作区内嵌和独立 `/settings` 页面，两者使用相同字段、主题与保存协议。
+设置通过 `/settings` 路由在主工作区显示，直接打开该路径使用相同页面、字段、主题与保存协议。
 设置、菜谱中心和食光手记切换时保持对话与输入草稿；所有离开路径先经过未保存修改保护。
 中心中的发起聊天动作创建新会话，原会话草稿可恢复；查看、收藏和编辑保持所属中心行为。
 
-服务端设置核对完整配置版本，校验、构建新 Agent 并原子写入后应用；活跃对话阻止非计时分类切换，计时策略允许实时保存。
+设置内容使用顶部页签，宽内容区按当前可见节点生成右侧索引；设置、个人中心和诊断的选择控件共用 [Select](../../apps/chefmate-playground/frontend/src/components/ui/Select.tsx)，普通输入由共享样式管理。[视觉与控件规范](ui.md#控件和保存反馈)
+
+模型、组件与运行设置核对完整配置版本，校验、构建新 Agent 并原子写入后应用；活跃对话限制相关配置修改，计时策略允许实时保存。
 密钥不可回读，同端点可沿用，更换端点必须明确提供；分类分别保留草稿与读取版本，其他分类刷新不能解除已发生的冲突。
-界面显示偏好保存于当前浏览器。[设置参考](../reference/workbench.md#配置来源与默认值)
+普通偏好走独立 `/api/ui-preferences` 版本协议，服务端保存并由浏览器投影到本地外观；本机开发者设置继续单独保留。[设置参考](../reference/workbench.md#配置来源与默认值)
+
+`app-preferences` 仅提供 `get_app_preferences/update_app_preferences`，修改白名单为 `theme/light_palette/dark_palette/font_pairing/density/inline_limit/show_estimates/reply_suggestions/reply_suggestion_count`。
+修改只应用明确传入字段并检查版本，未知字段拒绝；不能通过这个工具读取或修改模型、密钥、组件、开发者、系统或运行参数。前端对当前执行与服务恢复重新 GET 权威值，历史工具快照不能覆盖当前偏好。[偏好合同与服务](../../apps/chefmate-playground/src/chefmate_playground/ui_preferences.py) · [浏览器同步](../../apps/chefmate-playground/frontend/src/features/preferences/client.ts)
+
+专注厨房由常驻普通场景承载，进入与退出时主区、已打开右栏和厨房场景协同平移；非活动场景 `inert/aria-hidden`，输入草稿与后台任务保持原归属，减少动态效果时即时切换。[场景实现](../../apps/chefmate-playground/frontend/src/features/workspace/index.tsx) · [应用框架](../../apps/chefmate-playground/frontend/src/App.tsx)
 
 ## 参数完整性、恢复与观测
 
@@ -153,6 +179,10 @@ SSE 活跃事件带 `session_id/turn_id/sequence`。离开视图只断开订阅�
 用量账本按会话与轮次幂等记录，独立于可删除聊天，保留失败和取消前已观测的供应商调用。
 在实际工具绑定边界捕获系统、对话、工具回调、工具定义、可信 UI、记忆和指南；字符数对应捕获内容，token 分类明确为估算，计费用量以供应商报告为准。
 公开过程与最终回答分开；开发者诊断只展示真实留存请求，缺失历史不得用当前配置重建冒充。[观测实现](../../apps/chefmate-playground/src/chefmate_playground/debug.py)
+
+普通模式仅显示助手位置的简短活动文字与必要错误、停止和重试。开发者模式才显示回复执行时间线、侧栏上下文分类估算彩条、调试入口和带版本时间的开发水印。
+调试目录提供中文工具分组、搜索与可用状态，以及组件启用状态、依赖与工具归属；会话轮次和模型请求分别选择，按时间线或树视图展示系统、用户、助手、调用及结果，完整参数和内容按需展开。
+供应商报告、部分已知用量与请求大小粗估分别标明；缺失指标不当作零，隐藏推理正文不进入展示。[开发者界面](../../apps/chefmate-playground/frontend/src/components/developer/Diagnostics.tsx)
 
 ## 来源与验证
 

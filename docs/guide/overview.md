@@ -11,7 +11,7 @@ ChefMate 把“今天吃什么”接到“这一餐做完了”：理解食材�
 主要入口是 [`apps/chefmate-playground`](../../apps/chefmate-playground/README.md)。
 它虽然保留了 Playground 这个工程名，已经承担聊天、厨房任务、个人菜谱、食光手记、饮食记录和设置的完整应用入口。
 后端用 `create_app()` 组装依赖，HTTP 路由按会话、工作区、个人资料、菜谱库和系统能力分开。
-前端用浏览器原生模块组织界面、流式对话和厨房交互。
+前端使用 React 19.3.1、TypeScript 7 和 Vite 8，界面组件通过独立状态服务处理流式对话、草稿和厨房交互。[前端入口](../../apps/chefmate-playground/frontend/src/App.tsx)
 业务规则放在应用服务与独立 Python 包中，入口文件负责把它们接起来。[应用组装源码](../../apps/chefmate-playground/src/chefmate_playground/app.py) · [路由目录](../../apps/chefmate-playground/src/chefmate_playground/routes/)
 
 可以把界面理解为两位搭档：
@@ -26,6 +26,8 @@ ChefMate 把“今天吃什么”接到“这一餐做完了”：理解食材�
 
 这些能力由[组件清单](../../apps/chefmate-playground/src/chefmate_playground/components.py)绑定指引、工具、页面与依赖。
 关闭一个组件会同时影响对应工具的可执行性；配置并非只改变界面上的一个开关。
+当前 0.2.1 的七个系统组件是选菜与餐单、备菜与准备、烹饪引导、个人菜谱、应用偏好、长期记忆和饮食记录。
+其中“应用偏好”让用户通过对话调整主题、配色、字体、显示密度和推荐回复等普通设置；模型连接、密钥、开发者选项和运行参数仍由设置界面管理。[普通偏好边界](../../apps/chefmate-playground/src/chefmate_playground/ui_preferences.py)
 
 ## 跟着小林做一顿饭
 
@@ -76,6 +78,15 @@ ChefMate 把“今天吃什么”接到“这一餐做完了”：理解食材�
 如果小林更正“滑蛋其实只吃了四分之一”，系统更新同一条个人记录。
 重新打开历史、刷新页面、重复提交已有操作，都有相应规则防止重复入账。
 外部照片或文字记餐则走草稿核对流程，不能套用“单人完成烹饪”的自动登记规则。[登记回归](../../apps/chefmate-playground/tests/test_cooked_intake.py) · [普通记餐流程](../../apps/chefmate-playground/tests/test_food_log_confirmation.py)
+
+## 把自己的做法留下来
+
+用户提供文字或图片菜谱后，助手可以整理带来源的个人菜谱草稿，在对话内展示审核卡。
+卡片重新读取当前版本，展示名称、份数、耗时、难度、原始食材用量、步骤和来源依据；原文没有明确的时间、难度与份数保留未知。
+“告诉助手怎么改”只把带草稿 ID 的修改起始文字放进输入框，用户发送后，助手读取并修改同一份草稿。
+
+核对后可以在卡片明确确认保存，也可以完成助手发出的保存问答；已有待答确认时，卡片不再提供第二个保存入口。
+保存核对草稿版本，冲突后保留当前显示内容、要求重新读取；成功后显示已保存，并可继续聊这道菜怎么做。[对话审核卡](../../apps/chefmate-playground/frontend/src/components/RecipeReview.tsx) · [草稿与发布工具](../../apps/chefmate-playground/src/chefmate_playground/recipe_tools.py)
 
 ## 一张图看清整体
 

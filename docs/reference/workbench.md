@@ -67,6 +67,7 @@ uv run --project apps/chefmate-playground chefmate-playground
 保存先核对设置版本，校验成功再原子写文件并应用；冲突保留用户草稿供复核。
 活跃模型轮次存在时，除 `cooking` 外的分类会返回 409；计时策略使用最新设置读取，不替换当前 Agent。
 普通外观和对话偏好使用独立的 `GET/PATCH /api/ui-preferences`：读取返回 `{revision,initialized,values}`，保存发送 `{revision,changes}`。字段白名单为 `theme/light_palette/dark_palette/font_pairing/density/inline_limit/show_estimates/reply_suggestions/reply_suggestion_count`。该域独立校验版本，可在轮次运行中更新，不暴露模型、开发者、系统或密钥。首次使用将浏览器外观迁入服务端；冲突不自动重放修改。
+这里的 `revision` 是不透明 CAS 标识，不能按大小判断新旧，也不能与 `/api/settings` 的版本互换。409 的 `detail.preferences` 提供当前快照；未保存草稿需保留，重新读取后复核。首次迁移只发送七个外观字段，保留服务端已有的推荐回复开关与数量。智能体 `get_app_preferences/update_app_preferences` 成功返回 `preferences`，更新另返回只含实际变化的 `changed`；两者都按 `app-preferences` 组件和技能约束。[偏好服务](../../apps/chefmate-playground/src/chefmate_playground/ui_preferences.py)
 查询不返回密钥；同一端点可沿用已有密钥，更换端点需要提供专用密钥。
 模型连接测试验证原生工具请求、结果回传与最终回答，HTTP 200 本身不足以说明协议可用。
 
@@ -87,7 +88,7 @@ uv run --project apps/chefmate-playground chefmate-playground
 
 工作流展示支持 `display=inline|workspace|none`。服务端生成受控组件；前端使用当前可信投影交互，历史卡片中的原始 JSON 不作为写入依据。
 厨房组件包括偏好、候选、详情、餐单、备料、步骤、计时和进度，饮食组件另含 `food_log`、`nutrition_summary`，等待点使用 `pending_question`。
-浏览器显示偏好 `inline_limit` 取 1 或 2，控制每条回复默认展开的界面数量；当前可编辑内容优先，其余保留摘要及展开入口。相同组件在多条消息出现时，只允许最新所属消息提供当前任务操作。
+普通应用偏好 `inline_limit` 取 1 或 2，控制每条回复默认展开的界面数量；当前可编辑内容优先，其余保留摘要及展开入口。相同组件在多条消息出现时，只允许最新所属消息提供当前任务操作。
 完整模型字段见[工作流参考](workflow.md)与[智能界面设计](../design/agent-ui.md)。
 
 ## 会话、图片与厨房 API
@@ -155,6 +156,15 @@ uv run --project apps/chefmate-playground chefmate-playground
 草稿复用处理包的结构校验和确定性营养计算；时间、人数、克重缺乏原文依据时留空。
 `get_recipe_draft/revise_recipe_draft` 支持对话内核对和修改；`request_recipe_publication` 发起真实问题，`confirm_recipe_publication` 绑定会话、草稿版本和用户答案执行。修改草稿使旧确认失效，助手自行传入“已批准”不能发布。回复审核卡也会重新读取当前记录，按版本确认保存；已有待回答问题时以问题面板为唯一确认入口。
 个人菜谱采用基础菜谱相同的 `raw_amount/raw_unit/grams` 食材契约。难度仅接受有原文依据的 `beginner/normal/advanced`，否则为未知；编辑器中的手动选择记为用户补充。
+个人记录包含 `document`（标准 RecipeDocument）及记录外层的 `time_evidence/difficulty_evidence`；依据不写入共享文档结构，历史缺失也不补造。
+
+| 智能体菜谱工具 | 成功结果与确认边界 |
+| --- | --- |
+| `create_recipe_draft/get_recipe_draft/revise_recipe_draft` | `draft` 中返回当前个人记录，含 `recipe_id/status/revision/document`；读取已保存记录时 `status=saved`，不因此变回草稿 |
+| `request_recipe_publication` | 当前版本须已通过工具读取或整理；返回真实问题与 `receipt.confirmation_id/recipe_id/revision/next_tool`，此时尚未发布 |
+| `confirm_recipe_publication` | 传 `confirmation_id`；回执绑定会话、草稿版本、问题和发起轮次，宿主保存同题 `option_ids=['publish']` 才发布，返回 `published=true` 与 `draft.status=saved` |
+
+发布准备期间若草稿已变化，只撤回自己创建且仍匹配的问题；不能清掉后来出现的另一道问题。已保存菜谱的读取与重新安排烹饪继续使用正常检索合同。[工具绑定](../../apps/chefmate-playground/src/chefmate_playground/recipe_tools.py) · [确认仓储](../../apps/chefmate-playground/src/chefmate_playground/recipe_publication.py)
 助手删除个人菜谱先发起真实待回答问题，再按对应答案执行；撤销删除走恢复接口。[菜谱服务](../../apps/chefmate-playground/src/chefmate_playground/cookbook.py) · [路由细节](../../apps/chefmate-playground/src/chefmate_playground/routes/library.py)
 
 ## 制作记录、个人饮食与记忆 API
@@ -183,6 +193,7 @@ uv run --project apps/chefmate-playground chefmate-playground
 | --- | --- |
 | `GET /api/status` | 配置、数据库就绪、菜谱数、模型能力、活动会话和组件 |
 | `GET/PATCH /api/settings` | 脱敏配置与版本保存 |
+| `GET/PATCH /api/ui-preferences` | 独立白名单普通偏好与 CAS 保存，允许活跃轮次更新 |
 | `POST /api/settings/test-model` | 所选协议的完整原生工具往返验证 |
 | `GET /api/components` | 指引、工具、UI 和依赖清单 |
 | `GET /api/usage?days=30` | `days=1..366` 或 `all`，实际报告用量与覆盖情况 |

@@ -20,6 +20,8 @@
 | `interactions.py` / `components.py` | 可信轮次、领域服务绑定、系统组件合同与工厂 |
 | `cookbook.py` | 个人菜谱仓储和基础/个人检索组合 |
 | `recipe_drafts.py` / `recipe_tools.py` | 菜谱草稿契约与校验、智能体菜谱工具 |
+| `recipe_publication.py` | 发布确认回执，绑定会话、草稿版本、问题与用户真实答案 |
+| `ui_preferences.py` | HTTP 与智能体共用的普通偏好白名单、独立版本与保存服务 |
 | `meal_logging.py` | 饮食记录仓储、修订与回收站 |
 | `food_log_models.py` / `food_log_evidence.py` / `food_log_tools.py` | 记餐契约、来源核对、模型工具 |
 | `cooked_intake.py` / `journal.py` | 从制作历史核对本人份额、汇总制作与摄入 |
@@ -37,9 +39,14 @@
 | `src/runtime/store.ts` | 会话分页与切换、发送、取消、恢复、草稿与确认后续轮 |
 | `src/runtime/http.ts` / `src/runtime/attachments.ts` | JSON/SSE 协议、脱敏、图片压缩与 IndexedDB 草稿 |
 | `src/components/Composer.tsx` / `Conversation.tsx` | 受控输入、附件、消息、公开过程与建议 |
-| `src/components/Details.tsx` / `Markdown.tsx` | 菜谱与调试详情、安全文本渲染 |
+| `src/components/Details.tsx` / `Markdown.tsx` | 菜谱详情与安全文本渲染 |
+| `src/components/RecipeReview.tsx` | 对话内菜谱审核，读取当前记录与按版本确认保存 |
+| `src/components/ui/` | 共享 Select 与输入样式、菜单定位、键盘操作和焦点管理 |
+| `src/components/developer/` | 开发者工具与组件目录、执行过程、请求时间线与树视图 |
+| `src/components/ContextMeter.tsx` / `DeveloperWatermark.tsx` | 开发者上下文分类占比、模式与版本时间标识 |
 | `src/features/workspace/` | 厨房状态服务、白名单视图、问答、专注模式与计时 |
 | `src/features/settings/` | 设置读取与保存、外观、记忆、用量与导航保护 |
+| `src/features/preferences/` | 普通偏好服务端同步、浏览器缓存、串行写入与迟到请求处理 |
 | `src/features/centers/` | 菜谱中心、编辑器、食光手记与个人饮食 |
 | `src/styles/index.css` / `foundation.css` | 全局样式入口、本地字体声明、语义颜色与字体角色 |
 | `src/styles/controls.css` / `shell.css` | 公共控件、主框架、侧栏、移动抽屉与布局断点 |
@@ -50,6 +57,8 @@
 组件用 `useSyncExternalStore` 订阅稳定快照，运行中的会话由状态服务持有。组件卸载、切换页面和关闭专注模式都不请求取消后端任务；显式停止才调用取消端点。异步响应核对生命周期和来源会话，避免迟到结果覆盖新选择。新增行为测试随对应模块保存为 `*.test.ts` 或 `*.test.tsx`，由 Vitest 执行。
 
 厨房状态与持久草稿由 `features/workspace/store.ts` 管理；`QuestionPanel.tsx`、`Timers.tsx` 与 `ReadingPages.tsx` 分别负责确认问题、计时浮层与长说明分页。模型轮次完成后才展示新表单，确认动作保存成功后再续轮。计时使用单一状态服务和服务端时钟，React 组件挂载不会新增独立计时循环；备料保留完整列表，步骤浏览与执行确认分开。具体交互见[视觉规范](../design/ui.md)。
+
+普通应用偏好使用 `features/preferences/client.ts` 与专用 API。浏览器只在首次未初始化时迁移外观，后续以服务端为准；保存排队但保留原 CAS，旧 GET 不能覆盖新写入。设置页保留未保存草稿，运行结束或断线恢复后读取当前值，不应用旧消息中的偏好快照。新增普通偏好字段需同步白名单、表单与同步器；模型、开发者、系统及密钥字段不得进入该服务。
 
 `npm run build` 先运行 TypeScript 检查，再将 SPA 与 `public/` 资源输出到 `apps/chefmate-playground/web/`。后端从这个目录提供页面，并把构建资源挂载到 `/static`；`web/` 为生成目录，不手改构建后的文件。
 
@@ -126,9 +135,11 @@ uvicorn.run(create_app(config), host="127.0.0.1", port=18766)
 
 ## 检查命令
 
-日常更新保持当前版本，有用户可见变化时才在 [releases.json](../../apps/chefmate-playground/releases.json) 中累计日志，同一版本允许多条记录；用户要求发版时再汇总更新说明，并保留原始条目供追溯。只有用户明确要求升级版本号时，才修改 App 的 `pyproject.toml` 版本并同步锁文件。各可复用包的版本独立管理。
+日常更新保持当前版本，有用户可见变化时才在 [releases.json](../../apps/chefmate-playground/releases.json) 中累计日志，同一版本允许多条记录；用户要求发版时再汇总更新说明，保留原始提交来源和工程档案供追溯。只有用户明确要求升级版本号时，才修改 App 的 `pyproject.toml`、`uv.lock`、前端 `package.json` 和 `package-lock.json` 中的项目版本。各可复用包的版本独立管理。
 
 每条记录包含 `source: {branch, commit}`，保存被记录的已存在代码快照的分支名和完整提交 SHA；页面显示分支名和短提交 ID。该来源随记录保存，不动态读取当前 `HEAD`，也不用填写日志提交自身的哈希。设置里的“版本更新日志”读取这一份内容；“关于”和 OpenAPI 从同一项目版本读取。
+
+按用户要求将近期条目合并到新版本时，可用 `includes: [{branch,commit}, ...]` 保留被合并条目的来源，避免在旧版本重复显示同一批更新。0.2.1 的合并与验证示例见[发布记录](../engineering/records/2026-10-24-release-0.2.1.md)。
 
 日志用直白的话介绍用户能看到的功能、使用体验和问题修复；后端整理等工程细节记入工程档案。较大更新完成相应检查后自动提交并推送，保留无关的本地改动，推送后核对本地与远端提交一致。详细约定见[版本与发布](../design/engineering.md#版本与发布)。
 

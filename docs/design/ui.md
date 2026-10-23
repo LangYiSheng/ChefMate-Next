@@ -29,7 +29,9 @@
 | `--color-overlay/--color-shadow` | 模态遮罩与轻阴影 |
 
 颜色变化同步到主页面、内嵌/独立设置、预览和浏览器主题色；跨窗口存储变化和系统主题变化使用同一应用入口。
-外观保存在当前浏览器 `chefmate:ui-settings`；它与服务端模型、组件和计时配置分别管理。[主题应用](../../apps/chefmate-playground/frontend/src/features/settings/appearance.ts)
+普通外观与对话偏好通过 `/api/ui-preferences` 保存到当前应用配置，浏览器 `chefmate:ui-settings` 是外观投影与离线回退。
+服务端尚未初始化外观时可迁入已有浏览器偏好；后续以服务端版本核对保存，历史工具结果不能重放旧偏好。
+这些字段与模型、组件、计时及本机开发者设置分别管理。[主题应用](../../apps/chefmate-playground/frontend/src/features/settings/appearance.ts) · [偏好同步](../../apps/chefmate-playground/frontend/src/features/preferences/client.ts)
 
 ## 字体按角色选择
 
@@ -65,14 +67,19 @@
 名称和置顶独立保存，不修改厨房任务和对话活动时间；运行中的对话删除受后端保护。
 导航先处理未保存修改，再执行原目标动作，延迟确认不能恢复过时的点击意图。[应用导航](../../apps/chefmate-playground/frontend/src/App.tsx) · [设置状态](../../apps/chefmate-playground/frontend/src/features/settings/settings-state.ts)
 
-设置支持内嵌主工作区及独立 `/settings`，两种入口共用字段层级与外观。
+设置通过 `/settings` 路由在主工作区显示，直接打开该路径使用相同页面、字段层级与外观。
 菜谱中心、食光手记和设置切换时，旧会话、未发送文字和图片草稿继续保留。
 中心里的“发起聊天”建立新会话；查看、收藏、编辑和恢复仍留在对应中心语义内。
 
+设置分类内使用顶部页签组织内容，切换时保留草稿，并支持方向键、Home 与 End。
+短视口中页签不吸顶，随内容滚动，避免遮挡表单和操作。
+内容区足够宽、当前可见内容至少有两个目录节点时，长期记忆、组件、更新记录、用量、关于或数据页面可显示右侧“本页内容”索引；索引只收录可见页签的节点，点击定位并跟随滚动高亮。[设置页签](../../apps/chefmate-playground/frontend/src/features/settings/SettingsFields.tsx) · [设置索引](../../apps/chefmate-playground/frontend/src/features/settings/SettingsIndex.tsx)
+
 ## 控件和保存反馈
 
-设置和个人中心使用 React 受控输入，[设置字段](../../apps/chefmate-playground/frontend/src/features/settings/SettingsFields.tsx)与[中心控件](../../apps/chefmate-playground/frontend/src/features/centers/CenterControls.tsx)遵循同一份 [controls.css](../../apps/chefmate-playground/frontend/src/styles/controls.css)。功能布局分别放在 [settings-react.css](../../apps/chefmate-playground/frontend/src/features/settings/settings-react.css)、[centers-react.css](../../apps/chefmate-playground/frontend/src/features/centers/centers-react.css)；厨房协议卡片、问题和计时使用 [workspace.css](../../apps/chefmate-playground/frontend/src/features/workspace/workspace.css)。
-字段名称置于输入上方，输入和选择使用轻填充表面；数字保留原生输入并提供增减，开关支持键盘空格，密码可切换可见性。
+设置、个人中心和开发者轮次选择共用自制 [Select.tsx](../../apps/chefmate-playground/frontend/src/components/ui/Select.tsx)，使用按钮与 listbox 浮层，保持主题、键盘导航、禁用项、必填和焦点反馈一致，不再由各页面使用原生下拉菜单。
+React 受控输入的基础形状、字体、聚焦和错误状态由 [fields.css](../../apps/chefmate-playground/frontend/src/components/ui/fields.css) 统一；[设置字段](../../apps/chefmate-playground/frontend/src/features/settings/SettingsFields.tsx)和[中心控件](../../apps/chefmate-playground/frontend/src/features/centers/CenterControls.tsx)负责标签与行为。功能布局分别放在 [settings-react.css](../../apps/chefmate-playground/frontend/src/features/settings/settings-react.css)、[centers-react.css](../../apps/chefmate-playground/frontend/src/features/centers/centers-react.css)；厨房协议卡片、问题和计时使用 [workspace.css](../../apps/chefmate-playground/frontend/src/features/workspace/workspace.css)。
+字段标签与说明明确关联控件；宽屏可采用左右布局，窄屏标签移到输入上方。输入和选择使用同一套边界与表面；数字保留 `input[type=number]`，开关支持键盘空格，密码可切换可见性。
 未知数字留空，必填、禁用和错误有明确说明，不能用零代替未知。
 
 表单主要操作保持足够触控空间，主按钮以实色强调，放弃用轻边界；页签使用下划线，与大块卡片容器区分。
@@ -90,7 +97,7 @@
 图标按钮有可访问名称，装饰图标对辅助技术隐藏；不能只靠图标或颜色表示失败和等待。
 
 消息图片用正方形裁切缩略图，完整内容在页内模态预览；支持 Escape 和关闭后焦点恢复。
-公开执行活动使用实际状态与加载图标，SSE 增量保留在当前消息和公开过程内，辅助技术可读取状态文字。
+公开执行活动位于助手回复处，使用实际状态、加载图标和逐字显示；辅助技术读取一次完整状态，逐字动画不重复播报。工具参数、结果、用量和执行详情仅在开发者模式渲染。[活动文字](../../apps/chefmate-playground/frontend/src/components/ActivityText.tsx)
 所有动画尊重减少动态效果：直接显示全文，停止旋转或切换到即时导航，快速开关取消过期动画。
 
 ## 对话、建议和提问
@@ -106,6 +113,10 @@
 确认操作位于选项滚动区外，长问题和选项保留全文；短屏分页显示选项，自填与多选草稿跨页保留，缩减辅助留白，自填输入保持 16px。
 会话提示点配“等你回答”文字，刷新或切换后恢复同一问题；全屏场景共用这套状态。[问答协议](agent-ui.md#待回答问题)
 
+个人菜谱在对话内使用只读审核卡，食材、做法、来源依据按图标页签查看；原始数量和单位照实显示，缺失的份数、耗时与难度显示未知。
+卡片按菜谱 ID 和版本去重，仅由最新所属消息展示，并先读取服务端当前记录。“告诉助手怎么改”只填写带草稿 ID 的输入文字；明确点击保存才发布，成功后移除草稿操作。
+待答问题优先于直接保存，工作区或会话仍在同步时禁用保存；冲突和读取失败保留当前内容，提供重新读取入口，迟到响应不能更新其他会话。[审核卡](../../apps/chefmate-playground/frontend/src/components/RecipeReview.tsx)
+
 ## 备料与烹饪工作区
 
 备料使用完整清单，按具体菜品保留食材身份、用量和确认状态。
@@ -117,8 +128,9 @@
 全屏长说明按可用空间分页，保留全部字符与滚动兜底，调整窗口时保留阅读位置。说明翻页与步骤浏览分别提供导航，主要执行动作位置稳定；浏览步骤不完成步骤，明确确认后才跟随下一步。[阅读分页](../../apps/chefmate-playground/frontend/src/features/workspace/ReadingPages.tsx)
 大纲用于浏览，步骤完成仍有独立动作；进入烹饪后收起过时条件、选菜与备料入口。
 
-专注模式以模态场景保留页面底色，厨房内容和助手交流可切换，底部输入共享文字、图片草稿和停止状态。
-关闭时恢复原焦点；打开或关闭专注模式不等于启动或停止模型轮次。
+专注模式使用常驻的普通 `section` 场景。进入时主聊天和已打开的右栏一同平移离场，专注场景从另一侧进入；关闭时反向切回，右栏收起也保留节点完成过渡。
+非活动场景通过 `inert` 与 `aria-hidden` 隔离交互；厨房内容和助手交流可切换，底部输入共享文字、图片草稿和停止状态。
+关闭时恢复原焦点；打开或关闭专注模式不等于启动或停止模型轮次。减少动态效果时直接切换。[场景与过渡](../../apps/chefmate-playground/frontend/src/App.tsx) · [框架样式](../../apps/chefmate-playground/frontend/src/styles/shell.css)
 烹饪文本使用当前阅读字体，控件、步骤编号与数值使用各自角色。手机输入保持完整宽度，横屏缩减辅助留白并保留可滚动内容与执行动作。[专注组件](../../apps/chefmate-playground/frontend/src/features/workspace/index.tsx) · [厨房作用域样式](../../apps/chefmate-playground/frontend/src/features/workspace/workspace.css)
 
 完成本次菜肴先检查并保存全餐状态，再退出执行场景和续聊。
@@ -137,9 +149,11 @@
 
 ## 开发者观察与可访问性验证
 
-开发者入口区分注册工具与本轮可执行工具，调用参数、结果、指引目录和实际读取分别呈现。
-上下文按轮次和模型请求展示角色、字段和状态，通过说明及按需展开解释数据；只展示实际捕获的脱敏请求，图片保留元数据。
-没有记录的旧轮次明确缺失，不能用当前配置拼出一份“历史请求”。
+普通模式不显示上下文彩条、调试页签、执行详情和开发水印，错误与停止、重试入口仍保留。
+开发者模式的上下文彩条按最近请求的文本分类估算展示，不能解读成模型窗口占比；顶部小水印显示开发模式、版本和当前时间。
+诊断区分连接、工具、组件、执行记录与请求轨迹：工具按业务分组，可按中文名称和功能搜索、按可用状态筛选；组件分别展示启用状态与依赖可用性。
+会话轮次与模型请求分别选择，时间线或树视图区分系统提示词、用户、助手、工具调用与结果；参数和结果先显示概要，再按需展开完整内容。
+只展示实际捕获的脱敏请求，图片保留元数据，隐藏推理正文不显示；报告用量、部分已知值和请求大小粗估分别标明。没有记录的旧轮次明确缺失，不能用当前配置拼出一份“历史请求”。[诊断组件](../../apps/chefmate-playground/frontend/src/components/developer/Diagnostics.tsx) · [上下文彩条](../../apps/chefmate-playground/frontend/src/components/ContextMeter.tsx) · [开发水印](../../apps/chefmate-playground/frontend/src/components/DeveloperWatermark.tsx)
 
 验证覆盖键盘、焦点恢复、窄屏与横屏、草稿和导航、减少动态效果，以及当前预设的文字/主操作对比。
 确定性检查见[会话生命周期测试](../../apps/chefmate-playground/frontend/src/runtime/store.test.ts)、[输入组件测试](../../apps/chefmate-playground/frontend/src/components/Composer.test.tsx)、[工作区状态测试](../../apps/chefmate-playground/frontend/src/features/workspace/store.test.ts)和[厨房组件测试](../../apps/chefmate-playground/frontend/src/features/workspace/views.test.tsx)。在 `frontend/` 运行 `npm test` 和 `npm run build`；真实浏览器范围记录在[工程档案](../engineering/README.md)。
