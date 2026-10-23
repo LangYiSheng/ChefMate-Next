@@ -82,4 +82,9 @@ describe('Sidebar navigation and anchored session menu', () => {
     expect(screen.getByRole('menuitem', { name: '删除' })).toBeDisabled();
     fireEvent.click(screen.getByRole('menuitem', { name: '删除' })); expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
   });
+
+  it('shows the current cooking stage with its actual dish name', () => {
+    const { container } = render(<Sidebar {...props({ state: state({ sessions: [{ ...session, conversation_state: { stage: 'prep', recipe_names: ['蚝油生菜'], active_recipe_name: '蚝油生菜' } }] }) })} />);
+    expect(container.querySelector('.session-stage')).toHaveTextContent('备菜 · 蚝油生菜');
+  });
 });

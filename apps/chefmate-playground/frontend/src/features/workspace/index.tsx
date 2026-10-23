@@ -1,5 +1,4 @@
-import { useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from 'react';
-import { createPortal } from 'react-dom';
+import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore, type ReactNode } from 'react';
 import { chefStore } from '../../runtime/store';
 import { Icon } from '../../components/Icon';
 import { type Json, messageViews, viewChoices, stages, labels } from './protocol';
@@ -53,13 +52,70 @@ export function MessageViews({ message, sessionId, running, onContinue, onRecipe
     return <div className="workspace-inline-view" key={view.id}><ViewCard view={live ? current! : view} entry={entry} sessionId={sessionId} historical={!live} onContinue={onContinue} onRecipe={onRecipe} onFocus={onFocus} /><div className="workspace-inline-controls"><Button className="ui-text-button" aria-expanded onClick={() => setExpanded(values => ({ ...values, [view.id]: false }))}>收起{view.title || labels[view.kind]}</Button></div></div>;
   })}</div>;
 }
-export function CookingFocus({ sessionId, onClose, onContinue, children, initialKind }: { sessionId: string; onClose: () => void; onContinue: (text: string) => void; children?: ReactNode; initialKind?: string }) {
-  const entry = useWorkspace(sessionId), runtime = useSyncExternalStore(chefStore.subscribe, chefStore.getSnapshot), dialog = useRef<HTMLDialogElement>(null), [talking, setTalking] = useState(false), [kind, setKind] = useState(initialKind || '');
-  const previousStage = useRef(entry?.snapshot?.stage);
-  useEffect(() => { const stage = entry?.snapshot?.stage; if (previousStage.current === 'cooking' && stage === 'completed') onClose(); previousStage.current = stage; }, [entry?.snapshot?.stage, onClose]);
-  useEffect(() => { const previous = document.activeElement as HTMLElement | null, bodyOverflow = document.body.style.overflow; document.body.style.overflow = 'hidden'; const element = dialog.current; if (element && !element.open) element.showModal(); return () => { element?.close(); document.body.style.overflow = bodyOverflow; if (previous?.isConnected) previous.focus({ preventScroll: true }); }; }, []);
+function restoreFocusEntrance(target: HTMLElement | null) {
+  if (!target?.isConnected || target.closest('[inert],[hidden],[aria-hidden="true"]')) return;
+  const modal = [...document.querySelectorAll<HTMLElement>('dialog[open],[aria-modal="true"]')].find(element => !element.closest('[inert],[hidden],[aria-hidden="true"]'));
+  if (modal && !modal.contains(target)) return;
+  target.focus({ preventScroll: true });
+}
+export function CookingFocus({ sessionId, onClose, onContinue, children, initialKind, active = true }: { sessionId: string; onClose: () => void; onContinue: (text: string) => void; children?: ReactNode; initialKind?: string; active?: boolean }) {
+  const entry = useWorkspace(sessionId), runtime = useSyncExternalStore(chefStore.subscribe, chefStore.getSnapshot);
+  const scene = useRef<HTMLElement>(null), [talking, setTalking] = useState(false), [kind, setKind] = useState(initialKind || '');
+  const previousStage = useRef(entry?.snapshot?.stage), close = useRef(onClose);
+  const entrance = useRef<HTMLElement | null>(null), wasActive = useRef(false), mounted = useRef(false);
+  close.current = onClose;
+  useEffect(() => {
+    const stage = entry?.snapshot?.stage;
+    if (active && previousStage.current !== 'completed' && stage === 'completed') close.current();
+    previousStage.current = stage;
+  }, [active, entry?.snapshot?.stage]);
+  useEffect(() => { if (active) { setKind(initialKind || ''); setTalking(false); } }, [active, initialKind, sessionId]);
+  useLayoutEffect(() => {
+    if (active && !wasActive.current) {
+      const element = scene.current, previous = document.activeElement as HTMLElement | null;
+      // Record the entrance before the mounted Composer's passive autofocus effect.
+      entrance.current = previous && !element?.contains(previous) ? previous : null;
+      if (element && !element.contains(previous) && !document.querySelector('dialog[open],[aria-modal="true"]')) element.querySelector<HTMLButtonElement>('#exit-focus')?.focus({ preventScroll: true });
+    } else if (!active && wasActive.current) {
+      const target = entrance.current; entrance.current = null;
+      // Layout setup runs after all commit mutations, including main's inert removal.
+      restoreFocusEntrance(target);
+    }
+    wasActive.current = active;
+  }, [active]);
+  useLayoutEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+      const target = entrance.current;
+      // A StrictMode effect replay cancels this; a real unmount waits for inert removal.
+      if (target) queueMicrotask(() => {
+        if (mounted.current || entrance.current !== target) return;
+        entrance.current = null; restoreFocusEntrance(target);
+      });
+    };
+  }, []);
   if (!entry) return null;
-  const choices = viewChoices(entry.views, entry.snapshot?.stage), active = choices.find(view => view.kind === kind) || choices.find(view => view.kind === (entry.snapshot?.stage === 'cooking' ? 'cooking_guide' : 'prep_checklist')) || choices[0];
+  const choices = viewChoices(entry.views, entry.snapshot?.stage), selected = choices.find(view => view.kind === kind) || choices.find(view => view.kind === (entry.snapshot?.stage === 'cooking' ? 'cooking_guide' : 'prep_checklist')) || choices[0];
   const cached = runtime.cache[sessionId], messages = cached?.messages || [], last = [...messages].reverse().find(message => message.role === 'assistant');
-  return createPortal(<dialog ref={dialog} id="kitchen-focus" className="kitchen-focus react-cooking-focus" aria-label="烹饪专注模式" onCancel={event => { event.preventDefault(); onClose(); }}><header className="focus-header"><div className="focus-heading"><h2>{active?.data.recipe_name || stages[entry.snapshot?.stage] || '厨房任务'}</h2><span className="focus-header-progress">{entry.running ? '助手正在处理…' : '专注做菜'}</span></div><div className="focus-header-actions"><KitchenTimers sessionId={sessionId} /><Button id="exit-focus" className="focus-button" aria-label="退出专注模式" onClick={onClose}><Icon name="x" /></Button></div></header><nav className="focus-modes" aria-label="专注模式内容">{choices.map(view => <Button key={view.id} aria-pressed={!talking && active?.kind === view.kind} onClick={() => { setKind(view.kind); setTalking(false); }}>{labels[view.kind]}</Button>)}<Button aria-pressed={talking} onClick={() => setTalking(!talking)}>和助手聊聊</Button></nav><div className="focus-body"><div className="focus-deck"><WorkspaceError sessionId={sessionId} entry={entry} /><div className="focus-content" tabIndex={0}>{talking ? <div className="focus-message-copy">{last?.content || '随时告诉助手你的问题，当前做菜进度会保留。'}</div> : active ? <ViewCard key={active.id} view={active} entry={entry} sessionId={sessionId} focused onContinue={text => { if (entry.snapshot?.stage === 'prep') onClose(); onContinue(text); }} onFocus={nextKind => { setKind(nextKind); setTalking(false); }} /> : <Hint>当前还没有可展示的任务内容。</Hint>}</div></div></div>{children && <footer className="focus-footer"><div className="focus-composer-slot">{children}</div></footer>}</dialog>, document.body);
+  return <section ref={scene} id="kitchen-focus" className={`kitchen-focus react-cooking-focus${active ? ' is-active' : ''}`} aria-label="烹饪专注模式" aria-hidden={!active} inert={!active} tabIndex={-1} onKeyDown={event => {
+    if (!active || event.defaultPrevented || event.nativeEvent.isComposing || document.querySelector('dialog[open]')) return;
+    if (event.key === 'Escape') { event.preventDefault(); if (talking) setTalking(false); else onClose(); }
+    if (event.key !== 'Tab') return;
+    const elements = [...(scene.current?.querySelectorAll<HTMLElement>('button,a[href],input,textarea,select,summary,[tabindex]') || [])].filter(element => {
+      if (element.tabIndex < 0 || element.matches(':disabled,input[type="hidden"]') || element.closest('[hidden],[inert]')) return false;
+      const disclosure = element.closest('details:not([open])');
+      if (disclosure && element !== disclosure.querySelector('summary')) return false;
+      const style = getComputedStyle(element);
+      return style.display !== 'none' && style.visibility !== 'hidden';
+    }).sort((left, right) => left.compareDocumentPosition(right) & Node.DOCUMENT_POSITION_FOLLOWING ? -1 : 1);
+    const first = elements[0], last = elements.at(-1);
+    if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus(); }
+    else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
+  }}>
+    <header className="focus-header"><div className="focus-heading"><h2>{selected?.data.recipe_name || stages[entry.snapshot?.stage] || '厨房任务'}</h2><span className="focus-header-progress">{entry.running ? '助手正在处理…' : '专注做菜'}</span></div><div className="focus-header-actions"><KitchenTimers sessionId={sessionId} active={active} /><Button id="exit-focus" className="focus-button" aria-label="退出专注模式" onClick={onClose}><Icon name="x" /></Button></div></header>
+    <nav className="focus-modes" aria-label="专注模式内容">{choices.map(view => <Button key={view.id} aria-pressed={!talking && selected?.kind === view.kind} onClick={() => { setKind(view.kind); setTalking(false); }}>{labels[view.kind]}</Button>)}<Button aria-pressed={talking} onClick={() => setTalking(!talking)}>和助手聊聊</Button></nav>
+    <div className="focus-body"><div className="focus-deck"><WorkspaceError sessionId={sessionId} entry={entry} /><div className="focus-content" tabIndex={0}>{talking ? <div className="focus-message-copy">{last?.content || '随时告诉助手你的问题，当前做菜进度会保留。'}</div> : selected ? <ViewCard key={selected.id} view={selected} entry={entry} sessionId={sessionId} focused onContinue={text => { if (entry.snapshot?.stage === 'prep') onClose(); onContinue(text); }} onFocus={nextKind => { setKind(nextKind); setTalking(false); }} /> : <Hint>当前还没有可展示的任务内容。</Hint>}</div></div></div>
+    {children && <footer className="focus-footer"><div className="focus-composer-slot">{children}</div></footer>}
+  </section>;
 }

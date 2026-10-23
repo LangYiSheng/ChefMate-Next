@@ -17,18 +17,20 @@ export function visibleTimers(timers: Timer[], acknowledged: string[], now: numb
     .sort((a, b) => priority(a) - priority(b) || (timerPresentation(a, now).remaining ?? Infinity) - (timerPresentation(b, now).remaining ?? Infinity));
 }
 
-export function KitchenTimers({ sessionId, onOpenSession }: { sessionId: string | null; onOpenSession?: (id: string) => void }) {
+export function KitchenTimers({ sessionId, onOpenSession, active: surfaceActive = true }: { sessionId: string | null; onOpenSession?: (id: string) => void; active?: boolean }) {
   const entry = useWorkspace(sessionId), state = useSyncExternalStore(workspaceStore.subscribe, workspaceStore.getSnapshot);
   const [open, setOpen] = useState(false), [creating, setCreating] = useState(false), [highlight, setHighlight] = useState<string | undefined>();
   const [position, setPosition] = useState<CSSProperties>({});
   const root = useRef<HTMLDivElement>(null), panel = useRef<HTMLElement>(null), trigger = useRef<HTMLButtonElement>(null);
   const focusOnOpen = useRef(false), seenEvent = useRef(state.timerEvent?.sequence || 0), id = useId();
   const activeSurface = () => {
+    if (!surfaceActive || root.current?.closest('[inert],[hidden]')) return false;
     const modal = [...document.querySelectorAll<HTMLDialogElement>('dialog[open]')].at(-1);
     return !modal || Boolean(root.current && modal.contains(root.current));
   };
   const close = (restore = false) => { setOpen(false); if (restore) trigger.current?.focus({ preventScroll: true }); };
   useEffect(() => { setOpen(false); setCreating(false); setHighlight(undefined); }, [sessionId]);
+  useEffect(() => { if (!surfaceActive) { setOpen(false); setCreating(false); } }, [surfaceActive]);
   useEffect(() => {
     const event = state.timerEvent;
     if (!event || event.sequence <= seenEvent.current) return;
@@ -38,7 +40,7 @@ export function KitchenTimers({ sessionId, onOpenSession }: { sessionId: string 
     if (event.reason !== 'expired') setCreating(false);
     focusOnOpen.current = event.reason === 'inspect';
     setOpen(true);
-  }, [state.timerEvent, sessionId]);
+  }, [state.timerEvent, sessionId, surfaceActive]);
   useEffect(() => {
     if (!open) return;
     const outside = (event: PointerEvent) => { if (root.current && !root.current.contains(event.target as Node)) close(false); };
@@ -50,7 +52,7 @@ export function KitchenTimers({ sessionId, onOpenSession }: { sessionId: string 
     };
     document.addEventListener('pointerdown', outside); document.addEventListener('keydown', escape, true);
     return () => { document.removeEventListener('pointerdown', outside); document.removeEventListener('keydown', escape, true); };
-  }, [open]);
+  }, [open, surfaceActive]);
   useLayoutEffect(() => {
     if (!open) return;
     const place = () => {
@@ -58,7 +60,8 @@ export function KitchenTimers({ sessionId, onOpenSession }: { sessionId: string 
       if (!anchor || !element) return;
       const viewport = window.visualViewport, width = viewport?.width || innerWidth, height = viewport?.height || innerHeight;
       const x = viewport?.offsetLeft || 0, y = viewport?.offsetTop || 0, popupWidth = Math.min(380, width - 24);
-      setPosition({ width: popupWidth, maxHeight: height - 24, left: Math.max(x + 12, Math.min(anchor.right - popupWidth, x + width - popupWidth - 12)), top: Math.max(y + 12, Math.min(anchor.bottom + 8, y + height - element.getBoundingClientRect().height - 12)) });
+      const scene = root.current?.closest('.react-cooking-focus')?.getBoundingClientRect();
+      setPosition({ width: popupWidth, maxHeight: height - 24, left: Math.max(x + 12, Math.min(anchor.right - popupWidth, x + width - popupWidth - 12)) - (scene?.left || 0), top: Math.max(y + 12, Math.min(anchor.bottom + 8, y + height - element.getBoundingClientRect().height - 12)) - (scene?.top || 0) });
     };
     place(); window.addEventListener('resize', place); window.visualViewport?.addEventListener('resize', place);
     return () => { window.removeEventListener('resize', place); window.visualViewport?.removeEventListener('resize', place); };

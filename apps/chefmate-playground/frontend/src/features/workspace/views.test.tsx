@@ -1,4 +1,5 @@
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { StrictMode, useEffect, useRef } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { CookingFocus, KitchenTimers, MessageViews, QuestionPanel, WorkspacePanel } from './index';
 import { workspaceStore } from './store';
@@ -9,6 +10,11 @@ import { ReadingPages, splitReadingText } from './ReadingPages';
 const form: View = { id: 'prefs', kind: 'preference_form', revision: 1, title: '用餐条件', editable: true, data: { fields: [{ name: 'servings', input_type: 'number', label: '用餐人数' }], values: { servings: 2 } } };
 const snapshot = (views: View[], stage = 'planning', extra = {}) => ({ status: 'ok', workspace: { revision: 1, stage, selected_recipe_ids: [], ...extra }, views });
 const ids: string[] = [];
+function AutoFocusComposer() {
+  const input = useRef<HTMLTextAreaElement>(null);
+  useEffect(() => { input.current?.focus({ preventScroll: true }); }, []);
+  return <textarea ref={input} aria-label="自动聚焦的交流输入框" />;
+}
 const seed = (views: View[], stage = 'planning', extra = {}) => { const id = `render-${crypto.randomUUID()}`; ids.push(id); workspaceStore.receive(id, snapshot(views, stage, extra)); return id; };
 beforeEach(() => { vi.spyOn(workspaceStore, 'load').mockImplementation(async id => workspaceStore.entry(id).snapshot); });
 afterEach(() => { ids.forEach(id => workspaceStore.remove(id)); ids.length = 0; });
@@ -52,14 +58,74 @@ describe('React workspace behavior', () => {
     fireEvent.click(screen.getByRole('radio', { name: '可以' })); fireEvent.click(screen.getByRole('button', { name: '确认并继续' }));
     await waitFor(() => expect(dispatch).toHaveBeenCalledWith(id, 'answer_question', { question_id: question.id, option_ids: ['yes'], text: '' }, undefined, expect.objectContaining({ clearDraft: 'question:question-id', requestId: 'answer:question-id' })));
   });
-  it('opens a React focus dialog without moving the existing input and restores focus on close', () => {
-    const show = vi.fn(function (this: HTMLDialogElement) { this.open = true; });
-    Object.defineProperty(HTMLDialogElement.prototype, 'showModal', { configurable: true, value: show });
-    Object.defineProperty(HTMLDialogElement.prototype, 'close', { configurable: true, value: function (this: HTMLDialogElement) { this.open = false; } });
-    const id = seed([form]), parent = document.createElement('div'), input = document.createElement('input'); parent.append(input); document.body.append(parent); input.value = '图片旁边的文字草稿'; input.focus();
-    const rendered = render(<CookingFocus sessionId={id} onClose={() => {}} onContinue={() => {}}><textarea aria-label="专注输入框" defaultValue="由 React 管理" /></CookingFocus>);
-    expect(show).toHaveBeenCalledTimes(1); expect(input.parentElement).toBe(parent); expect(input.value).toBe('图片旁边的文字草稿'); expect(screen.getByRole('textbox', { name: '专注输入框' })).toHaveValue('由 React 管理');
-    rendered.unmount(); expect(document.activeElement).toBe(input); parent.remove();
+  it('keeps focus as an embedded scene through closing without moving inputs or locking the body', () => {
+    const id = seed([form]), parent = document.createElement('div'), input = document.createElement('input'); parent.append(input); document.body.append(parent);
+    input.value = '图片旁边的文字草稿'; input.focus(); input.setSelectionRange(4, 7); const overflow = document.body.style.overflow;
+    const content = <textarea aria-label="专注输入框" defaultValue="由 React 管理" />;
+    const rendered = render(<CookingFocus sessionId={id} active={false} onClose={() => {}} onContinue={() => {}}>{content}</CookingFocus>);
+    const scene = rendered.container.querySelector<HTMLElement>('#kitchen-focus')!;
+    expect(scene.tagName).toBe('SECTION'); expect(scene).toHaveAttribute('inert'); expect(scene).not.toHaveAttribute('hidden'); expect(scene.parentElement).toBe(rendered.container);
+    rendered.rerender(<CookingFocus sessionId={id} onClose={() => {}} onContinue={() => {}}>{content}</CookingFocus>);
+    expect(scene).toHaveClass('is-active'); expect(scene).not.toHaveAttribute('inert'); expect(document.body.style.overflow).toBe(overflow); expect(document.activeElement).toBe(screen.getByRole('button', { name: '退出专注模式' }));
+    expect(input.parentElement).toBe(parent); expect(input.value).toBe('图片旁边的文字草稿'); expect(screen.getByRole('textbox', { name: '专注输入框' })).toHaveValue('由 React 管理');
+    rendered.rerender(<CookingFocus sessionId={id} active={false} onClose={() => {}} onContinue={() => {}}>{content}</CookingFocus>);
+    expect(rendered.container.querySelector('#kitchen-focus')).toBe(scene); expect(scene).toHaveAttribute('aria-hidden', 'true'); expect(scene).not.toHaveClass('is-active');
+    expect(document.activeElement).toBe(input); expect(input.selectionStart).toBe(4); expect(input.selectionEnd).toBe(7); parent.remove();
+  });
+  it('handles focus keyboard navigation only in the active scene and closes conversation before leaving', () => {
+    const id = seed([form]), onClose = vi.fn(), content = <textarea aria-label="专注输入框" />;
+    const rendered = render(<CookingFocus sessionId={id} active={false} onClose={onClose} onContinue={() => {}}>{content}</CookingFocus>);
+    const scene = rendered.container.querySelector('#kitchen-focus')!; fireEvent.keyDown(scene, { key: 'Escape' }); expect(onClose).not.toHaveBeenCalled();
+    rendered.rerender(<CookingFocus sessionId={id} onClose={onClose} onContinue={() => {}}>{content}</CookingFocus>);
+    const exit = screen.getByRole('button', { name: '退出专注模式' }), composer = screen.getByRole('textbox', { name: '专注输入框' });
+    composer.focus(); fireEvent.keyDown(composer, { key: 'Tab' }); expect(document.activeElement).toBe(exit);
+    fireEvent.keyDown(exit, { key: 'Tab', shiftKey: true }); expect(document.activeElement).toBe(composer);
+    fireEvent.click(screen.getByRole('button', { name: '和助手聊聊' })); fireEvent.keyDown(composer, { key: 'Escape' }); expect(onClose).not.toHaveBeenCalled();
+    fireEvent.keyDown(composer, { key: 'Escape' }); expect(onClose).toHaveBeenCalledTimes(1);
+  });
+  it('remembers the external entrance before Composer autofocus and restores it on close or unmount', async () => {
+    const id = seed([form]), onClose = vi.fn();
+    const content = (active: boolean, initialKind = '', mounted = true) => <StrictMode><main inert={active && mounted}><button type="button">打开专注</button></main>{mounted && <CookingFocus sessionId={id} active={active} initialKind={initialKind} onClose={onClose} onContinue={() => {}}>{active && <AutoFocusComposer />}</CookingFocus>}</StrictMode>;
+    const rendered = render(content(false)), entrance = screen.getByRole('button', { name: '打开专注' }); entrance.focus(); fireEvent.click(entrance);
+    rendered.rerender(content(true)); expect(document.activeElement).toBe(screen.getByRole('textbox', { name: '自动聚焦的交流输入框' }));
+    rendered.rerender(content(true, 'recipe_detail')); expect(document.activeElement).toBe(screen.getByRole('textbox', { name: '自动聚焦的交流输入框' }));
+    rendered.rerender(content(false, 'recipe_detail')); expect(document.activeElement).toBe(entrance); expect(entrance.closest('main')).not.toHaveAttribute('inert');
+    rendered.rerender(content(true)); expect(document.activeElement).toBe(screen.getByRole('textbox', { name: '自动聚焦的交流输入框' }));
+    rendered.rerender(content(false, '', false)); await waitFor(() => expect(document.activeElement).toBe(entrance));
+    rendered.rerender(content(true)); expect(document.activeElement).toBe(screen.getByRole('textbox', { name: '自动聚焦的交流输入框' }));
+    rendered.rerender(content(false)); expect(document.activeElement).toBe(entrance);
+  });
+  it('does not take focus away from a real modal while closing the focus scene', async () => {
+    const id = seed([form]), entrance = document.createElement('button'); entrance.textContent = '外部入口'; document.body.append(entrance); entrance.focus();
+    const rendered = render(<CookingFocus sessionId={id} onClose={() => {}} onContinue={() => {}}><AutoFocusComposer /></CookingFocus>);
+    const modal = document.createElement('dialog'), modalInput = document.createElement('input'); modal.open = true; modal.append(modalInput); document.body.append(modal); modalInput.focus();
+    rendered.rerender(<CookingFocus sessionId={id} active={false} onClose={() => {}} onContinue={() => {}} />);
+    expect(document.activeElement).toBe(modalInput); rendered.unmount(); await act(async () => { await Promise.resolve(); }); expect(document.activeElement).toBe(modalInput);
+    modal.remove(); entrance.remove();
+  });
+  it('closes the active focus scene when the meal moves to completed', () => {
+    const id = seed([form], 'cooking'), onClose = vi.fn(); render(<CookingFocus sessionId={id} onClose={onClose} onContinue={() => {}} />);
+    act(() => workspaceStore.receive(id, snapshot([], 'completed', { revision: 2 })));
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+  it('places the complete cooking outline before the reading column and browses without changing server progress', () => {
+    const view: View = { id: 'guide', kind: 'cooking_guide', revision: 1, editable: true, data: { recipe_id: 'soup', recipe_name: '汤', active_step_id: 'wash', steps: [{ id: 'wash', ordinal: 0, instruction: '洗净食材。', status: 'pending' }, { id: 'boil', ordinal: 1, instruction: '加水煮开。', status: 'pending' }] } };
+    const id = seed([view], 'cooking'), dispatch = vi.spyOn(workspaceStore, 'dispatch').mockResolvedValue({ status: 'ok' });
+    const rendered = render(<CookingFocus sessionId={id} onClose={() => {}} onContinue={() => {}} />);
+    const outline = rendered.container.querySelector('.focus-step-outline')!, reading = rendered.container.querySelector('.focus-step-reading')!;
+    expect(outline.parentElement).toBe(reading.parentElement); expect(outline.compareDocumentPosition(reading) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(outline).toHaveAttribute('open'); fireEvent.click(within(outline as HTMLElement).getByRole('button', { name: /2加水煮开/ }));
+    expect(within(reading as HTMLElement).getByText('加水煮开。')).toBeInTheDocument(); expect(dispatch).not.toHaveBeenCalled();
+    expect(within(outline as HTMLElement).getByRole('button', { name: /2加水煮开/ })).toHaveAttribute('aria-current', 'step');
+  });
+  it('shows meal completion only when the full meal progress permits it', async () => {
+    const guide: View = { id: 'guide', kind: 'cooking_guide', revision: 1, editable: true, data: { recipe_id: 'soup', recipe_name: '汤', steps: [{ id: 'wash', ordinal: 0, instruction: '洗净食材。', status: 'done' }] } };
+    const progress: View = { id: 'progress', kind: 'task_progress', revision: 1, editable: false, data: { steps_done: 1, steps_total: 2 } }, id = seed([guide, progress], 'cooking');
+    const dispatch = vi.spyOn(workspaceStore, 'dispatch').mockResolvedValue({ status: 'ok' }); render(<CookingFocus sessionId={id} onClose={() => {}} onContinue={() => {}} />);
+    expect(screen.queryByRole('button', { name: '完成本餐' })).not.toBeInTheDocument(); expect(screen.queryByText('完成全部步骤后，再将这次烹饪标为完成。')).not.toBeInTheDocument();
+    act(() => workspaceStore.receive(id, snapshot([guide, { ...progress, revision: 2, data: { steps_done: 2, steps_total: 2 } }], 'cooking', { revision: 2 })));
+    fireEvent.click(screen.getByRole('button', { name: '完成本餐' })); expect(dispatch).not.toHaveBeenCalled(); fireEvent.click(screen.getByRole('button', { name: '确认完成本餐' }));
+    await waitFor(() => expect(dispatch).toHaveBeenCalledWith(id, 'complete_meal', {}, undefined, expect.objectContaining({ continuation: expect.any(String) })));
   });
   it('renders server deadline countdown and timer commands through the shared store', () => {
     const id = seed([{ id: 'timers', kind: 'timers', revision: 1, editable: true, data: { timers: [{ id: 'soup', label: '汤', seconds: 90, status: 'paused', remaining_seconds: 45 }] } }], 'cooking');
@@ -84,8 +150,6 @@ describe('React workspace behavior', () => {
     expect(screen.getByRole('dialog', { name: '厨房计时' })).toBeInTheDocument(); expect(document.activeElement).toBe(input);
   });
   it('keeps a timer-name draft and focus when a timer expires, and Escape closes the popover before focus mode', () => {
-    Object.defineProperty(HTMLDialogElement.prototype, 'showModal', { configurable: true, value: function (this: HTMLDialogElement) { this.open = true; } });
-    Object.defineProperty(HTMLDialogElement.prototype, 'close', { configurable: true, value: function (this: HTMLDialogElement) { this.open = false; } });
     const timer = { id: 'soup', label: '汤', seconds: 5, status: 'running', deadline_at: '2026-01-01T00:00:05Z' }, id = seed([{ id: 'timers', kind: 'timers', revision: 1, editable: true, data: { timers: [timer] } }], 'cooking'), onClose = vi.fn();
     let now = Date.parse('2026-01-01T00:00:00Z'); workspaceStore.entry(id).clock = () => now;
     render(<CookingFocus sessionId={id} onClose={onClose} onContinue={() => {}}><textarea aria-label="交流草稿" /></CookingFocus>);
@@ -95,16 +159,6 @@ describe('React workspace behavior', () => {
     act(() => { now += 6000; workspaceStore.tick(); }); expect(within(popup).getByRole('textbox', { name: '计时名称' })).toHaveValue('下一锅汤'); expect(document.activeElement).toBe(name);
     const composer = screen.getByRole('textbox', { name: '交流草稿' }); composer.focus(); fireEvent.keyDown(composer, { key: 'Escape' });
     expect(screen.queryByRole('dialog', { name: '厨房计时' })).not.toBeInTheDocument(); expect(onClose).not.toHaveBeenCalled(); expect(document.activeElement).toBe(composer);
-  });
-  it('keeps multi-choice answers across short-screen pages and submits selections from all pages', async () => {
-    const oldHeight = window.innerHeight; Object.defineProperty(window, 'innerHeight', { configurable: true, value: 450 });
-    const question = { id: 'paged', question: '这餐要考虑哪些？', multiple: true, allow_custom: true, options: [{ id: 'a', label: '少油' }, { id: 'b', label: '少盐' }] }, id = seed([], 'idea', { pending_question: question });
-    const dispatch = vi.spyOn(workspaceStore, 'dispatch').mockResolvedValue({ status: 'ok' }); render(<QuestionPanel sessionId={id} running={false} />);
-    fireEvent.click(screen.getByRole('checkbox', { name: '少油' })); fireEvent.click(screen.getByRole('button', { name: '下一页' })); fireEvent.click(screen.getByRole('checkbox', { name: '少盐' }));
-    fireEvent.click(screen.getByRole('button', { name: '下一页' })); fireEvent.change(screen.getByRole('textbox'), { target: { value: '不要葱' } });
-    fireEvent.click(screen.getByRole('button', { name: '确认并继续' }));
-    await waitFor(() => expect(dispatch).toHaveBeenCalledWith(id, 'answer_question', { question_id: 'paged', option_ids: ['a', 'b'], text: '不要葱' }, undefined, expect.anything()));
-    Object.defineProperty(window, 'innerHeight', { configurable: true, value: oldHeight });
   });
   it('preserves every character in long cooking directions across reading pages', () => {
     const text = '翻炒均匀，保持小火。\n注意锅底，不要烧干。🥘'.repeat(90), pages = splitReadingText(text, 120);

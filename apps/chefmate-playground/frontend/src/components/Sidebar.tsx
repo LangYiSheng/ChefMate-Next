@@ -4,8 +4,8 @@ import { chefStore } from '../runtime/store';
 import type { RuntimeState, Session } from '../runtime/types';
 import { Brand, Icon } from './Icon';
 import { Dialog } from './Dialog';
+import { conversationStage } from './chat-presentation';
 
-const stages: Record<string, string> = { idea: '闲聊', planning: '正在选菜', prep: '备菜', shopping: '备菜', cooking: '烹饪', completed: '已完成' };
 type Page = 'chat' | 'settings' | 'recipes' | 'journal';
 export function Sidebar({ state, page, collapsed, onCollapse, onClose, navigate, notify, onInspect, developer }: {
   state: RuntimeState; collapsed: boolean; onCollapse: (value: boolean) => void; onClose: () => void;
@@ -95,12 +95,14 @@ export function Sidebar({ state, page, collapsed, onCollapse, onClose, navigate,
       <button type="button" title="菜谱中心" aria-current={page === 'recipes' ? 'page' : undefined} onClick={() => navigate('recipes')}><Icon name="book-open" /><span>菜谱中心</span></button>
     </nav><div className="sidebar-heading">最近会话</div>
     <nav className="sessions" aria-label="最近会话">{state.sessions.map(session => {
-      const running = Boolean(state.runs[session.id] || session.running);
-      const waiting = !running && session.awaiting_user;
+      const cached = state.cache[session.id];
+      const running = Boolean(state.runs[session.id] || (cached ? cached.running : session.running));
+      const waiting = !running && Boolean(cached ? cached.awaiting_user || cached.pending_question : session.awaiting_user);
+      const stage = conversationStage(cached?.conversation_state || session.conversation_state, waiting);
       return <div key={session.id} className={`session-row ${session.id === state.currentId ? 'active' : ''} ${waiting ? 'awaiting' : ''}`}>
         <button type="button" className="session-link" title={session.title || '新对话'} aria-current={page === 'chat' && session.id === state.currentId ? 'page' : undefined}
           onClick={() => navigate('chat', () => { void chefStore.openSession(session.id).catch(error => notify(error.message)); })}><span className="session-title">{session.title || '新对话'}</span>
-          <small className="session-stage">{waiting ? '等你回答' : stages[session.conversation_state?.stage] || '闲聊'}</small></button>
+          <small className="session-stage" title={stage}>{stage}</small></button>
         {running && <span className="session-running" aria-label="正在执行" />}{waiting && <span className="session-awaiting" aria-label="有问题等你回答" />}
         {session.pinned && <span className="session-pinned" aria-label="已置顶"><Icon name="star" /></span>}
         <button type="button" className="session-more" aria-label={`对话操作：${session.title || '新对话'}`} aria-haspopup="menu" aria-controls={menu?.id === session.id && !action ? 'session-menu' : undefined} aria-expanded={menu?.id === session.id && !action}

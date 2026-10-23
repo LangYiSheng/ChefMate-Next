@@ -117,8 +117,6 @@
 :is(.react-workspace,.react-cooking-focus) .cooking-step-actions{margin-top:20px;padding-top:12px;border-top:1px solid var(--color-border);gap:8px}
 :is(.react-workspace,.react-cooking-focus) .step-timer-shortcut time{font-family:var(--font-numeric);font-variant-numeric:tabular-nums}
 :is(.react-workspace,.react-cooking-focus) .step-timer-shortcut>span{font-size:12px;color:var(--color-muted)}
-:is(.react-workspace,.react-cooking-focus) .workflow-overview{border-top:1px solid var(--color-border);padding-top:8px;margin-top:12px;color:var(--color-muted);font:400 12px/1.7 var(--font-ui)}
-:is(.react-workspace,.react-cooking-focus) .workflow-overview ol{list-style:none;padding:0;margin:8px 0}
 :is(.react-workspace,.react-cooking-focus) .workflow-step-jump{display:flex;width:100%;text-align:left;justify-content:flex-start;border:0;border-radius:6px;background:transparent;padding:8px;color:var(--color-muted);font:400 12px/1.7 var(--font-ui)}
 :is(.react-workspace,.react-cooking-focus) .workflow-step-jump[aria-current=step]{color:var(--color-accent);background:var(--color-accent-soft)}
 :is(.react-workspace,.react-cooking-focus) .workflow-step-index{flex:none;font-family:var(--font-numeric)}
@@ -128,30 +126,8 @@
 :is(.react-workspace,.react-cooking-focus) .complete-meal-confirm>button+button{margin-left:8px}
 :is(.react-workspace,.react-cooking-focus) .workspace-completion{display:flex;align-items:flex-start;gap:8px;padding:12px;background:var(--color-accent-soft);border-radius:9px;margin:12px 0;font:400 13px/1.75 var(--font-ui)}
 :is(.react-workspace,.react-cooking-focus) .workspace-completion .icon{flex:none;margin-top:2px}
-/* Question confirmation stays outside the bounded scroll area. */
-.react-workspace.question-form{display:grid;gap:12px;padding:16px;border:1px solid var(--color-border);border-radius:12px;background:var(--color-canvas);margin:0 0 12px;max-width:960px}
-.react-workspace .question-heading{display:flex;align-items:center;gap:8px;color:var(--color-muted);font:500 12px/1.5 var(--font-ui)}
-.react-workspace .question-heading .icon{width:17px;height:17px}
-.react-workspace .question-body{max-height:min(340px,38dvh);overflow:auto;overscroll-behavior:contain;min-height:0}
-.react-workspace .question-title{font:500 15px/1.8 var(--font-ui);margin:0 0 12px;white-space:pre-wrap;overflow-wrap:anywhere}
-.react-workspace .question-options{display:grid;gap:8px}
-.react-workspace .question-option{display:flex;align-items:flex-start;gap:10px;padding:10px 12px;border:1px solid var(--color-border);border-radius:9px;cursor:pointer;min-height:44px;font:400 14px/1.7 var(--font-ui)}
-.react-workspace .question-option:has(input:checked){border-color:var(--color-accent);background:var(--color-accent-soft)}
-.react-workspace .question-option input{margin-top:3px}
-.react-workspace .question-custom{display:grid;gap:7px;font:400 12px/1.6 var(--font-ui);color:var(--color-muted)}
-.react-workspace .question-custom textarea{font-size:16px;resize:vertical;min-height:76px}
-.react-workspace .question-footer{display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;border-top:1px solid var(--color-border);padding-top:12px}
-.react-workspace .question-footer>span{font:400 11px/1.6 var(--font-ui);color:var(--color-muted);flex:1;min-width:100px}
-.react-workspace .question-confirm{flex:none;min-height:40px}
-.react-workspace .question-error{color:var(--color-danger);font:400 12px/1.65 var(--font-ui)}
-.react-workspace .question-pages{margin:0;padding-top:8px}
-.react-workspace.question-saved{margin-bottom:12px;padding:12px 14px;border:1px solid var(--color-border);border-radius:10px;background:var(--color-surface);font:400 13px/1.7 var(--font-ui)}
-.react-workspace.question-saved>p{display:flex;align-items:center;gap:8px}
-.react-workspace.question-saved>.ui-actions{margin-top:10px}
-/* Focus remains a React modal with independent scrolling regions. */
-.react-cooking-focus{position:fixed;inset:14px;margin:0;padding:0;width:auto;height:auto;max-width:none;max-height:none;border:1px solid var(--color-border);border-radius:18px;background:var(--color-canvas);color:var(--color-text);overflow:hidden;box-shadow:0 12px 56px var(--color-shadow)}
-.react-cooking-focus[open]{display:flex;flex-direction:column}
-.react-cooking-focus::backdrop{background:var(--color-overlay);backdrop-filter:blur(3px)}
+/* App moves this ordinary scene beside the main conversation. */
+.react-cooking-focus{position:fixed;inset:12px;display:flex;flex-direction:column;min-width:0;min-height:0;margin:0;padding:0;border:1px solid var(--color-border);border-radius:20px;background:var(--color-canvas);color:var(--color-text);overflow:hidden;box-shadow:0 12px 56px var(--color-shadow)}
 .react-cooking-focus .focus-header{display:flex;align-items:center;justify-content:space-between;gap:16px;flex:none;padding:14px 24px 10px}
 .react-cooking-focus .focus-heading{display:flex;align-items:baseline;gap:14px;flex:1;min-width:0}
 .react-cooking-focus .focus-heading h2{font:var(--font-title-weight,700) 22px/1.5 var(--font-title);overflow:hidden;white-space:nowrap;text-overflow:ellipsis;min-width:0}
@@ -162,7 +138,7 @@
 .react-cooking-focus .focus-modes button{border:0;border-radius:0;border-bottom:2px solid transparent;padding:8px 0;background:transparent;color:var(--color-muted);white-space:nowrap;flex:none}
 .react-cooking-focus .focus-modes button[aria-pressed=true]{border-bottom-color:var(--color-accent);color:var(--color-accent)}
 .react-cooking-focus .focus-body{display:flex;flex:1;min-height:0;min-width:0;overflow:hidden}
-.react-cooking-focus .focus-deck{display:flex;flex:1;flex-direction:column;min-height:0;min-width:0;width:100%;max-width:1000px;margin:0 auto;padding:20px 32px 16px}
+.react-cooking-focus .focus-deck{display:flex;flex:1;flex-direction:column;min-height:0;min-width:0;width:100%;max-width:1160px;margin:0 auto;padding:20px 32px 16px}
 .react-cooking-focus .focus-content{flex:1;min-height:0;overflow:auto;overscroll-behavior:contain;scrollbar-gutter:stable}
 .react-cooking-focus .focus-content>.ui-component{border:0;padding:0;min-height:100%;display:flex;flex-direction:column}
 .react-cooking-focus .focus-content>.ui-component>.ui-component-heading{display:none}
@@ -170,11 +146,15 @@
 .react-cooking-focus .focus-content .ui-step-instruction{font-size:21px;line-height:1.85}
 .react-cooking-focus .focus-content .ui-cooking-guide{display:flex;flex:1;min-height:0;flex-direction:column}
 .react-cooking-focus .cooking-guide-tools{flex:none}
-.react-cooking-focus .cooking-mode-detail>.ui-cooking-step{display:flex;flex:1;flex-direction:column;min-height:200px;padding:16px 0}
+.react-cooking-focus .focus-cooking-layout{display:flex;flex:1;flex-direction:column;gap:10px;min-width:0;min-height:0}
+.react-cooking-focus .focus-step-outline{flex:none;min-width:0;max-height:145px;border-bottom:1px solid var(--color-border);padding-bottom:5px;color:var(--color-muted);font:400 12px/1.7 var(--font-ui)}
+.react-cooking-focus .focus-step-outline>summary{min-height:32px;line-height:32px;font-weight:550;cursor:pointer}
+.react-cooking-focus .focus-step-outline-body{max-height:105px;overflow:auto;overscroll-behavior:contain}
+.react-cooking-focus .focus-step-outline ol{list-style:none;padding:0;margin:0}
+.react-cooking-focus .focus-step-reading{display:flex;flex:1;flex-direction:column;min-width:0;min-height:0}
+.react-cooking-focus .focus-step-reading>.ui-cooking-step{display:flex;flex:1;flex-direction:column;min-height:200px;padding:16px 0}
 .react-cooking-focus .cooking-mode-detail .cooking-step-main{display:flex;flex:1;flex-direction:column;min-height:120px}
 .react-cooking-focus .cooking-step-actions{position:sticky;bottom:0;z-index:1;background:var(--color-canvas);padding-bottom:4px;flex:none}
-.react-cooking-focus .workflow-overview{flex:none}
-.react-cooking-focus .workflow-overview[open] ol{max-height:220px;overflow:auto}
 .react-cooking-focus .workspace-reading-pages{display:flex;flex:1;min-height:140px;flex-direction:column}
 .react-cooking-focus .workspace-reading-viewport{flex:1;min-height:100px;max-height:44dvh;overflow:auto;overscroll-behavior:contain;font:400 21px/1.85 var(--font-reading)}
 .react-cooking-focus .reading-pagination{flex:none;margin-top:12px;padding-top:8px}
@@ -187,20 +167,24 @@
 .react-cooking-focus .focus-composer-slot .composer-bottom{display:flex;align-items:center;gap:8px;margin-top:8px}
 .react-cooking-focus .focus-composer-slot .composer-bottom .composer-hint{flex:1;font:400 10px/1.6 var(--font-ui);color:var(--color-muted)}
 .react-cooking-focus .focus-composer-slot .composer-bottom>.send-button{margin-left:auto}
-.react-cooking-focus .focus-footer .question-form{margin:0 0 10px;padding:12px 14px}
-.react-cooking-focus .focus-footer .question-body{max-height:24dvh}
-.react-cooking-focus .focus-footer:has(.question-form){max-height:54dvh}
+@media(min-width:1000px){
+  .react-cooking-focus .focus-cooking-layout{display:grid;grid-template-columns:220px minmax(0,1fr);gap:30px}
+  .react-cooking-focus .focus-step-outline{height:100%;max-height:none;border-bottom:0;border-right:1px solid var(--color-border);padding:0 16px 0 0}
+  .react-cooking-focus .focus-step-outline-body{max-height:calc(100% - 32px)}
+}
 /* One timer service has independent app and modal popover hosts. */
 .react-kitchen-timers{position:relative;display:inline-flex;flex:none;z-index:20}
-.react-kitchen-timers .timer-trigger{display:inline-flex;align-items:center;gap:7px;min-height:36px;background:var(--color-canvas);font-family:var(--font-numeric);font-variant-numeric:tabular-nums;padding:7px 10px}
-.react-kitchen-timers .timer-trigger[data-state=expired]{color:var(--color-warning);border-color:var(--color-warning);background:var(--color-warning-soft,var(--color-surface))}
+.react-kitchen-timers .timer-trigger{display:inline-flex;align-items:center;gap:7px;min-height:36px;border:0;border-radius:8px;background:transparent;color:var(--color-muted);font:400 13px/1.5 var(--font-ui);font-variant-numeric:tabular-nums;padding:7px 10px}
+.react-kitchen-timers .timer-trigger:hover,.react-kitchen-timers .timer-trigger[aria-expanded=true]{background:var(--color-accent-soft);color:var(--color-accent)}
+.react-kitchen-timers .timer-trigger .icon{width:17px;height:17px}
+.react-kitchen-timers .timer-trigger[data-state=expired]{color:var(--color-warning);border:0;background:transparent}
 .react-kitchen-timers .timer-trigger-count{display:inline-flex;align-items:center;justify-content:center;min-width:17px;height:17px;padding:0 4px;background:var(--color-accent-soft);color:var(--color-accent);border-radius:8px;font:500 10px/1 var(--font-ui)}
 .react-timer-popover{position:fixed;z-index:1200;display:flex;flex-direction:column;gap:12px;min-width:0;overflow:auto;padding:16px;border:1px solid var(--color-border);border-radius:13px;background:var(--color-canvas);box-shadow:0 8px 36px var(--color-shadow)}
 .react-timer-popover .timer-popup-heading{display:flex;align-items:center;justify-content:space-between;gap:12px;flex:none}
 .react-timer-popover .timer-popup-heading h3{font:600 14px/1.5 var(--font-ui)}
 .react-timer-popover .timer-popup-heading>div{display:flex;gap:4px}
 .react-timer-popover .timer-popup-heading .timer-popup-button{width:34px;min-height:34px;padding:6px;border-color:transparent}
-.react-timer-popover .timer-popup-list{min-height:0;overflow:auto;overscroll-behavior:contain}
+.react-timer-popover .timer-popup-list{min-height:0;overflow-y:auto;overflow-x:hidden;overscroll-behavior:contain}
 :is(.react-workspace,.react-cooking-focus,.react-timer-popover) .timer-popup-row{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex-wrap:wrap;padding:12px 0;border-top:1px solid var(--color-border)}
 :is(.react-workspace,.react-cooking-focus,.react-timer-popover) .timer-popup-copy{display:grid;gap:6px;flex:1;min-width:110px}
 :is(.react-workspace,.react-cooking-focus,.react-timer-popover) .timer-popup-copy strong{font:500 13px/1.6 var(--font-ui);overflow-wrap:anywhere}
@@ -224,8 +208,6 @@
   :is(.react-workspace,.react-cooking-focus,.react-timer-popover) button:not(:where(.composer-area *)){min-height:40px}
   :is(.react-workspace,.react-cooking-focus) .ui-component{padding:14px 0}
   :is(.react-workspace,.react-cooking-focus) .ui-nutrition{grid-template-columns:repeat(2,minmax(0,1fr))}
-  .react-workspace.question-form{padding:13px;gap:10px}
-  .react-workspace .question-body{max-height:32dvh}
   .react-cooking-focus{inset:0;border:0;border-radius:0}
   .react-cooking-focus .focus-header{padding:12px 14px 8px;gap:10px}
   .react-cooking-focus .focus-heading{gap:6px;display:block}
@@ -237,7 +219,6 @@
   .react-cooking-focus .focus-content .ui-step-instruction{font-size:19px;line-height:1.85}
   .react-cooking-focus .workspace-reading-viewport{font-size:19px;line-height:1.85;max-height:40dvh}
   .react-cooking-focus .focus-footer{padding:0 12px max(12px,env(safe-area-inset-bottom));max-height:44dvh}
-  .react-cooking-focus .focus-footer .question-body{max-height:23dvh}
   .react-cooking-focus .focus-content .ui-recipe-name{font-size:19px}
 }
 @media(max-height:520px){
@@ -250,13 +231,7 @@
   .react-cooking-focus .focus-footer :is(.resume-draft,.reply-suggestions){display:none}
   .react-cooking-focus .focus-composer-slot .composer{padding:10px 12px 8px}
   .react-cooking-focus .focus-composer-slot .composer textarea{max-height:48px;min-height:28px}
-  .react-cooking-focus .focus-footer .question-form{padding:8px 10px;gap:6px}
-  .react-cooking-focus .focus-footer .question-body{max-height:18dvh}
-  .react-cooking-focus .focus-footer:has(.question-form){max-height:62dvh}
-  .react-workspace .question-footer{padding-top:7px}
-  .react-workspace .question-footer>span{display:none}
-  .react-workspace .question-confirm{margin-left:auto}
-  .react-cooking-focus .cooking-mode-detail>.ui-cooking-step{min-height:0;padding-top:0;padding-bottom:0}
+  .react-cooking-focus .focus-step-reading>.ui-cooking-step{min-height:0;padding-top:0;padding-bottom:0}
   .react-cooking-focus .cooking-mode-detail .cooking-step-main{min-height:0;flex:none}
   .react-cooking-focus .workspace-reading-pages{min-height:0;flex:none}
   .react-cooking-focus .workspace-reading-viewport{min-height:40px;max-height:22dvh;font-size:18px;line-height:1.8}
@@ -264,11 +239,11 @@
   .react-cooking-focus .cooking-step-actions{margin-top:10px;padding-top:8px}
   .react-timer-popover{padding:12px}
 }
-@media(max-height:520px) and (min-width:600px){
-  .react-cooking-focus .focus-content>.ui-cooking_guide .cooking-mode-detail{display:grid;grid-template-columns:minmax(150px,.6fr) minmax(0,1.4fr);column-gap:24px;align-items:start}
-  .react-cooking-focus .cooking-mode-detail>.ui-cooking-step{grid-column:2;grid-row:1 / span 3;border-top:0;padding-top:0}
-  .react-cooking-focus .cooking-mode-detail>.workflow-overview{grid-column:1}
-  .react-cooking-focus .cooking-mode-detail>.complete-meal-control{grid-column:1}
+@media(max-height:500px) and (min-width:700px){
+  .react-cooking-focus .focus-cooking-layout{display:grid;grid-template-columns:150px minmax(0,1fr);gap:18px}
+  .react-cooking-focus .focus-step-outline{height:100%;max-height:none;border-bottom:0;border-right:1px solid var(--color-border);padding:0 12px 0 0}
+  .react-cooking-focus .focus-step-outline-body{max-height:calc(100% - 32px)}
+  .react-cooking-focus .focus-step-reading>.ui-cooking-step{border-top:0}
   .react-cooking-focus .workspace-reading-viewport{max-height:22dvh}
 }
 @media(prefers-reduced-motion:reduce){

@@ -145,13 +145,16 @@ function PrepChecklist({ view, ctx }: { view: View; ctx: Context }) {
 }
 export function CompleteMeal({ ctx }: { ctx: Context }) {
   const [confirming, setConfirming] = useState(false);
-  const allowed = ctx.entry.snapshot?.allowed_transitions?.includes('completed') || ctx.entry.views.find(view => view.kind === 'task_progress')?.data.steps_total > 0 && ctx.entry.views.find(view => view.kind === 'task_progress')?.data.steps_done >= ctx.entry.views.find(view => view.kind === 'task_progress')?.data.steps_total;
-  if (ctx.historical || ctx.entry.snapshot?.stage !== 'cooking') return null;
-  return <div className="complete-meal-control">{confirming ? <div className="complete-meal-confirm"><p>确认这餐烹饪已经完成？完成后会保存烹饪记录。</p><Button className="ui-button cooking-primary" disabled={ctx.entry.saving || ctx.entry.running || !allowed} onClick={async () => { await workspaceStore.dispatch(ctx.sessionId, 'complete_meal', {}, undefined, { continuation: '这顿饭所有菜都做好啦，我已点击完成本次菜肴。请查看本次营养登记状态；如果是多人用餐或人数不明确，先问我自己吃了哪些、吃了多少，再登记个人营养。' }); setConfirming(false); }}>确认完成本餐</Button><Button className="ui-text-button" onClick={() => setConfirming(false)}>继续烹饪</Button></div> : <Button className="ui-button cooking-primary complete-meal-button" disabled={!allowed || ctx.entry.saving || ctx.entry.running} onClick={() => setConfirming(true)}>完成本餐</Button>}{!allowed && <Hint>完成全部步骤后，再将这次烹饪标为完成。</Hint>}</div>;
+  const progress = ctx.entry.views.find(view => view.kind === 'task_progress')?.data;
+  const allowed = ctx.entry.snapshot?.allowed_transitions?.includes('completed') || Number(progress?.steps_total) > 0 && Number(progress?.steps_done) >= Number(progress?.steps_total);
+  if (ctx.historical || ctx.entry.snapshot?.stage !== 'cooking' || !allowed) return null;
+  const busy = ctx.entry.saving || ctx.entry.running || ctx.entry.loading || !!ctx.entry.failed || !!ctx.entry.conflict;
+  return <div className="complete-meal-control">{confirming ? <div className="complete-meal-confirm"><p>确认这餐烹饪已经完成？完成后会保存烹饪记录。</p><Button className="ui-button cooking-primary" disabled={busy} onClick={async () => { await workspaceStore.dispatch(ctx.sessionId, 'complete_meal', {}, undefined, { continuation: '这顿饭所有菜都做好啦，我已点击完成本次菜肴。请查看本次营养登记状态；如果是多人用餐或人数不明确，先问我自己吃了哪些、吃了多少，再登记个人营养。' }); setConfirming(false); }}>确认完成本餐</Button><Button className="ui-text-button" onClick={() => setConfirming(false)}>继续烹饪</Button></div> : <Button className="ui-button cooking-primary complete-meal-button" disabled={busy} onClick={() => setConfirming(true)}>完成本餐</Button>}</div>;
 }
 function CookingGuide({ view, ctx }: { view: View; ctx: Context }) {
   const data = view.data, steps: Json[] = data.steps || [];
   const [mode, setMode] = useState('detail');
+  const [outlineOpen, setOutlineOpen] = useState(() => window.innerWidth >= 1000);
   const [browsing, setBrowsing] = useState<{ recipeId: string; stepId: string } | null>(null);
   const activeIndex = Math.max(0, steps.findIndex(step => step.id === data.active_step_id));
   const browseIndex = browsing?.recipeId === data.recipe_id ? steps.findIndex(step => step.id === browsing?.stepId) : -1;
@@ -188,9 +191,10 @@ function CookingGuide({ view, ctx }: { view: View; ctx: Context }) {
       {mode === 'detail' && !!steps.length && <nav className="step-navigator cooking-step-nav" aria-label="浏览烹饪步骤"><Button className="page-button" disabled={index === 0} onClick={() => jump(index - 1)}>上一步</Button><strong>第 {index + 1} / {steps.length} 步</strong><Button className="page-button" disabled={index >= steps.length - 1} onClick={() => jump(index + 1)}>下一步</Button></nav>}
     </div>
     {!steps.length && <Hint>这道菜暂时没有可用步骤。</Hint>}
-    {mode === 'list' ? <div className="workflow-list cooking-flat-list">{steps.map(renderStep)}</div> : steps[index] && renderStep(steps[index])}
-    {ctx.focused && mode === 'detail' && <details className="workflow-overview"><summary>全部步骤大纲</summary><ol>{steps.map((step, index) => <li key={step.id}><Button className="workflow-step-jump" aria-current={index === (browseIndex >= 0 ? browseIndex : activeIndex) ? 'step' : undefined} onClick={() => jump(index)}><span className="workflow-step-index">{index + 1}</span><span>{step.status === 'done' ? '已完成 · ' : ''}{step.adapted_instruction || step.instruction}</span></Button></li>)}</ol></details>}
-    <CompleteMeal ctx={ctx} />
+    {ctx.focused && mode === 'detail' ? <div className="focus-cooking-layout">
+      <details className="focus-step-outline" open={outlineOpen} onToggle={event => setOutlineOpen(event.currentTarget.open)}><summary>全部步骤大纲</summary><div className="focus-step-outline-body"><ol>{steps.map((step, itemIndex) => <li key={step.id}><Button className="workflow-step-jump" aria-current={itemIndex === index ? 'step' : undefined} onClick={() => jump(itemIndex)}><span className="workflow-step-index">{itemIndex + 1}</span><span>{step.status === 'done' ? '已完成 · ' : ''}{step.adapted_instruction || step.instruction}</span></Button></li>)}</ol></div></details>
+      <div className="focus-step-reading">{steps[index] && renderStep(steps[index])}<CompleteMeal ctx={ctx} /></div>
+    </div> : <>{mode === 'list' ? <div className="workflow-list cooking-flat-list">{steps.map(renderStep)}</div> : steps[index] && renderStep(steps[index])}<CompleteMeal ctx={ctx} /></>}
   </div>;
 }
 export function TimerRow({ timer, ctx, view }: { timer: Timer; ctx: Context; view: View }) {

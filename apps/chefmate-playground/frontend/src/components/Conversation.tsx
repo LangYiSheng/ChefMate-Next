@@ -1,35 +1,36 @@
 import { memo, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { chefStore } from '../runtime/store';
-import type { Message, RuntimeState } from '../runtime/types';
+import type { Message, RunState, RuntimeState } from '../runtime/types';
 import { MessageViews } from '../features/workspace';
-import { messageViews } from '../features/workspace/protocol';
 import { Brand, Icon } from './Icon';
 import { Markdown } from './Markdown';
 import { Welcome } from './Welcome';
 import { ImagePreview, imageURL } from './ImagePreview';
 import { FoodCards, foodRecords } from './FoodCards';
+import { assistantProgress, recipeSearchCards, toolNames } from './chat-presentation';
 
-const toolNames: Record<string, string> = { find_ingredients: '识别食材', search_recipes: '筛选菜谱', get_recipe: '读取菜谱', show_preference_form: '整理用餐条件', show_recipe_choices: '整理菜品选择', set_meal_plan: '安排餐单', show_meal_plan: '核对餐单', show_prep_checklist: '整理备菜清单', show_cooking_guide: '整理烹饪步骤', start_timer: '开始计时', load_skill: '读取组件指南', ask_user: '向你确认细节', create_recipe_draft: '整理个人菜谱草稿', create_food_log_draft: '整理饮食记录', maintain_memory_summary: '维护长期记忆' };
-
-const ChatMessage = memo(function ChatMessage({ message, sessionId, running, developer, onRecipe, onAsk, foodIds, onFocus }: {
+const ChatMessage = memo(function ChatMessage({ message, sessionId, running, developer, onRecipe, onAsk, foodIds, onFocus, run }: {
   message: Message; sessionId: string; running: boolean; developer: boolean; foodIds: Set<string>;
   onRecipe: (id: string, snapshot?: Record<string, any>) => void; onAsk: (text: string) => void;
   onFocus: (kind: string) => void;
+  run?: RunState | null;
 }) {
   const [image, setImage] = useState<number | null>(null);
   const showContent = message.content && (!message.streaming || message.resultComplete) && !message.cancelled && !message.error;
+  const recipes = recipeSearchCards(message);
   return <article className={`message ${message.role}`} aria-label={message.role === 'user' ? '你的消息' : 'ChefMate 的回复'}>
     {message.images?.length ? <div className="message-images">{message.images.map((attachment, index) => <button key={attachment.id} type="button" className="image-thumbnail" aria-label={`预览图片：${attachment.name || '消息图片'}`} onClick={() => setImage(index)}><img src={imageURL(sessionId, attachment)} alt={attachment.name || '消息图片'} loading="lazy" /></button>)}</div> : null}
     {message.role === 'user' ? message.content && <div className="user-bubble">{message.content}</div> : <>
       <div className="assistant-heading"><Brand className="assistant-icon" /><span>ChefMate</span></div>
       <div className="assistant-body markdown">{showContent && <Markdown text={message.content} />}</div>
+      {message.streaming && !message.error && !message.cancelled && <div className="assistant-progress" role="status"><Icon name="loader-circle" className="spin" /><span>{assistantProgress(message, run)}</span></div>}
       {!message.streaming && <><MessageViews message={message} sessionId={sessionId} running={running} onContinue={text => { void chefStore.enqueueContinuation(sessionId, text); }} onRecipe={onRecipe} onFocus={onFocus} />
-        {!messageViews(message).length && message.recipes?.length > 0 && <div className="recipe-results">{message.recipes.map((recipe: Record<string, any>) =>
+        {recipes.length > 0 && <div className="recipe-results">{recipes.map((recipe: Record<string, any>) =>
           <button type="button" className="recipe-result" key={recipe.recipe_id || recipe.id} onClick={() => onRecipe(recipe.recipe_id || recipe.id, message.snapshot)}><span className="recipe-result-copy"><span className="recipe-result-name">{recipe.name}{(recipe.nutrition_status === 'estimated' || recipe.nutrition?.estimated) && <small className="estimate-marker">营养估算</small>}</span>
             <span className="recipe-result-meta">{recipe.total_time_min == null ? '耗时未知' : `${recipe.total_time_min} 分钟`}</span></span><Icon name="chevron-right" /></button>)}</div>}
         <FoodCards message={message} locked={running} onAsk={onAsk} ownedIds={foodIds} />
       </>}
-      {(message.streaming || developer) && <details className="execution-trace" open={message.streaming ? true : undefined}><summary className="trace-summary"><Icon name={message.streaming ? 'loader-circle' : 'circle-check'} />{message.streaming ? message.recovering ? '连接中断，正在恢复…' : '正在处理…' : '执行过程'}</summary>
+      {developer && <details className="execution-trace" open={message.streaming ? true : undefined}><summary className="trace-summary"><Icon name={message.streaming ? 'loader-circle' : 'circle-check'} />执行过程</summary>
         {message.usage && <p className="usage-summary">{message.usage.model_calls ?? '—'} 次模型请求 · 输入 {message.usage.input_tokens ?? '未报告'} · 输出 {message.usage.output_tokens ?? '未报告'} · 缓存读取 {message.usage.cached_tokens ?? '未报告'} tokens</p>}
         {(message.process || []).map((text: string, i: number) => <details key={i} className="trace-note"><summary>{text.slice(0, 100)}</summary><Markdown text={text} /></details>)}
         {message.streaming && message.content && !message.resultComplete && <div className="trace-note"><Markdown text={message.content} /></div>}
@@ -49,6 +50,7 @@ export function Conversation({ state, developer, onRecipe, onAsk, onFocus, activ
   const selected = useRef<string | null>(null);
   const messages = state.session?.messages || [];
   const running = Boolean(state.session?.running || state.currentId && state.runs[state.currentId]);
+  const run = state.currentId ? state.runs[state.currentId] : null;
   const owners = useMemo(() => { const map = new Map<string, number>(); messages.forEach((message, i) => foodRecords(message).forEach(record => map.set(record.id, i))); return map; }, [messages]);
   useLayoutEffect(() => {
     const element = scroll.current; if (!element || !active) return;
@@ -59,6 +61,6 @@ export function Conversation({ state, developer, onRecipe, onAsk, onFocus, activ
   return <div ref={scroll} className="conversation" tabIndex={-1} aria-label="聊天记录" onScroll={event => { if (!active) return; const el = event.currentTarget; stick.current = el.scrollHeight - el.scrollTop - el.clientHeight < 100; if (selected.current) positions.current.set(selected.current, { top: el.scrollTop, stick: stick.current }); }}>
     {state.loading && <p className="panel-loading" role="status">正在读取对话…</p>}
     {!messages.length ? <Welcome supportsImages={Boolean(state.status?.supports_images)} onUse={onAsk} /> : <div className="messages">{messages.map((message, i) =>
-      <ChatMessage key={`${state.currentId}:${message.id || `${message.turn_id || i}:${message.role}`}`} message={message} sessionId={state.currentId!} running={running} developer={developer} onRecipe={onRecipe} onAsk={onAsk} onFocus={onFocus} foodIds={new Set([...owners].filter(([, index]) => index === i).map(([id]) => id))} />)}</div>}
+      <ChatMessage key={`${state.currentId}:${message.id || `${message.turn_id || i}:${message.role}`}`} message={message} sessionId={state.currentId!} running={running} developer={developer} run={run} onRecipe={onRecipe} onAsk={onAsk} onFocus={onFocus} foodIds={new Set([...owners].filter(([, index]) => index === i).map(([id]) => id))} />)}</div>}
   </div>;
 }

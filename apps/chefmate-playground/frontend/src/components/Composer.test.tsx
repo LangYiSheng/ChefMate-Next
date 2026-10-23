@@ -98,4 +98,14 @@ describe('Composer with the real external store', () => {
     await waitFor(() => expect(screen.queryByRole('button', { name: '预览图片：egg.jpg' })).not.toBeInTheDocument());
     expect(runtime.current!.getSnapshot().imageDrafts.a).toEqual([]);
   });
+
+  it('retains the stop action without duplicating assistant progress below the input', async () => {
+    const store = runtime.current!; await store.openSession('a');
+    const snapshot = store.getSnapshot();
+    const state = { ...snapshot, runs: { a: { sessionId: 'a', requestId: 'r', input: '做菜', status: '回复位置显示的进度' } },
+      session: { ...snapshot.session!, running: true } };
+    const view = render(<Composer state={state} notify={notify} />);
+    expect(screen.getByRole('button', { name: '停止本次执行' })).toBeInTheDocument();
+    expect(view.container.querySelector('.turn-status')).toBeNull(); expect(view.container).not.toHaveTextContent('回复位置显示的进度');
+  });
 });

@@ -66,7 +66,6 @@ export function Composer({ state, focus = false, notify, positions }: { state: R
       <button type="button" className="image-remove" aria-label={`移除图片：${image.name}`} disabled={uploading || running || state.preparing} onClick={() => void chefStore.removeImage(image.id).catch(error => notify(error.message))}><Icon name="x" size={14} /></button>
     </div>)}</div>}
     {uploading && <span className="image-status" role="status">正在压缩和准备图片…</span>}
-    {(running || state.preparing) && <div className="turn-status" role="status"><Icon name="loader-circle" />{run?.status || (state.preparing ? '正在准备…' : '正在恢复执行状态…')}</div>}
     {reading && <div className="turn-status" role="status">正在读取这段对话，读取完成后就可以发送。</div>}
     {!pending && <form className="composer" onSubmit={event => { event.preventDefault(); if (!reading) send(); }}>
       <label className="visually-hidden" htmlFor="composer-input">告诉 ChefMate 你想吃什么</label>

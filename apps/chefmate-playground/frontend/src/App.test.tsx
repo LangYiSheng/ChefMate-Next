@@ -1,0 +1,110 @@
+import type { ReactNode } from 'react';
+import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import type { RuntimeState } from './runtime/types';
+import App from './App';
+
+const fixture = vi.hoisted(() => {
+  const runtimeListeners = new Set<() => void>(), workspaceListeners = new Set<() => void>();
+  const data = { runtime: null as RuntimeState | null, workspace: { entries: {} as Record<string, any>, reminders: [], tick: 0 } };
+  return { data, runtimeListeners, workspaceListeners,
+    chefStore: { subscribe: (listener: () => void) => { runtimeListeners.add(listener); return () => runtimeListeners.delete(listener); },
+      getSnapshot: () => data.runtime!, start: vi.fn(async () => {}), dispose: vi.fn(), loadStatus: vi.fn(async () => {}),
+      setDraft: vi.fn(), newSession: vi.fn(), openSession: vi.fn(async () => {}), enqueueContinuation: vi.fn() },
+    workspaceStore: { subscribe: (listener: () => void) => { workspaceListeners.add(listener); return () => workspaceListeners.delete(listener); },
+      getSnapshot: () => data.workspace },
+  };
+});
+
+vi.mock('./runtime/store', () => ({ chefStore: fixture.chefStore }));
+vi.mock('./features/workspace/store', () => ({ workspaceStore: fixture.workspaceStore }));
+vi.mock('./features/settings/appearance', () => ({ initAppearance: () => () => {} }));
+vi.mock('./components/Sidebar', () => ({ Sidebar: () => <nav aria-label="会话导航内容">最近会话</nav> }));
+vi.mock('./components/Composer', () => ({ Composer: () => <label>对话输入<input aria-label="对话输入" /></label> }));
+vi.mock('./components/Conversation', () => ({ Conversation: ({ active }: { active: boolean }) => <div aria-label="聊天记录" data-active={active}>已有消息</div> }));
+vi.mock('./components/Details', () => ({ Diagnostics: () => <div>开发请求诊断</div>, RecipeDetails: () => <div>菜谱详情内容</div> }));
+vi.mock('./features/settings/Settings', () => ({ Settings: () => <div>设置内容</div> }));
+vi.mock('./features/centers/KitchenCenters', () => ({ KitchenCenters: () => <div>个人中心内容</div> }));
+vi.mock('./features/workspace', () => ({
+  initializeWorkspace: () => () => {},
+  WorkspacePanel: () => <div>厨房任务内容</div>,
+  KitchenTimers: () => null,
+  CookingFocus: ({ active, onClose, children }: { active: boolean; onClose: () => void; children: ReactNode }) =>
+    <section aria-label="烹饪专注模式" aria-hidden={!active} inert={!active} data-active={active}>
+      <button type="button" onClick={onClose}>退出专注模式</button>{children}
+    </section>,
+}));
+
+beforeEach(() => {
+  localStorage.clear(); history.replaceState({}, '', '/static/');
+  fixture.runtimeListeners.clear(); fixture.workspaceListeners.clear();
+  const session = { id: 'session-a', title: '今天做什么', messages: [] };
+  fixture.data.runtime = { status: { ready: true }, sessions: [session], currentId: session.id, session, cache: { [session.id]: session },
+    blankId: 'draft:initial', drafts: {}, imageDrafts: {}, imageUploads: {}, runs: {}, continuations: {}, loading: false, preparing: false,
+    sessionsLoading: false, sessionsError: null, sessionLoading: {}, nextCursor: null, error: null };
+  fixture.data.workspace = { entries: {}, reminders: [], tick: 0 };
+});
+afterEach(() => { cleanup(); fixture.runtimeListeners.clear(); fixture.workspaceListeners.clear(); localStorage.clear(); });
+
+function preferences(enabled: boolean) {
+  act(() => {
+    localStorage.setItem('chefmate:developer-settings', JSON.stringify({ enabled }));
+    window.dispatchEvent(new CustomEvent('chefmate:settings-saved'));
+  });
+}
+function workspace(views: Record<string, any>[]) {
+  act(() => {
+    fixture.data.workspace = { ...fixture.data.workspace, entries: { 'session-a': { snapshot: { stage: 'prep' }, views } } };
+    fixture.workspaceListeners.forEach(listener => listener());
+  });
+}
+
+describe('App surface coordination', () => {
+  it('exposes diagnostics only while developer mode is enabled and returns to workspace when disabled', () => {
+    render(<App />);
+    fireEvent.click(screen.getByRole('button', { name: '展开右侧栏' }));
+    expect(screen.queryByRole('tab', { name: '调试', hidden: true })).not.toBeInTheDocument();
+    expect(screen.queryByText('开发请求诊断')).not.toBeInTheDocument();
+    preferences(true);
+    fireEvent.click(screen.getByRole('tab', { name: '调试' }));
+    expect(screen.getByText('开发请求诊断')).toBeInTheDocument();
+    preferences(false);
+    expect(screen.queryByRole('tab', { name: '调试', hidden: true })).not.toBeInTheDocument();
+    expect(screen.queryByText('开发请求诊断')).not.toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: '工作区' })).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByText('厨房任务内容')).toBeInTheDocument();
+  });
+
+  it('keeps the detail surface mounted but inaccessible after closing', () => {
+    const view = render(<App />), panel = view.container.querySelector('aside[aria-label="厨房工作区"]')!;
+    expect(panel).toHaveAttribute('inert'); expect(panel).toHaveAttribute('aria-hidden', 'true');
+    fireEvent.click(screen.getByRole('button', { name: '展开右侧栏' }));
+    expect(panel).not.toHaveAttribute('inert'); expect(panel).toHaveAttribute('aria-hidden', 'false');
+    fireEvent.click(screen.getByRole('tab', { name: '菜谱详情' })); expect(within(panel as HTMLElement).getByText('菜谱详情内容')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '收起详情面板' }));
+    expect(view.container.querySelector('aside[aria-label="厨房工作区"]')).toBe(panel);
+    expect(panel).toHaveAttribute('inert'); expect(panel).toHaveAttribute('aria-hidden', 'true');
+    expect(panel).toHaveTextContent('菜谱详情内容');
+    fireEvent.click(screen.getByRole('button', { name: '展开右侧栏' }));
+    expect(screen.getByRole('tab', { name: '菜谱详情' })).toHaveAttribute('aria-selected', 'true');
+  });
+
+  it('offers focus only for an actual kitchen view and coordinates the active scene with inert main content', () => {
+    const view = render(<App />), app = view.container.querySelector('[data-page="chat"]')!, focus = view.container.querySelector('[aria-label="烹饪专注模式"]')!;
+    expect(screen.queryByRole('button', { name: '打开烹饪工作台' })).not.toBeInTheDocument();
+    workspace([{ id: 'timers', kind: 'timers', revision: 1, data: { timers: [] } }]);
+    expect(screen.queryByRole('button', { name: '打开烹饪工作台' })).not.toBeInTheDocument();
+    workspace([{ id: 'prep', kind: 'prep_checklist', revision: 1, data: { items: [] } }]);
+    expect(focus).toHaveAttribute('aria-hidden', 'true'); expect(focus).toHaveAttribute('inert');
+    fireEvent.click(screen.getByRole('button', { name: '打开烹饪工作台' }));
+    expect(app).toHaveAttribute('inert'); expect(focus).toHaveAttribute('data-active', 'true');
+    expect(focus).not.toHaveAttribute('inert'); expect(focus).toHaveAttribute('aria-hidden', 'false');
+    expect(within(focus as HTMLElement).getByRole('textbox', { name: '对话输入' })).toBeInTheDocument();
+    expect(screen.getByLabelText('聊天记录')).toHaveAttribute('data-active', 'false');
+    fireEvent.click(within(focus as HTMLElement).getByRole('button', { name: '退出专注模式' }));
+    expect(app).not.toHaveAttribute('inert'); expect(focus).toHaveAttribute('data-active', 'false'); expect(focus).toHaveAttribute('inert');
+    expect(view.container.querySelector('[aria-label="烹饪专注模式"]')).toBe(focus);
+    expect(screen.getByLabelText('聊天记录')).toHaveAttribute('data-active', 'true');
+    expect(screen.getByRole('textbox', { name: '对话输入' })).toBeInTheDocument();
+  });
+});
