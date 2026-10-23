@@ -1,6 +1,6 @@
 # 智能体界面与厨房任务规范
 
-用户通过自然语言和可操作界面共同表达需求。模型选择工具与展示意图，服务端核对组件结构、业务事实、权限与状态变化，前端按已知协议生成安全 DOM。
+用户通过自然语言和可操作界面共同表达需求。模型选择工具与展示意图，服务端核对组件结构、业务事实、权限与状态变化，React 前端按已知协议渲染受控组件。
 从完整使用流程理解这些规则，见[项目导览](../guide/overview.md)；字段与端点分别见[工作流](../reference/workflow.md)和[核心 App](../reference/workbench.md)。
 
 ## 职责与实现位置
@@ -11,7 +11,7 @@
 | 工作流 | 冻结原件、餐单、份量、备料、步骤、计时与版本 | [workflow/service.py](../../packages/chefmate-workflow/src/chefmate_workflow/service.py) |
 | Agent | 标准运行时、动态工具、证据与预算、完整历史与事件 | [agent/core.py](../../packages/chefmate-agent/src/chefmate_agent/core.py) |
 | Web 应用 | 依赖组装、单会话轮次、SQLite、HTTP/SSE 与个人资料 | [App](../../apps/chefmate-playground/src/chefmate_playground/app.py) · [routes](../../apps/chefmate-playground/src/chefmate_playground/routes/) |
-| 浏览器 | 草稿、流式显示、受控操作、导航与焦点 | [app.js](../../apps/chefmate-playground/static/app.js) · [组件渲染](../../apps/chefmate-playground/static/ui-components.js) |
+| 浏览器 | 草稿、流式显示、受控操作、导航与焦点 | [App.tsx](../../apps/chefmate-playground/frontend/src/App.tsx) · [会话状态](../../apps/chefmate-playground/frontend/src/runtime/store.ts) · [厨房组件](../../apps/chefmate-playground/frontend/src/features/workspace/views.tsx) |
 
 入口负责组装；拆分后的领域规则仍各有唯一归属：
 
@@ -40,7 +40,7 @@
 | 提问等待 | `pending_question/last_answer` | 持久工作区中的问题与答案，独立于厨房视图枚举 |
 
 厨房 registry 的枚举只覆盖对应领域，不能把其数量当作全应用组件总数。
-饮食内容使用 [chat-food.js](../../apps/chefmate-playground/static/chat-food.js) 等入口，产品归属由[组件注册表](../../apps/chefmate-playground/src/chefmate_playground/components.py)声明。
+饮食内容使用 [FoodCards.tsx](../../apps/chefmate-playground/frontend/src/components/FoodCards.tsx) 等入口，产品归属由[组件注册表](../../apps/chefmate-playground/src/chefmate_playground/components.py)声明。
 模型历史只接收工具回执、必要个人记录和短任务状态，完整厨房 `views` 用于界面渲染。
 
 工作流工具的 `display=inline|workspace|none` 决定展示位置，`UIAction.placement` 承接意图。
@@ -103,6 +103,8 @@
 
 SSE 活跃事件带 `session_id/turn_id/sequence`。离开视图只断开订阅，显式停止才取消任务；重新打开读取持久状态。
 活跃任务属于当前服务进程，服务重启将未完成轮次标为中断；页面脱离不能被当作持久作业故障恢复保证。[轮次管理](../../apps/chefmate-playground/src/chefmate_playground/runtime.py)
+
+浏览器使用 React 19.3.1 和 TypeScript 7，`ChefStore` 独立持有请求与会话状态，组件订阅不可变快照。切换会话和页面不会取消任务；流结束后重新 GET 已保存会话，断流后按各自会话轮询恢复。厨房状态与计时由独立 [WorkspaceStore](../../apps/chefmate-playground/frontend/src/features/workspace/store.ts) 管理，经适配器提供真实快照和已保存确认的下一轮请求。图片 Blob 保存在 IndexedDB，文字与续轮标识保存在浏览器本地存储。
 
 <a id="系统组件"></a>
 

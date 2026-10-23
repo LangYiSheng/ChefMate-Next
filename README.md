@@ -39,7 +39,7 @@ ChefMate 把这些问题接到同一顿饭上。刷新页面、补充条件、�
 
 ## 快速开始
 
-需要 Python 3.12+、[uv](https://docs.astral.sh/uv/) 和一个支持原生工具调用的模型连接。完整菜谱检索还需要已有的 PostgreSQL 菜谱库；本地 USDA 库用于营养查询。应用默认只监听本机。
+需要 Python 3.12+、[uv](https://docs.astral.sh/uv/)、Node.js 22.12+ 和一个支持原生工具调用的模型连接。React 前端需要先构建；完整菜谱检索还需要已有的 PostgreSQL 菜谱库，本地 USDA 库用于营养查询。应用默认只监听本机。
 
 在仓库根目录运行：
 
@@ -47,10 +47,14 @@ ChefMate 把这些问题接到同一顿饭上。刷新页面、补充条件、�
 uv sync --project apps/chefmate-playground --extra dev --python 3.12
 Copy-Item apps/chefmate-playground/.env.example apps/chefmate-playground/.env
 # 编辑刚创建的 .env，填写自己的模型和数据库连接。
+npm --prefix apps/chefmate-playground/frontend ci
+npm --prefix apps/chefmate-playground/frontend run build
 uv run --project apps/chefmate-playground chefmate-playground
 ```
 
 已有 `.env` 时保留原文件。打开[本地工作台](http://127.0.0.1:18765)，通过[服务状态](http://127.0.0.1:18765/api/status)检查模型与菜谱库是否就绪。页面能打开只代表 HTTP 服务已启动，缺少配置会明确显示原因。
+
+Windows 也可运行 `apps/chefmate-playground/run.ps1`，脚本会安装锁定的前端依赖、构建页面，再启动 Python 服务。前端使用 React 19.3.1、TypeScript 7 和 Vite 8，后端将 `web/` 构建产物挂载到 `/static`。
 
 新环境的数据准备、只读检查和隔离运行方式见[开发指南](docs/guide/development.md)。启动工作台不会创建数据库、导入菜谱或下载 USDA 数据。
 
@@ -92,7 +96,8 @@ flowchart TD
 
 ```powershell
 apps/chefmate-playground/.venv/Scripts/python.exe -m pytest apps/chefmate-playground/tests packages -q -p no:cacheprovider --basetemp=apps/chefmate-playground/.runtime/pytest
-node --test apps/chefmate-playground/static/tests/*.test.mjs
+npm --prefix apps/chefmate-playground/frontend test
+npm --prefix apps/chefmate-playground/frontend run build
 apps/chefmate-playground/.venv/Scripts/python.exe scripts/check_docs.py
 ```
 

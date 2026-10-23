@@ -1,3 +1,0 @@
-import test from 'node:test';import assert from 'node:assert/strict';import {panelBounds,panelWidth} from '../pane-resize.js';
-test('a wide inspector leaves readable space for the conversation',()=>{const bounds=panelBounds(1000);assert.deepEqual(bounds,{min:340,max:600});assert.equal(panelWidth(760,bounds),600);assert.equal(panelWidth(100,bounds),340);});
-test('shrinking a viewport constrains presentation without corrupting the preferred width',()=>{const preferred=700;assert.equal(panelWidth(preferred,panelBounds(900)),500);assert.equal(panelWidth(preferred,panelBounds(1400)),700);assert.equal(panelWidth(NaN,panelBounds(1400)),460);});

@@ -5,16 +5,20 @@
 
 ## 运行与数据位置
 
-从仓库根目录、使用 Python 3.12+ 和 uv：
+从仓库根目录、使用 Python 3.12+、uv 和 Node.js 22.12+：
 
 ```powershell
 uv sync --project apps/chefmate-playground --extra dev
+npm --prefix apps/chefmate-playground/frontend ci
+npm --prefix apps/chefmate-playground/frontend run build
 uv run --project apps/chefmate-playground chefmate-playground
 ```
 
-默认访问 [本地工作台](http://127.0.0.1:18765/)，独立设置页面为 `/settings`；也可运行 `apps/chefmate-playground/run.ps1`。
+默认访问 [本地工作台](http://127.0.0.1:18765/)，设置地址为 `/settings`；也可运行 `apps/chefmate-playground/run.ps1`，脚本自动执行 `npm ci`、前端构建和 uv 启动。
 使用 `chefmate-playground --port 18766` 可选择其他端口。启动器只监听 `127.0.0.1`。
 应用连接调用方准备的 PostgreSQL，启动时不下载 USDA、不启动数据库、不迁移或替换菜谱数据。
+
+前端为 React 19.3.1、TypeScript 7 和 Vite 8。源码在 [frontend/src](../../apps/chefmate-playground/frontend/src/)，CSS、字体、品牌与 Lucide sprite 在 [frontend/public](../../apps/chefmate-playground/frontend/public/)。构建生成 `apps/chefmate-playground/web/`，后端从此提供 SPA 页面并挂载 `/static`。直接使用 uv 启动前先构建，修改源码后也需重新构建；`npm --prefix apps/chefmate-playground/frontend run dev` 仅用于前端开发，其 `/api` 代理到默认后端端口。
 
 | 数据 | 位置与所有者 |
 | --- | --- |
@@ -24,6 +28,8 @@ uv run --project apps/chefmate-playground chefmate-playground
 | 应用设置覆盖 | 应用目录 `.runtime/settings.json` |
 | USDA 参考 | 配置指定的本地 SQLite，默认指向清洗子项目的食品库 |
 | 界面显示偏好 | 当前浏览器的本地存储 |
+| 未发送文字、确认后续轮 | 当前浏览器 localStorage，由 React 会话状态服务管理 |
+| 未发送图片 Blob | 当前浏览器 IndexedDB；正式聊天图片仍归服务端会话 |
 
 删除聊天不会连带删除独立的个人菜谱、制作记录、饮食记录、长期记忆或用量账本。
 活跃对话先停止才能删除；图片按会话清理。[应用资源组装](../../apps/chefmate-playground/src/chefmate_playground/app.py) · [会话路由](../../apps/chefmate-playground/src/chefmate_playground/routes/conversations.py)
@@ -197,7 +203,8 @@ API Key、数据库密码、图片字节和供应商隐藏推理不进入调试�
 
 ```powershell
 uv run --project apps/chefmate-playground --extra dev python -m pytest apps/chefmate-playground/tests -p no:cacheprovider
-node --test apps/chefmate-playground/static/tests/*.test.mjs
+npm --prefix apps/chefmate-playground/frontend test
+npm --prefix apps/chefmate-playground/frontend run build
 ```
 
 HTTP、协议与生命周期测试注入明确测试依赖，不能据此声称当前外部模型和数据库已实测。

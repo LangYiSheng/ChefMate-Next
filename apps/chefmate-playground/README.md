@@ -1,6 +1,6 @@
 # ChefMate App
 
-把聊天、选菜、备菜、烹饪和个人饮食记录连接起来的本地厨房工作台。原生浏览器前端负责交互，FastAPI 负责 HTTP/SSE、依赖装配与持久化。
+把聊天、选菜、备菜、烹饪和个人饮食记录连接起来的本地厨房工作台。React 19.3.1、TypeScript 7 和 Vite 8 前端负责交互，FastAPI 负责 HTTP/SSE、依赖装配与持久化。
 
 [项目首页](../../README.md) · [完整使用与接口参考](../../docs/reference/workbench.md) · [模块地图](../../docs/guide/development.md) · [设计规范](../../docs/design/README.md)
 
@@ -15,16 +15,20 @@
 
 ## 快速开始
 
-在仓库根目录运行，已有配置文件时保留原文件：
+需要 Python 3.12+、uv 和 Node.js 22.12+。在仓库根目录运行，已有配置文件时保留原文件：
 
 ```powershell
 uv sync --project apps/chefmate-playground --extra dev --python 3.12
 Copy-Item apps/chefmate-playground/.env.example apps/chefmate-playground/.env
 # 编辑 .env，填写已有 PostgreSQL 库和自己的模型连接。
+npm --prefix apps/chefmate-playground/frontend ci
+npm --prefix apps/chefmate-playground/frontend run build
 uv run --project apps/chefmate-playground chefmate-playground
 ```
 
 打开[本地工作台](http://127.0.0.1:18765)，核对[服务状态](http://127.0.0.1:18765/api/status)。更换端口可加 `--port 18766`。
+
+也可执行 `apps/chefmate-playground/run.ps1 -Port 18765`：脚本依次运行 `npm ci`、`npm run build` 和 `uv run`。Vite 将页面与本地资源输出到应用的 `web/`，Python 从这里提供 SPA 页面和 `/static` 资源。直接运行 `uv run` 前必须完成构建；修改前端后重新构建才能更新后端提供的页面。
 
 应用读取自己的 `.env` 和本地设置覆盖。启动不会建库、迁移基础菜谱、导入数据或下载 USDA。配置字段见 [.env.example](.env.example)，新环境数据准备见[开发指南](../../docs/guide/development.md)。
 
@@ -38,13 +42,17 @@ uv run --project apps/chefmate-playground chefmate-playground
 | [interactions.py](src/chefmate_playground/interactions.py) | 可信轮次与厨房领域服务绑定 |
 | [cookbook.py](src/chefmate_playground/cookbook.py)、[meal_logging.py](src/chefmate_playground/meal_logging.py) | 个人菜谱与饮食仓储 |
 | [cooked_intake.py](src/chefmate_playground/cooked_intake.py)、[memory.py](src/chefmate_playground/memory.py) | 本人份额与长期记忆 |
-| [static/app.js](static/app.js)、[static/settings.js](static/settings.js) | 前端装配入口与设置入口 |
+| [frontend/src/App.tsx](frontend/src/App.tsx)、[main.tsx](frontend/src/main.tsx) | React 应用装配、页面导航与启动 |
+| [frontend/src/runtime/](frontend/src/runtime/) | JSON/SSE 传输、会话运行、恢复与浏览器草稿 |
+| [frontend/src/components/](frontend/src/components/)、[features/](frontend/src/features/) | 对话组件、设置、个人中心和烹饪工作区 |
+| [frontend/public/](frontend/public/) | 本地 CSS、字体、品牌资源和 Lucide sprite |
 
 ## 验证
 
 ```powershell
 apps/chefmate-playground/.venv/Scripts/python.exe -m pytest apps/chefmate-playground/tests -q -p no:cacheprovider --basetemp=apps/chefmate-playground/.runtime/app-tests
-node --test apps/chefmate-playground/static/tests/*.test.mjs
+npm --prefix apps/chefmate-playground/frontend test
+npm --prefix apps/chefmate-playground/frontend run build
 ```
 
 会话与个人数据位于被忽略的 `.runtime`，与只读基础菜谱库独立。完整 API、状态协议与可用性边界见[接口参考](../../docs/reference/workbench.md)，实际模型与浏览器证据见[工程档案](../../docs/engineering/README.md)。

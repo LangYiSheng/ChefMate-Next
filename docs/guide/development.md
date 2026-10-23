@@ -1,6 +1,6 @@
 # 模块地图与开发指南
 
-从 App 的一个请求开始读代码：前端控制器 → HTTP 路由 → 应用服务 → 独立领域包 → 仓储，再沿着结果返回界面。下表用来回答“这个改动应该放在哪里”。
+从 App 的一个请求开始读代码：React 组件与状态服务 → HTTP 路由 → 应用服务 → 独立领域包 → 仓储，再沿着结果返回界面。下表用来回答“这个改动应该放在哪里”。
 
 ## App 后端
 
@@ -29,24 +29,23 @@
 
 ## App 前端
 
-根目录：[`apps/chefmate-playground/static`](../../apps/chefmate-playground/static)。浏览器直接加载 ES modules，没有额外打包步骤。
+根目录：[`apps/chefmate-playground/frontend`](../../apps/chefmate-playground/frontend)。使用 React 19.3.1、TypeScript 7 和 Vite 8；组件、状态服务和前端测试位于 `src/`，原有视觉资源保留在 `public/`。
 
 | 模块 | 职责 |
 | --- | --- |
-| `app.js` | 状态组装、控制器连接、全局事件与初始化 |
-| `chat-composer.js` | 文字/图片草稿、待答问题、确认后续轮 |
-| `chat-turns.js` | 发送、SSE 事件、取消与失败恢复 |
-| `chat-sessions.js` | 会话列表、切换、运行轮询与失效会话回退 |
-| `chat-renderer.js` | 当前与历史消息、活动与推荐展示 |
-| `chat-details.js` | 详情、查询与调试面板 |
-| `chat-http.js` / `chat-markdown.js` | JSON/SSE 传输和归一化、安全文本渲染 |
-| `workspace.js` / `ui-components.js` | 工作区状态、动作与白名单组件 |
-| `settings.js` | 配置读写、草稿和导航拦截 |
-| `settings-fields.js` / `settings-sections.js` | 字段/页签校验、分类内容与子视图生命周期 |
-| `centers.js` / `focus.js` / `timer-*.js` | 个人中心、做菜主视图与计时提醒 |
-| `colors.css` / `form-controls.css` | 语义颜色与共享控件规范 |
+| `src/main.tsx` / `src/App.tsx` | React 根节点、页面导航、主布局与服务生命周期 |
+| `src/runtime/store.ts` | 会话分页与切换、发送、取消、恢复、草稿与确认后续轮 |
+| `src/runtime/http.ts` / `src/runtime/attachments.ts` | JSON/SSE 协议、脱敏、图片压缩与 IndexedDB 草稿 |
+| `src/components/Composer.tsx` / `Conversation.tsx` | 受控输入、附件、消息、公开过程与建议 |
+| `src/components/Details.tsx` / `Markdown.tsx` | 菜谱与调试详情、安全文本渲染 |
+| `src/features/workspace/` | 厨房状态服务、白名单视图、问答、专注模式与计时 |
+| `src/features/settings/` | 设置读取与保存、外观、记忆、用量与导航保护 |
+| `src/features/centers/` | 菜谱中心、编辑器、食光手记与个人饮食 |
+| `public/colors.css` / `public/form-controls.css` / `src/react.css` | 语义颜色、控件规范与 React 布局 |
 
-每个控制器通过参数获得状态与协作回调。构造期只建立连接，不提前执行另一个尚未创建的控制器；异步响应要核对来源会话和页面，避免迟到结果覆盖新选择。
+组件用 `useSyncExternalStore` 订阅稳定快照，运行中的会话由状态服务持有。组件卸载、切换页面和关闭专注模式都不请求取消后端任务；显式停止才调用取消端点。异步响应核对生命周期和来源会话，避免迟到结果覆盖新选择。新增行为测试随对应模块保存为 `*.test.ts` 或 `*.test.tsx`，由 Vitest 执行。
+
+`npm run build` 先运行 TypeScript 检查，再将 SPA 与 `public/` 资源输出到 `apps/chefmate-playground/web/`。后端从这个目录提供页面，并把构建资源挂载到 `/static`；`web/` 为生成目录，不手改构建后的文件。
 
 ## 智能体与厨房领域
 
@@ -72,10 +71,14 @@
 ```powershell
 uv sync --project apps/chefmate-playground --extra dev --python 3.12
 Copy-Item apps/chefmate-playground/.env.example apps/chefmate-playground/.env
+npm --prefix apps/chefmate-playground/frontend ci
+npm --prefix apps/chefmate-playground/frontend run build
 uv run --project apps/chefmate-playground chefmate-playground
 ```
 
 已有 `.env` 时保留原文件。模板中的模型密钥、模型名称和数据库连接需要填好，配置以[模板](../../apps/chefmate-playground/.env.example)及 [PlaygroundConfig](../../apps/chefmate-playground/src/chefmate_playground/config.py)为准。模型协议、图片能力和流式工具支持均显式设置；供应商兼容性需要单独测试。
+
+前端需要 Node.js 22.12+。Windows 的 `apps/chefmate-playground/run.ps1` 会先安装锁定依赖并构建，再启动 uv 服务。前端开发可另开终端运行 `npm --prefix apps/chefmate-playground/frontend run dev`；Vite 开发服务将 `/api` 代理到 `127.0.0.1:18765`。对外验收以后端提供的构建页面为准。
 
 `GET /api/status` 同时显示配置与菜谱库状态。HTTP 200 不代表模型可以完成工具调用，模型连接页另有完整工具往返检查。
 
@@ -128,7 +131,8 @@ uvicorn.run(create_app(config), host="127.0.0.1", port=18766)
 ```powershell
 New-Item -ItemType Directory -Force apps/chefmate-playground/.runtime | Out-Null
 apps/chefmate-playground/.venv/Scripts/python.exe -m pytest apps/chefmate-playground/tests packages -q -p no:cacheprovider --basetemp=apps/chefmate-playground/.runtime/pytest
-node --test apps/chefmate-playground/static/tests/*.test.mjs
+npm --prefix apps/chefmate-playground/frontend test
+npm --prefix apps/chefmate-playground/frontend run build
 apps/chefmate-playground/.venv/Scripts/ruff.exe check --no-cache --config apps/chefmate-playground/pyproject.toml apps/chefmate-playground/src packages
 apps/chefmate-playground/.venv/Scripts/python.exe scripts/check_docs.py
 ```

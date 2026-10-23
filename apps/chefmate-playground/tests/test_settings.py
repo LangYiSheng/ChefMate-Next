@@ -160,7 +160,7 @@ def test_invalid_skill_and_runtime_reject_before_writing(tmp_path):
                                 ("runtime", {**before["runtime"], "max_tool_calls": 1000})]:
             assert client.patch("/api/settings", json={"revision": before["revision"], "section": section,
                                                        "values": values}).status_code == 422
-        assert client.get("/settings").status_code == 200
+        assert client.get("/api/settings").status_code == 200
         assert not (tmp_path / "settings.json").exists()
 
 

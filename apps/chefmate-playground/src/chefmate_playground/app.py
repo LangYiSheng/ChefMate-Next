@@ -10,14 +10,14 @@ from urllib.parse import urlsplit
 from fastapi import FastAPI, Request
 from fastapi.exception_handlers import request_validation_exception_handler
 from fastapi.exceptions import RequestValidationError
-from fastapi.responses import FileResponse, JSONResponse
-from fastapi.staticfiles import StaticFiles
+from fastapi.responses import JSONResponse
 from chefmate_workflow import CookingSettings
 
 from .app_context import AppContext
 from .config import APP_ROOT, PlaygroundConfig
 from .cookbook import CookbookRepository, PersonalRecipeRetrieval
 from .images import SessionImages
+from .frontend import mount_frontend
 from .interactions import WorkspaceBinding
 from .journal import JournalRepository
 from .memory import MemoryRepository
@@ -130,13 +130,5 @@ def create_app(
 
     mount_routes(app, context)
 
-    @app.get("/")
-    async def index():
-        return FileResponse(APP_ROOT / "static" / "index.html")
-
-    @app.get("/settings")
-    async def settings_page():
-        return FileResponse(APP_ROOT / "static" / "settings.html")
-
-    app.mount("/static", StaticFiles(directory=APP_ROOT / "static", check_dir=False), name="static")
+    mount_frontend(app, APP_ROOT / "web")
     return app
