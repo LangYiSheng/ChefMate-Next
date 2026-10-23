@@ -107,4 +107,3 @@ export function KitchenCenters({page, onRecipe, notify, onChat, onRecord, onRetu
   </div></section>;
 }
 export default KitchenCenters;
-

@@ -52,4 +52,3 @@ export function RecipeEditor({initial, onDirty, onBusy, onStatus, onSaved, onDel
     <div className="center-editor-actions"><CenterButton danger disabled={busy} onClick={() => onDelete(record)}>移到回收站</CenterButton><CenterButton disabled={busy} onClick={() => save(false)}>保存草稿</CenterButton><CenterButton primary disabled={busy} onClick={() => save(true)}>确认保存菜谱</CenterButton></div>
   </form>;
 }
-

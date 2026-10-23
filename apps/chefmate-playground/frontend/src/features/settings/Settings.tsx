@@ -143,5 +143,3 @@ export function Settings({onClose, onSaved}: SettingsProps) {
   </div>;
 }
 export default Settings;
-
-

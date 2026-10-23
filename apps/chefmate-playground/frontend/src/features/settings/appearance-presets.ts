@@ -54,4 +54,3 @@ export function appearanceTokens(palette:Palette,fonts:FontPairing) {
 
 export type Palette = (typeof PALETTES)[number];
 export type FontPairing = (typeof FONT_PAIRINGS)[number];
-
