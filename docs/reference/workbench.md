@@ -66,8 +66,8 @@ uv run --project apps/chefmate-playground chefmate-playground
 `PATCH /api/settings` 使用 `{revision,section,values}`，section 为 `model/runtime/context/interaction/cooking/components`。
 保存先核对设置版本，校验成功再原子写文件并应用；冲突保留用户草稿供复核。
 活跃模型轮次存在时，除 `cooking` 外的分类会返回 409；计时策略使用最新设置读取，不替换当前 Agent。
-普通外观和对话偏好使用独立的 `GET/PATCH /api/ui-preferences`：读取返回 `{revision,initialized,values}`，保存发送 `{revision,changes}`。字段白名单为 `theme/light_palette/dark_palette/font_pairing/density/inline_limit/show_estimates/reply_suggestions/reply_suggestion_count`。该域独立校验版本，可在轮次运行中更新，不暴露模型、开发者、系统或密钥。首次使用将浏览器外观迁入服务端；冲突不自动重放修改。
-这里的 `revision` 是不透明 CAS 标识，不能按大小判断新旧，也不能与 `/api/settings` 的版本互换。409 的 `detail.preferences` 提供当前快照；未保存草稿需保留，重新读取后复核。首次迁移只发送七个外观字段，保留服务端已有的推荐回复开关与数量。智能体 `get_app_preferences/update_app_preferences` 成功返回 `preferences`，更新另返回只含实际变化的 `changed`；两者都按 `app-preferences` 组件和技能约束。[偏好服务](../../apps/chefmate-playground/src/chefmate_playground/ui_preferences.py)
+普通外观和对话偏好使用独立的 `GET/PATCH /api/ui-preferences`：读取返回 `{revision,initialized,values}`，保存发送 `{revision,changes}`。字段白名单为 `theme/light_palette/dark_palette/font_pairing/font_size/density/inline_limit/show_estimates/reply_suggestions/reply_suggestion_count`。`font_size=small|medium|large`，根字号为 14 / 15 / 16px，默认中；滑块预览草稿，保存后全局生效，大档保留调整前尺寸。该域独立校验版本，可在轮次运行中更新，不暴露模型、开发者、系统或密钥。首次使用将浏览器外观迁入服务端；冲突不自动重放修改。
+这里的 `revision` 是不透明 CAS 标识，不能按大小判断新旧，也不能与 `/api/settings` 的版本互换。409 的 `detail.preferences` 提供当前快照；未保存草稿需保留，重新读取后复核。首次迁移只发送八个外观字段，保留服务端已有的推荐回复开关与数量。智能体 `get_app_preferences/update_app_preferences` 成功返回 `preferences`，更新另返回只含实际变化的 `changed`；两者都按 `app-preferences` 组件和技能约束。[偏好服务](../../apps/chefmate-playground/src/chefmate_playground/ui_preferences.py)
 查询不返回密钥；同一端点可沿用已有密钥，更换端点需要提供专用密钥。
 模型连接测试验证原生工具请求、结果回传与最终回答，HTTP 200 本身不足以说明协议可用。
 
@@ -94,6 +94,8 @@ uv run --project apps/chefmate-playground chefmate-playground
 `show_prep_checklist(recipe_ids=null)` 展示整餐合并清单，`recipe_ids=[真实菜谱ID]` 展示指定菜品，也可选择多个已入餐单的 ID；界面用 `set_checklist_scope` 动作切换同一范围。单菜准备完成不代表整餐已备齐。
 
 `set_kitchen_display` 属于 `app-preferences`，参数为 `{mode:"focus"|"conversation",view_kind?}`。进入专注模式时，可指定当前已打开的厨房卡片；省略按阶段选择。返回普通对话须省略 `view_kind`。工具只生成带稳定 `action_id` 的会话展示动作，不推进阶段、不确认食材或步骤，也不修改持久外观偏好。浏览器仅执行当前可见聊天中新到达的动作，按会话和动作 ID 去重；首次读取历史只建立基线，恢复当前运行轮次时可接收此前未交付的动作，旧历史与后台会话不能强行切换当前页面。[展示动作接收](../../apps/chefmate-playground/frontend/src/runtime/store.ts)
+
+`navigate_cooking_step` 属于 `cooking-guide`，仅在烹饪阶段使用：`direction=next|previous|current|step`、必填 `expected_revision`，只有 `step` 提供从 1 开始的 `step_number`；`recipe_id` 省略使用当前菜，指定时必须来自当前餐单。它切换真实活动步骤并刷新卡片，保留所有完成标记，遵守已有的换步计时策略；不以“下一步”推断用户完成了上一步。首尾返回 `first_step/last_step`，不循环、不自动完成或推进阶段。界面大纲和前后按钮仅浏览；助手工具的真实导航会清除过时的本地浏览位置。[导航实现](../../packages/chefmate-workflow/src/chefmate_workflow/kitchen.py)
 完整模型字段见[工作流参考](workflow.md)与[智能界面设计](../design/agent-ui.md)。
 
 ## 会话、图片与厨房 API
@@ -219,9 +221,9 @@ API Key、数据库密码、图片字节和供应商隐藏推理不进入调试�
 ## 界面与验证入口
 
 设置可内嵌打开，保留会话与未发送文字、图片草稿；菜谱中心和手记中的聊天入口创建新对话，旧草稿仍可恢复。
-备料使用完整可滚动清单，待备项靠前，已备齐或明确跳过的项目划线沉底；实际卡片宽度达到 560px 时采用双列，窄卡片保持单列。步骤与当前提示沿用冻结菜谱；当前步骤正文突出，菜名、步数与进度为辅助信息，支持上/下一步、直接选步及完整步骤列表。长说明在同一区域滚动，不再分页；浏览不会自动完成步骤。
-专注模式底部持续显示本轮用户消息、助手回复与工具活动，也可切换“和助手聊聊”查看完整对话。通过聊天推进备菜或烹饪阶段后，专注内容随真实阶段切换；退出专注模式不停止模型轮次。
-计时保存 UTC 截止时间和暂停剩余量，页面刷新可恢复；新计时与到期提醒可自动展开，保留正在编辑的草稿和焦点，Escape 优先关闭浮层。发声遵守声音设置、浏览器交互解锁与页面运行条件，计时到期不会自动确认步骤。
+备料使用完整可滚动清单，待备项靠前，已备齐或明确跳过的项目划线沉底；实际卡片宽度达到 560px 时采用双列，窄卡片保持单列。步骤与当前提示沿用冻结菜谱；逐步正文突出，底部为“上一步 / 完成这一步 / 下一步”，跳转使用可折叠大纲。完整步骤为紧凑列表，仅选中行显示操作。专注宽屏左右分别滚动，长说明不再分页；浏览不会自动完成步骤。
+专注模式底部回复可折叠；执行中显示本轮问题与活动，完成后替换为最终回复，新轮次自动展开，错误和停止反馈始终可见。“和助手聊聊”复用普通聊天组件，支持完整消息、图片和卡片。通过聊天推进备菜或烹饪阶段后，专注内容随真实阶段切换；退出专注模式不停止模型轮次。
+计时保存 UTC 截止时间和暂停剩余量，页面刷新可恢复；浮层统一空列表、运行列表和表单的内边距，内容与视口变化时重新定位。新计时与到期提醒可自动展开，保留正在编辑的草稿和焦点，Escape 优先关闭浮层。发声遵守声音设置、浏览器交互解锁与页面运行条件，计时到期不会自动确认步骤。
 完成烹饪与个人营养登记分别反馈；若厨房动作已完成而后续记录同步失败，使用原 `action_id` 重试完成请求，补齐记录同步后再续聊。
 图片原位预览、桌面侧栏宽度、窄屏抽屉、主题配色和字体约定见[视觉规范](../design/ui.md)。
 

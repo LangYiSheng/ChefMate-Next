@@ -84,6 +84,8 @@
 省略表示保留，清空按字段契约使用 `null`、`[]` 或空串；不支持的 null 和陌生 ID 在保存前拒绝。
 修改、展示和等待操作按依赖逐次调用，先获得真实结果与新版本；独立只读查询可由运行时并行执行。
 
+烹饪阶段的自然语言“下一步”“上一步”“回到当前步骤”“第 N 步”使用 `navigate_cooking_step`。参数 `direction=next|previous|current|step` 配合最新 `expected_revision`，只有 `step` 提供从 1 开始的 `step_number`；省略 `recipe_id` 使用当前菜，换菜以该菜首个未完成步骤为基准。工具保存实际活动步骤并刷新卡片，保留完成标记，遵守当前换步计时策略；首尾返回 `first_step/last_step`，不自动完成、循环或结束本餐。界面大纲和前后按钮只浏览，实际步骤由助手改变后清除旧浏览位置。[导航合同](../../packages/chefmate-workflow/src/chefmate_workflow/contracts.py)
+
 ## 待回答问题
 
 `ask_user` 必须单独调用，保存题目、至多六个不同选项、是否允许自填和多选。
@@ -168,11 +170,12 @@ SSE 活跃事件带 `session_id/turn_id/sequence`。离开视图只断开订阅�
 密钥不可回读，同端点可沿用，更换端点必须明确提供；分类分别保留草稿与读取版本，其他分类刷新不能解除已发生的冲突。
 普通偏好走独立 `/api/ui-preferences` 版本协议，服务端保存并由浏览器投影到本地外观；本机开发者设置继续单独保留。[设置参考](../reference/workbench.md#配置来源与默认值)
 
-`app-preferences` 提供 `get_app_preferences/update_app_preferences` 和独立的 `set_kitchen_display`。普通偏好修改白名单为 `theme/light_palette/dark_palette/font_pairing/density/inline_limit/show_estimates/reply_suggestions/reply_suggestion_count`。
+`app-preferences` 提供 `get_app_preferences/update_app_preferences` 和独立的 `set_kitchen_display`。普通偏好修改白名单为 `theme/light_palette/dark_palette/font_pairing/font_size/density/inline_limit/show_estimates/reply_suggestions/reply_suggestion_count`。字号 `small/medium/large` 对应根字号 14 / 15 / 16px，默认中；大档保持调整前大小，浏览器文字通过 `rem` 跟随缩放。
 修改只应用明确传入字段并检查版本，未知字段拒绝；不能通过这个工具读取或修改模型、密钥、组件、开发者、系统或运行参数。前端对当前执行与服务恢复重新 GET 权威值，历史工具快照不能覆盖当前偏好。[偏好合同与服务](../../apps/chefmate-playground/src/chefmate_playground/ui_preferences.py) · [浏览器同步](../../apps/chefmate-playground/frontend/src/features/preferences/client.ts)
 
 专注厨房由常驻普通场景承载，进入与退出时主区、已打开右栏和厨房场景协同平移；非活动场景 `inert/aria-hidden`，输入草稿与后台任务保持原归属，减少动态效果时即时切换。[场景实现](../../apps/chefmate-playground/frontend/src/features/workspace/index.tsx) · [应用框架](../../apps/chefmate-playground/frontend/src/App.tsx)
-专注状态下真实阶段改变会自动选择对应厨房卡片；底部持续呈现当前交流和工具活动，“和助手聊聊”展开完整对话。备菜按实际卡片宽度双列或单列展示；烹饪突出当前步骤，提供直接选步与完整列表，浏览和滚动不修改执行进度。
+专注状态下真实阶段改变会自动选择对应厨房卡片；底部回复执行中显示本轮问题与工具活动，完成后换成最终回复，可折叠且新轮次自动展开，必要错误和停止反馈保持可见。“和助手聊聊”复用普通 `Conversation`，完整展示图片和卡片。
+备菜按实际卡片宽度双列或单列展示；烹饪逐步模式用大纲跳转，左侧大纲和右侧阅读独立滚动，底部中心为当前所阅步骤的完成操作。完整步骤使用紧凑列表，仅选中行显示操作；浏览和滚动不修改执行进度。
 
 ## 参数完整性、恢复与观测
 
