@@ -61,16 +61,20 @@ export function KitchenTimers({ sessionId, onOpenSession, active: surfaceActive 
       const viewport = window.visualViewport, width = viewport?.width || innerWidth, height = viewport?.height || innerHeight;
       const x = viewport?.offsetLeft || 0, y = viewport?.offsetTop || 0, popupWidth = Math.min(380, width - 24);
       const scene = root.current?.closest('.react-cooking-focus')?.getBoundingClientRect();
-      setPosition({ width: popupWidth, maxHeight: height - 24, left: Math.max(x + 12, Math.min(anchor.right - popupWidth, x + width - popupWidth - 12)) - (scene?.left || 0), top: Math.max(y + 12, Math.min(anchor.bottom + 8, y + height - element.getBoundingClientRect().height - 12)) - (scene?.top || 0) });
+      const top = Math.max(y + 12, Math.min(anchor.bottom + 8, y + height - element.getBoundingClientRect().height - 12));
+      setPosition({ width: popupWidth, maxHeight: y + height - top - 12, left: Math.max(x + 12, Math.min(anchor.right - popupWidth, x + width - popupWidth - 12)) - (scene?.left || 0), top: top - (scene?.top || 0) });
     };
-    place(); window.addEventListener('resize', place); window.visualViewport?.addEventListener('resize', place);
-    return () => { window.removeEventListener('resize', place); window.visualViewport?.removeEventListener('resize', place); };
+    place(); window.addEventListener('resize', place); window.visualViewport?.addEventListener('resize', place); window.visualViewport?.addEventListener('scroll', place);
+    const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(place);
+    if (panel.current) observer?.observe(panel.current);
+    return () => { observer?.disconnect(); window.removeEventListener('resize', place); window.visualViewport?.removeEventListener('resize', place); window.visualViewport?.removeEventListener('scroll', place); };
   }, [open, creating, sessionId]);
   useEffect(() => {
     if (!open) return;
     if (focusOnOpen.current) { panel.current?.querySelector<HTMLElement>(creating ? 'input:not(:disabled)' : 'button:not(:disabled)')?.focus({ preventScroll: true }); focusOnOpen.current = false; }
     const row = [...(panel.current?.querySelectorAll<HTMLElement>('[data-timer-row]') || [])].find(row => row.dataset.timerRow === highlight);
-    if (row && row.parentElement) row.parentElement.scrollTop = Math.max(0, row.offsetTop - row.parentElement.offsetTop);
+    const body = panel.current?.querySelector<HTMLElement>('.timer-popup-body');
+    if (row && body) body.scrollTop = Math.max(0, body.scrollTop + row.getBoundingClientRect().top - body.getBoundingClientRect().top);
   }, [open, highlight, creating]);
   const openSession = (targetId: string) => { if (onOpenSession) onOpenSession(targetId); else void chefStore.openSession(targetId).catch(() => {}); close(); };
   const timers = workspaceTimers(entry?.views || []), visible = entry ? visibleTimers(timers, entry.acknowledged, entry.clock()) : [];
@@ -83,8 +87,8 @@ export function KitchenTimers({ sessionId, onOpenSession, active: surfaceActive 
     <button type="button" ref={trigger} className="timer-trigger" data-state={display?.state || (reminders.length ? 'expired' : 'empty')} aria-label={first ? `厨房计时：${first.label}，${display!.clock}，${display!.status}` : reminders.length ? '查看其他会话的到时提醒' : '打开厨房计时'} aria-expanded={open} aria-controls={id} onClick={() => { focusOnOpen.current = !open; setOpen(!open); if (!open) setCreating(false); }}><Icon name="timer" /><span className="timer-trigger-clock">{display?.clock || (reminders.length ? '时间到' : '计时')}</span>{visible.length > 1 && <span className="timer-trigger-count">{visible.length}</span>}{reminders.length > 0 && <span className="timer-trigger-count">!</span>}</button>
     {open && <section id={id} ref={panel} style={position} className="react-timer-popover" role="dialog" aria-label="厨房计时">
       <header className="timer-popup-heading"><h3>{creating ? '新建计时' : '厨房计时'}</h3><div><Button className="timer-popup-button" aria-label={creating ? '返回计时列表' : '添加计时器'} disabled={!creating && (!entry || entry.snapshot?.stage !== 'cooking' || entry.saving || active >= limit)} onClick={() => { focusOnOpen.current = true; setCreating(!creating); }}><Icon name={creating ? 'arrow-left' : 'plus'} /></Button><Button className="timer-popup-button" aria-label="关闭计时浮层" onClick={() => close(true)}><Icon name="x" /></Button></div></header>
-      {entry && sessionId && <WorkspaceError sessionId={sessionId} entry={entry} />}
-      {creating && entry && sessionId ? <TimerForm view={view} ctx={{ sessionId, entry }} onStarted={() => setCreating(false)} /> : <div className="timer-popup-list">{visible.length && entry && sessionId ? visible.map(timer => <div className={highlight === timer.id ? 'timer-highlight' : ''} key={timer.id}><TimerRow timer={timer} view={view} ctx={{ sessionId, entry }} /></div>) : <p className="timer-popup-empty">还没有进行中的计时。</p>}{reminders.map(item => <article className="timer-popup-row" data-state="expired" key={`${item.sessionId}:${item.timer.id}`}><div className="timer-popup-copy"><strong>{item.timer.label}时间到</strong><p>另一个会话的计时提醒</p></div><div className="timer-popup-actions"><Button className="timer-popup-button" onClick={() => openSession(item.sessionId)}>查看会话</Button><Button className="timer-popup-button" onClick={() => workspaceStore.acknowledge(item.sessionId, item.timer.id)}>知道了</Button></div></article>)}</div>}
+      <div className="timer-popup-body">{entry && sessionId && <WorkspaceError sessionId={sessionId} entry={entry} />}
+      {creating && entry && sessionId ? <TimerForm view={view} ctx={{ sessionId, entry }} onStarted={() => setCreating(false)} /> : <div className="timer-popup-list">{visible.length && entry && sessionId ? visible.map(timer => <div className={highlight === timer.id ? 'timer-highlight' : ''} key={timer.id}><TimerRow timer={timer} view={view} ctx={{ sessionId, entry }} /></div>) : <p className="timer-popup-empty">还没有进行中的计时。</p>}{reminders.map(item => <article className="timer-popup-row" data-state="expired" key={`${item.sessionId}:${item.timer.id}`}><div className="timer-popup-copy"><strong>{item.timer.label}时间到</strong><p>另一个会话的计时提醒</p></div><div className="timer-popup-actions"><Button className="timer-popup-button" onClick={() => openSession(item.sessionId)}>查看会话</Button><Button className="timer-popup-button" onClick={() => workspaceStore.acknowledge(item.sessionId, item.timer.id)}>知道了</Button></div></article>)}</div>}</div>
       {entry && <p className="timer-popup-policy">{active >= limit ? `已有 ${active} / ${limit} 个计时，请先结束已有计时` : `最多 ${limit} 个同时计时`} · {entry.snapshot?.cooking_settings?.clear_timer_on_step_change ? '换步骤自动清除' : '换步骤保留计时'}</p>}
     </section>}
   </div>;

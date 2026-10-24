@@ -33,7 +33,7 @@
   --radius-panel:14px;
   --radius-shell:18px;
   font-family:var(--font-ui);
-  font-size:16px;
+  font-size:var(--font-size-base,15px);
   font-weight:400;
   font-synthesis:none;
   color:var(--color-text);
@@ -43,7 +43,7 @@
 }
 *,*::before,*::after{box-sizing:border-box}
 html,body,#root{height:100%;min-width:0;margin:0}
-body{overflow:hidden;background:var(--color-background);color:var(--color-text);font-family:var(--font-ui);font-size:16px;line-height:1.6}
+body{overflow:hidden;background:var(--color-background);color:var(--color-text);font-family:var(--font-ui);font-size:1rem;line-height:1.6}
 [hidden]{display:none!important}
 button,input,select,textarea{font-family:var(--font-ui);font-size:inherit;line-height:1.5;color:inherit}
 button,a,input,select,textarea{-webkit-tap-highlight-color:transparent}
@@ -53,7 +53,7 @@ a{color:var(--color-accent);text-underline-offset:3px}
 h1,h2,h3,h4,p,ul,ol,dl{margin-top:0}
 h1,h2{font-family:var(--font-title);font-weight:var(--font-title-weight);font-kerning:normal;line-height:1.5}
 h3,h4,h5,h6{font-family:var(--font-ui);font-weight:600;line-height:1.6}
-h1{font-size:28px;margin-bottom:12px}h2{font-size:22px;margin-bottom:12px}h3{font-size:16px;margin-bottom:10px}h4{font-size:16px;margin-bottom:8px}
+h1{font-size:1.75rem;margin-bottom:12px}h2{font-size:1.375rem;margin-bottom:12px}h3{font-size:1rem;margin-bottom:10px}h4{font-size:1rem;margin-bottom:8px}
 p{margin-bottom:14px}ul,ol{padding-left:1.5em}li+li{margin-top:5px}
 pre,code,kbd,samp{font-family:Consolas,'SFMono-Regular',monospace;font-size:.9em}
 pre{max-width:100%;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;padding:12px 14px;border-radius:8px;background:var(--color-surface);line-height:1.7}
@@ -64,7 +64,7 @@ progress{appearance:none;border:0;border-radius:4px;overflow:hidden;background:v
 progress::-webkit-progress-bar{background:var(--color-hover);border-radius:4px}
 progress::-webkit-progress-value{background:var(--color-accent);border-radius:4px}
 progress::-moz-progress-bar{background:var(--color-accent);border-radius:4px}
-small{font-size:14px}
+small{font-size:0.875rem}
 ::selection{color:var(--color-text);background:var(--color-accent-soft)}
 *{scrollbar-width:thin;scrollbar-color:var(--color-border) transparent}
 :focus-visible{outline:2px solid var(--color-accent);outline-offset:3px}
@@ -74,16 +74,16 @@ small{font-size:14px}
 .icon{display:inline-block;width:20px;height:20px;flex:none;vertical-align:middle}
 .chefmate-mark{display:inline-block;flex:none;background:var(--color-accent);mask:url('/brand/chef-buddy.svg') center/contain no-repeat}
 .brand-icon{width:32px;height:32px}
-.estimate-marker{font-family:var(--font-ui);font-size:13px;font-weight:400;line-height:1.5;letter-spacing:0;color:var(--color-warning);white-space:nowrap}
+.estimate-marker{font-family:var(--font-ui);font-size:0.8125rem;font-weight:400;line-height:1.5;letter-spacing:0;color:var(--color-warning);white-space:nowrap}
 :root[data-show-estimates=false] .estimate-marker{display:none!important}
-.error-box{padding:12px 14px;margin:12px 0;border:1px solid color-mix(in srgb,var(--color-danger) 25%,var(--color-border));border-radius:9px;background:var(--color-danger-soft);color:var(--color-danger);font:14px/1.8 var(--font-ui);overflow-wrap:anywhere}
+.error-box{padding:12px 14px;margin:12px 0;border:1px solid color-mix(in srgb,var(--color-danger) 25%,var(--color-border));border-radius:9px;background:var(--color-danger-soft);color:var(--color-danger);font:0.875rem/1.8 var(--font-ui);overflow-wrap:anywhere}
 .error-box button{margin-left:8px}
-.message-meta,.ui-hint,.nutrition-note,.panel-empty,.panel-loading{font:14px/1.85 var(--font-ui);color:var(--color-muted)}
+.message-meta,.ui-hint,.nutrition-note,.panel-empty,.panel-loading{font:0.875rem/1.85 var(--font-ui);color:var(--color-muted)}
 .panel-empty,.panel-loading{padding:26px 12px;text-align:center}
 .panel-empty .icon{display:block;margin:0 auto 12px;width:28px;height:28px;opacity:.7}
 .ui-hint{margin:8px 0 12px}
-.ui-badge,.tag{display:inline-flex;align-items:center;gap:4px;padding:2px 7px;border-radius:5px;background:var(--color-surface);font:13px/1.5 var(--font-ui);color:var(--color-muted)}
-.toast{position:fixed;z-index:200;left:50%;bottom:26px;transform:translateX(-50%);width:max-content;max-width:calc(100vw - 32px);padding:12px 18px;border:1px solid var(--color-border);border-radius:12px;background:var(--color-canvas);color:var(--color-text);box-shadow:0 8px 32px var(--color-shadow);font:15px/1.7 var(--font-ui);overflow-wrap:anywhere}
+.ui-badge,.tag{display:inline-flex;align-items:center;gap:4px;padding:2px 7px;border-radius:5px;background:var(--color-surface);font:0.8125rem/1.5 var(--font-ui);color:var(--color-muted)}
+.toast{position:fixed;z-index:200;left:50%;bottom:26px;transform:translateX(-50%);width:max-content;max-width:calc(100vw - 32px);padding:12px 18px;border:1px solid var(--color-border);border-radius:12px;background:var(--color-canvas);color:var(--color-text);box-shadow:0 8px 32px var(--color-shadow);font:0.9375rem/1.7 var(--font-ui);overflow-wrap:anywhere}
 @keyframes chefmate-spin{to{transform:rotate(360deg)}}
 .icon.spin,.turn-status .icon,.session-running,.trace-summary>.icon[data-running=true]{animation:chefmate-spin 1.3s linear infinite}
 @media(prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important;scroll-behavior:auto!important}}

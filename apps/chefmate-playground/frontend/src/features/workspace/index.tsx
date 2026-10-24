@@ -59,7 +59,7 @@ function restoreFocusEntrance(target: HTMLElement | null) {
   if (modal && !modal.contains(target)) return;
   target.focus({ preventScroll: true });
 }
-export function CookingFocus({ sessionId, onClose, onContinue, children, initialKind, active = true }: { sessionId: string; onClose: () => void; onContinue: (text: string) => void; children?: ReactNode; initialKind?: string; active?: boolean }) {
+export function CookingFocus({ sessionId, onClose, onContinue, children, initialKind, active = true, renderConversation }: { sessionId: string; onClose: () => void; onContinue: (text: string) => void; children?: ReactNode; initialKind?: string; active?: boolean; renderConversation?: (onFocus: (kind: string) => void) => ReactNode }) {
   const entry = useWorkspace(sessionId), runtime = useSyncExternalStore(chefStore.subscribe, chefStore.getSnapshot);
   const scene = useRef<HTMLElement>(null), [talking, setTalking] = useState(false), [kind, setKind] = useState(initialKind || '');
   const previousStage = useRef(entry?.snapshot?.stage), close = useRef(onClose);
@@ -103,7 +103,7 @@ export function CookingFocus({ sessionId, onClose, onContinue, children, initial
   if (!entry) return null;
   const choices = viewChoices(entry.views, entry.snapshot?.stage), selected = choices.find(view => view.kind === kind) || choices.find(view => view.kind === (entry.snapshot?.stage === 'cooking' ? 'cooking_guide' : 'prep_checklist')) || choices[0];
   const cached = runtime.cache[sessionId], messages = cached?.messages || [], run = runtime.runs[sessionId];
-  return <section ref={scene} id="kitchen-focus" className={`kitchen-focus react-cooking-focus${active ? ' is-active' : ''}`} aria-label="烹饪专注模式" aria-hidden={!active} inert={!active} tabIndex={-1} onKeyDown={event => {
+  return <section ref={scene} id="kitchen-focus" data-active-view={talking ? 'conversation' : selected?.kind} className={`kitchen-focus react-cooking-focus${active ? ' is-active' : ''}`} aria-label="烹饪专注模式" aria-hidden={!active} inert={!active} tabIndex={-1} onKeyDown={event => {
     if (!active || event.defaultPrevented || event.nativeEvent.isComposing || document.querySelector('dialog[open]')) return;
     if (event.key === 'Escape') { event.preventDefault(); if (talking) setTalking(false); else onClose(); }
     if (event.key !== 'Tab') return;
@@ -120,7 +120,7 @@ export function CookingFocus({ sessionId, onClose, onContinue, children, initial
   }}>
     <header className="focus-header"><div className="focus-heading"><h2>{selected?.data.recipe_name || stages[entry.snapshot?.stage] || '厨房任务'}</h2><span className="focus-header-progress">{entry.running ? '助手正在处理…' : '专注做菜'}</span></div><div className="focus-header-actions"><KitchenTimers sessionId={sessionId} active={active} /><Button id="exit-focus" className="focus-button" aria-label="退出专注模式" onClick={onClose}><Icon name="x" /></Button></div></header>
     <nav className="focus-modes" aria-label="专注模式内容">{choices.map(view => <Button key={view.id} aria-pressed={!talking && selected?.kind === view.kind} onClick={() => { setKind(view.kind); setTalking(false); }}>{labels[view.kind]}</Button>)}<Button aria-pressed={talking} onClick={() => setTalking(!talking)}>和助手聊聊</Button></nav>
-    <div className="focus-body"><div className="focus-deck"><WorkspaceError sessionId={sessionId} entry={entry} /><div className="focus-content" tabIndex={0}>{talking ? <FocusConversation messages={messages} run={run} sessionId={sessionId} active={active} expanded /> : selected ? <ViewCard key={selected.id} view={selected} entry={entry} sessionId={sessionId} focused onContinue={onContinue} onFocus={nextKind => { setKind(nextKind); setTalking(false); }} /> : <Hint>当前还没有可展示的任务内容。</Hint>}</div></div></div>
+    <div className="focus-body"><div className="focus-deck"><WorkspaceError sessionId={sessionId} entry={entry} /><div className="focus-content" tabIndex={0}>{talking ? <div className="focus-chat-surface">{renderConversation?.(nextKind => { setKind(nextKind); setTalking(false); }) || <FocusConversation messages={messages} run={run} sessionId={sessionId} active={active} expanded />}</div> : selected ? <ViewCard key={selected.id} view={selected} entry={entry} sessionId={sessionId} focused onContinue={onContinue} onFocus={nextKind => { setKind(nextKind); setTalking(false); }} /> : <Hint>当前还没有可展示的任务内容。</Hint>}</div></div></div>
     {children && <footer className="focus-footer">{!talking && <FocusConversation messages={messages} run={run} sessionId={sessionId} active={active} />}<div className="focus-composer-slot">{children}</div></footer>}
   </section>;
 }

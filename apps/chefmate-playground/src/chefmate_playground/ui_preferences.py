@@ -14,6 +14,7 @@ class AppearancePreferences(BaseModel):
     light_palette: Literal["ink", "sage", "oat", "clay", "blue", "rose", "lavender", "olive"] = "ink"
     dark_palette: Literal["graphite", "night", "deep-blue", "cocoa"] = "graphite"
     font_pairing: Literal["mixed", "sans", "serif", "wenkai"] = "mixed"
+    font_size: Literal["small", "medium", "large"] = "medium"
     density: Literal["comfortable", "compact"] = "comfortable"
     inline_limit: Literal[1, 2] = 2
     show_estimates: bool = True
@@ -134,7 +135,7 @@ def make_preferences_tools(service):
             return {"status": "save_failed", "message": "应用偏好尚未保存，请稍后重试。"}
 
     return [
-        InjectedToolSpec("get_app_preferences", "只读普通应用偏好：主题、配色、字体、密度、内联数量、估算标识和推荐回复；不返回模型或开发者配置。",
+        InjectedToolSpec("get_app_preferences", "只读普通应用偏好：主题、配色、字体、字号、密度、内联数量、估算标识和推荐回复；不返回模型或开发者配置。",
                          PreferencesReadRequest, read, required_skill="app-preferences"),
         InjectedToolSpec("update_app_preferences", "按用户本次明确要求修改普通应用偏好。先读取revision，changes仅传实际修改的白名单字段；不支持任何模型、开发者、系统、密钥设置。",
                          PreferencesUpdateRequest, update, required_skill="app-preferences", effect="write",

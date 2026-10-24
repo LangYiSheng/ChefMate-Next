@@ -1,12 +1,12 @@
 .react-question.question-form{display:grid;gap:12px;min-width:0;max-width:100%;margin:0 0 12px;padding:16px;border:1px solid var(--color-border);border-radius:12px;background:var(--color-canvas);color:var(--color-text);font-family:var(--font-ui)}
-.react-question .question-heading{display:flex;align-items:center;gap:8px;min-width:0;color:var(--color-muted);font:500 12px/1.5 var(--font-ui)}
+.react-question .question-heading{display:flex;align-items:center;gap:8px;min-width:0;color:var(--color-muted);font:500 0.75rem/1.5 var(--font-ui)}
 .react-question .question-heading .icon{width:17px;height:17px;flex:none}
 .react-question .question-body{min-width:0;min-height:0;max-height:min(420px,calc(var(--question-viewport-height,100dvh)*.42));overflow:auto;overscroll-behavior:contain;scrollbar-gutter:stable;scroll-padding-block:6px;border-radius:7px}
 .react-question .question-body:focus-visible{outline:2px solid var(--color-accent);outline-offset:3px}
-.react-question .question-title{margin:0 0 12px;color:var(--color-text);font:500 15px/1.75 var(--font-ui);white-space:pre-wrap;overflow-wrap:anywhere}
+.react-question .question-title{margin:0 0 12px;color:var(--color-text);font:500 0.9375rem/1.75 var(--font-ui);white-space:pre-wrap;overflow-wrap:anywhere}
 .react-question .question-options{position:relative;display:grid;grid-template-columns:minmax(0,1fr);gap:8px;min-width:0}
 .react-question .question-unit{min-width:0}
-.react-question .question-option{display:flex;align-items:flex-start;gap:10px;min-width:0;min-height:44px;margin:0;padding:10px 12px;border:1px solid var(--color-border);border-radius:9px;background:var(--color-canvas);color:var(--color-text);font:400 14px/1.6 var(--font-ui);cursor:pointer;box-sizing:border-box}
+.react-question .question-option{display:flex;align-items:flex-start;gap:10px;min-width:0;min-height:44px;margin:0;padding:10px 12px;border:1px solid var(--color-border);border-radius:9px;background:var(--color-canvas);color:var(--color-text);font:400 0.875rem/1.6 var(--font-ui);cursor:pointer;box-sizing:border-box}
 .react-question .question-option:hover:not(:has(input:disabled)){border-color:var(--color-border-strong);background:var(--color-hover)}
 .react-question .question-option.selected{border-color:var(--color-accent);background:var(--color-accent-soft)}
 .react-question .question-option:focus-within{outline:2px solid color-mix(in srgb,var(--color-accent) 40%,transparent);outline-offset:1px}
@@ -17,19 +17,19 @@
 .react-question .question-unit[data-page-hidden=true]{position:absolute;inset-inline:0;top:0;height:0;overflow:hidden;visibility:hidden;pointer-events:none}
 .react-question .question-custom-content{display:grid;gap:6px;flex:1;min-width:0}
 .react-question .question-custom-content>label{width:fit-content;cursor:pointer}
-.react-question .question-custom textarea{display:block;width:100%;min-width:0;min-height:58px;max-height:120px;margin:0;padding:7px 9px;border:1px solid var(--color-border);border-radius:7px;background:var(--color-canvas);color:var(--color-text);font:400 14px/1.5 var(--font-ui);resize:vertical;box-sizing:border-box}
+.react-question .question-custom textarea{display:block;width:100%;min-width:0;min-height:58px;max-height:120px;margin:0;padding:7px 9px;border:1px solid var(--color-border);border-radius:7px;background:var(--color-canvas);color:var(--color-text);font:400 0.875rem/1.5 var(--font-ui);resize:vertical;box-sizing:border-box}
 .react-question .question-custom textarea:focus{border-color:var(--color-accent);outline:none}
 .react-question .question-footer{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:12px;margin:0;padding-top:12px;border-top:1px solid var(--color-border)}
-.react-question .question-footer>span{min-width:0;color:var(--color-muted);font:400 11px/1.6 var(--font-ui);overflow-wrap:anywhere}
-.react-question .question-confirm{display:inline-flex;align-items:center;justify-content:center;gap:7px;min-width:0;min-height:40px;margin:0;padding:9px 14px;border:1px solid var(--color-accent);border-radius:9px;background:var(--color-accent);color:var(--color-on-accent);font:500 13px/1.5 var(--font-ui);white-space:nowrap;flex:none}
+.react-question .question-footer>span{min-width:0;color:var(--color-muted);font:400 0.6875rem/1.6 var(--font-ui);overflow-wrap:anywhere}
+.react-question .question-confirm{display:inline-flex;align-items:center;justify-content:center;gap:7px;min-width:0;min-height:40px;margin:0;padding:9px 14px;border:1px solid var(--color-accent);border-radius:9px;background:var(--color-accent);color:var(--color-on-accent);font:500 0.8125rem/1.5 var(--font-ui);white-space:nowrap;flex:none}
 .react-question .question-confirm:hover:not(:disabled){background:var(--color-accent-hover);border-color:var(--color-accent-hover)}
 .react-question .question-confirm .icon{width:16px;height:16px;flex:none}
 .react-question .question-pages{display:flex;align-items:center;justify-content:space-between;gap:8px;min-width:0;margin:0;padding:0}
-.react-question .question-pages>span{color:var(--color-muted);font:400 11px/1.5 var(--font-ui);white-space:nowrap}
-.react-question .question-pages .page-button{min-height:34px;padding:6px 10px;font-size:12px;white-space:nowrap}
+.react-question .question-pages>span{color:var(--color-muted);font:400 0.6875rem/1.5 var(--font-ui);white-space:nowrap}
+.react-question .question-pages .page-button{min-height:34px;padding:6px 10px;font-size:0.75rem;white-space:nowrap}
 .react-question .question-pages .icon{width:14px;height:14px;flex:none}
-.react-question .question-error{margin:0;color:var(--color-danger);font:400 12px/1.65 var(--font-ui)}
-.react-question.question-saved{margin:0 0 12px;padding:12px 14px;border:1px solid var(--color-border);border-radius:10px;background:var(--color-surface);color:var(--color-text);font:400 13px/1.7 var(--font-ui)}
+.react-question .question-error{margin:0;color:var(--color-danger);font:400 0.75rem/1.65 var(--font-ui)}
+.react-question.question-saved{margin:0 0 12px;padding:12px 14px;border:1px solid var(--color-border);border-radius:10px;background:var(--color-surface);color:var(--color-text);font:400 0.8125rem/1.7 var(--font-ui)}
 .react-question.question-saved>p{display:flex;align-items:center;gap:8px;margin:0}
 .react-question.question-saved .ui-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:10px}
 .react-cooking-focus .focus-footer:has(.react-question.question-form){max-height:none;overflow:visible}
@@ -38,9 +38,9 @@
 @media(max-width:760px){
   .react-question.question-form{gap:10px;padding:12px}
   .react-question .question-body{max-height:min(360px,calc(var(--question-viewport-height,100dvh)*.38))}
-  .react-question .question-title{font-size:14px;margin-bottom:10px}
-  .react-question .question-option{padding:9px 10px;font-size:14px}
-  .react-question .question-custom textarea{font-size:16px}
+  .react-question .question-title{font-size:0.875rem;margin-bottom:10px}
+  .react-question .question-option{padding:9px 10px;font-size:0.875rem}
+  .react-question .question-custom textarea{font-size:1rem}
   .react-question .question-footer{gap:10px;padding-top:10px}
   .react-question .question-confirm{padding-inline:11px}
   .react-cooking-focus .react-question.question-form{padding:11px 12px}
@@ -48,10 +48,10 @@
 }
 @media(max-height:500px) and (min-width:600px){
   .react-question.question-form,.react-cooking-focus .react-question.question-form{gap:7px;padding:9px 11px}
-  .react-question .question-heading{font-size:11px}
-  .react-question .question-title{margin-bottom:8px;font-size:14px}
+  .react-question .question-heading{font-size:0.6875rem}
+  .react-question .question-title{margin-bottom:8px;font-size:0.875rem}
   .react-question .question-options{gap:6px}
-  .react-question .question-option{min-height:38px;padding:7px 10px;font-size:13px}
+  .react-question .question-option{min-height:38px;padding:7px 10px;font-size:0.8125rem}
   .react-question .question-body,.react-cooking-focus .react-question .question-body{max-height:min(180px,calc(var(--question-viewport-height,100dvh)*.3))}
   .react-question .question-custom textarea{min-height:44px}
   .react-question .question-footer{padding-top:7px}

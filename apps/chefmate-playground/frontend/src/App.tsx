@@ -161,7 +161,7 @@ export default function App() {
       </aside>
     </div>
     {mobileOpen && <button type="button" className="drawer-backdrop" aria-label="关闭侧栏" onClick={() => setMobileOpen(false)} />}
-    {state.currentId && <CookingFocus key={state.currentId} active={focus} sessionId={state.currentId} initialKind={focusKind} onClose={() => setFocus(false)} onContinue={text => { void chefStore.enqueueContinuation(state.currentId!, text); }}>{focus && <Composer state={state} positions={editorPositions.current} focus notify={notify} />}</CookingFocus>}
+    {state.currentId && <CookingFocus key={state.currentId} active={focus} sessionId={state.currentId} initialKind={focusKind} onClose={() => setFocus(false)} onContinue={text => { void chefStore.enqueueContinuation(state.currentId!, text); }} renderConversation={onFocus => <Conversation state={state} active={focus} developer={developer} onRecipe={(id, snapshot) => { setFocus(false); openRecipe(id, snapshot); }} onAsk={(text, image = false) => { chefStore.setDraft(text); requestAnimationFrame(() => document.getElementById('composer-input')?.focus()); if (image) notify('文字已放入输入框，再附上一张图片就可以发送。'); }} onFocus={onFocus} />}>{focus && <Composer state={state} positions={editorPositions.current} focus notify={notify} />}</CookingFocus>}
     {notice && <div className="toast" role="status">{notice}</div>}
   </>;
 }

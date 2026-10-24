@@ -5,6 +5,7 @@ import { FocusConversation } from './FocusConversation';
 import { workspaceStore } from './store';
 import { chefStore } from '../../runtime/store';
 import type { Message } from '../../runtime/types';
+import { Conversation } from '../../components/Conversation';
 
 let id: string;
 beforeEach(() => { id = `focus-conversation-${crypto.randomUUID()}`; });
@@ -21,8 +22,34 @@ describe('focus conversation alongside the task', () => {
     expect(screen.queryByText('较早的回复')).not.toBeInTheDocument(); expect(screen.queryByText('内部过程')).not.toBeInTheDocument();
     rendered.rerender(<FocusConversation messages={[...messages.slice(0, 2), { role: 'assistant', content: '现在先准备鸡蛋。' }]} sessionId={id} active />);
     expect(screen.getByText('现在先准备鸡蛋。')).toBeInTheDocument(); expect(screen.queryByRole('status')).not.toBeInTheDocument();
+    expect(screen.queryByText('帮我进入备菜')).not.toBeInTheDocument(); expect(screen.queryByText('ChefMate')).not.toBeInTheDocument();
     rendered.rerender(<FocusConversation messages={[...messages.slice(0, 2), { role: 'assistant', content: '', error: '连接暂时中断', retryMessage: '进入备菜' }]} sessionId={id} active />);
     expect(screen.getByRole('alert')).toHaveTextContent('连接暂时中断'); expect(screen.getByRole('button', { name: '重试这次请求' })).toBeInTheDocument();
+  });
+
+  it('collapses the reply, reveals a new question automatically, and keeps failures visible', () => {
+    const props = { sessionId: id, active: true };
+    const messages: Message[] = [{ role: 'user', request_id: 'one', content: '第一问' }, { role: 'assistant', content: '第一答' }];
+    const rendered = render(<FocusConversation {...props} messages={messages} />);
+    fireEvent.click(screen.getByRole('button', { name: '收起助手回复' }));
+    expect(screen.getByRole('button', { name: '展开助手回复' })).toHaveAttribute('aria-expanded', 'false');
+    expect(screen.getByText('第一答')).not.toBeVisible();
+    rendered.rerender(<FocusConversation {...props} messages={[...messages, { role: 'user', request_id: 'two', content: '下一步' }, { role: 'assistant', content: '', streaming: true, tool_calls: [{ name: 'show_cooking_guide', running: true }] }]} />);
+    expect(screen.getByRole('button', { name: '收起助手回复' })).toHaveAttribute('aria-expanded', 'true');
+    expect(screen.getByText('下一步')).toBeVisible(); expect(screen.getByRole('status')).toHaveTextContent('整理烹饪步骤');
+    rendered.rerender(<FocusConversation {...props} messages={[...messages, { role: 'user', request_id: 'two', content: '下一步' }, { role: 'assistant', content: '', error: '连接暂时中断', retryMessage: '下一步' }]} />);
+    fireEvent.click(screen.getByRole('button', { name: '收起助手回复' })); expect(screen.getByRole('alert')).toBeVisible();
+  });
+
+  it('uses the ordinary conversation presentation in the full chat view', () => {
+    vi.spyOn(workspaceStore, 'load').mockResolvedValue(null);
+    workspaceStore.receive(id, { workspace: { revision: 1, stage: 'prep' }, views: [{ id: 'prep', kind: 'prep_checklist', revision: 1, data: { items: [] } }] });
+    const state = { ...chefStore.getSnapshot(), currentId: id, session: { id, title: '本餐', messages: [{ role: 'user' as const, content: '这一步怎么做？' }, { role: 'assistant' as const, content: '切成小块即可。' }] } };
+    const rendered = render(<CookingFocus sessionId={id} onClose={() => {}} onContinue={() => {}} renderConversation={onFocus => <Conversation state={state} developer={false} onAsk={() => {}} onRecipe={() => {}} onFocus={onFocus} />}><textarea aria-label="专注输入" /></CookingFocus>);
+    fireEvent.click(screen.getByRole('button', { name: '和助手聊聊' }));
+    expect(rendered.container.querySelector('.focus-chat-surface .user-bubble')).toHaveTextContent('这一步怎么做？');
+    expect(screen.getByLabelText('ChefMate 的回复')).toHaveTextContent('切成小块即可。');
+    expect(rendered.container.querySelector('.focus-reply')).toBeNull();
   });
 
   it('follows prep and cooking stage transitions while keeping the focus scene open', () => {

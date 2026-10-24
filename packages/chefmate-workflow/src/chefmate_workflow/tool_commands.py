@@ -170,6 +170,11 @@ class ToolCommands:
                         state.active_step_id = steps[0].id if steps else None
                 return self._show(state, CookingGuide, "烹饪步骤", CookingData(recipe_id=state.active_recipe_id,
                     recipe_name=None, steps=[], active_step_id=state.active_step_id))
+            if name == "navigate_cooking_step":
+                self._navigate_step(state, validated.direction, recipe_id=validated.recipe_id,
+                                    step_number=validated.step_number)
+                return self._ensure_component(state, CookingGuide, "烹饪步骤", CookingData(
+                    recipe_id=state.active_recipe_id, recipe_name=None, steps=[], active_step_id=state.active_step_id))
             if name == "update_cooking_guidance":
                 if state.stage not in {"planning", "prep", "cooking"}:
                     raise DomainConflict("stage_conflict", "请先确认本次餐单。")

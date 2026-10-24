@@ -282,6 +282,29 @@ class KitchenCommands:
         if state.step_status.get(step_id) != "done":
             state.step_status[step_id] = "current"
 
+    def _navigate_step(self, state, direction, *, recipe_id=None, step_number=None):
+        recipe = self._find_recipe(state, recipe_id or state.active_recipe_id)
+        steps = self._recipe_view(recipe, state).steps
+        if not steps:
+            raise DomainConflict("steps_unavailable", "这道任务菜谱没有可切换的步骤，请先核对原菜谱。")
+        reference = next((step for step in steps if recipe.recipe_id == state.active_recipe_id
+                          and step.id == state.active_step_id), None)
+        reference = reference or next((step for step in steps if step.status != "done"), steps[-1])
+        index = steps.index(reference)
+        if direction == "step":
+            index = step_number - 1
+            if index >= len(steps):
+                raise DomainConflict("invalid_reference", "步骤编号超出了这道任务菜谱的范围，没有切换步骤。")
+        elif direction == "next":
+            if index == len(steps) - 1:
+                raise DomainConflict("last_step", "已经是这道菜的最后一步，没有自动完成任何步骤或结束烹饪。")
+            index += 1
+        elif direction == "previous":
+            if index == 0:
+                raise DomainConflict("first_step", "已经是这道菜的第一步，没有更早的步骤。")
+            index -= 1
+        self._activate_step(state, recipe.recipe_id, steps[index].id)
+
     def _start_timer(self, state, payload, basis="user"):
         if state.stage != "cooking":
             raise DomainConflict("stage_conflict", "只有烹饪阶段可以设置本任务计时器。")

@@ -3,7 +3,7 @@ import { chefStore } from '../../runtime/store';
 import { applyAppearance, readAppearance } from '../settings/appearance';
 
 export type UiPreferencesSnapshot = { revision: string; initialized: boolean; values: Record<string, unknown> };
-const appearanceKeys = ['theme', 'light_palette', 'dark_palette', 'font_pairing', 'density', 'inline_limit', 'show_estimates'] as const;
+const appearanceKeys = ['theme', 'light_palette', 'dark_palette', 'font_pairing', 'font_size', 'density', 'inline_limit', 'show_estimates'] as const;
 const preferenceKeys = [...appearanceKeys, 'reply_suggestions', 'reply_suggestion_count'];
 let lastApplied = '';
 let writeGeneration = 0, writes = 0;

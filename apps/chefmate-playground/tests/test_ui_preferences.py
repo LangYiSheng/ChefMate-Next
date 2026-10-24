@@ -63,6 +63,7 @@ def test_preference_conflict_returns_current_safe_snapshot_and_does_not_overwrit
     {"theme": {"api_key": "nested"}}, {"__proto__": {"theme": "dark"}}, {"constructor": {}},
     {"theme": "dark", "base_url": "https://other.example"}, {"inline_limit": True}, {"inline_limit": "1"},
     {"reply_suggestions": 0}, {"reply_suggestion_count": True}, {"light_palette": "night"}, {},
+    {"font_size": "giant"}, {"font_size": 15}, {"font_size": None},
 ])
 def test_unknown_nested_dangerous_and_wrong_typed_preferences_fail_closed(tmp_path, changes):
     app = application(tmp_path)
@@ -83,20 +84,40 @@ def test_tools_use_real_caller_guard_delta_and_only_public_snapshot(tmp_path):
     assert all(tool.required_skill == "app-preferences" for tool in tools.values())
     read = tools["get_app_preferences"].handler({}, ToolExecutionContext({}, None, []))
     assert set(read) == {"status", "preferences"} and "private" not in str(read)
-    values = {"revision": read["preferences"]["revision"], "changes": {"theme": "dark"}}
+    values = {"revision": read["preferences"]["revision"], "changes": {"theme": "dark", "font_size": "small"}}
     assert asyncio.run(tools["update_app_preferences"].handler(values, ToolExecutionContext({}, None, [])))["status"] == "session_required"
     session_id = context.repository.create()["id"]
     context.repository.mutate(session_id, lambda state: state.update(running=True, active_turn={"id": "turn"}))
     host = context.workspace.for_turn(session_id, "turn", asyncio.Event(), 0)
     execution = ToolExecutionContext({}, host, [{"role": "user", "content": "把主题改成深色"}])
     saved = asyncio.run(tools["update_app_preferences"].handler(values, execution))
-    assert saved["status"] == "ok" and saved["changed"] == {"theme": "dark"}
+    assert saved["status"] == "ok" and saved["changed"] == {"theme": "dark", "font_size": "small"}
+    assert saved["preferences"]["values"]["font_size"] == "small"
     assert saved["preferences"]["values"]["font_pairing"] == "mixed"
     assert asyncio.run(tools["update_app_preferences"].handler(values, execution))["status"] == "preferences_changed"
     host.cancelled.set()
     assert asyncio.run(tools["update_app_preferences"].handler({"revision": saved["preferences"]["revision"],
         "changes": {"density": "compact"}}, execution))["status"] == "turn_closed"
     assert context.preferences.read()["values"]["density"] == "comfortable"
+
+
+def test_font_size_defaults_and_round_trips_without_overwriting_other_preferences(tmp_path):
+    app = application(tmp_path)
+    with TestClient(app) as client:
+        current = client.get("/api/ui-preferences").json()
+        assert current["values"]["font_size"] == "medium"
+        for size in ("small", "large", "medium"):
+            before = current
+            response = client.patch("/api/ui-preferences", json={"revision": before["revision"],
+                "changes": {"font_size": size}})
+            assert response.status_code == 200
+            current = response.json()
+            assert current["values"] == {**before["values"], "font_size": size}
+            assert load_overrides(PlaygroundConfig(sessions_database=tmp_path / "preferences.db")).ui_preferences["font_size"] == size
+            conflict = client.patch("/api/ui-preferences", json={"revision": before["revision"],
+                "changes": {"font_size": "small"}})
+            assert conflict.status_code == 409
+            assert client.get("/api/ui-preferences").json() == current
 
 
 def test_preference_skill_catalog_and_disabled_execution_are_bound(tmp_path):

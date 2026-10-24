@@ -470,6 +470,21 @@ class ExpectedRevisionInput(ToolInput):
         description="最新成功工具返回ui_snapshot.revision（业务版本）。依赖前次写入的调用必须等结果；不要使用展示版本。")
 
 
+class NavigateCookingStepInput(ExpectedRevisionInput):
+    direction: Literal["next", "previous", "current", "step"] = Field(
+        description="next下一步，previous上一步，current展示当前步骤，step跳到step_number指定的步骤；都不会标记完成。")
+    step_number: Annotated[int, Field(ge=1)] | None = Field(default=None,
+        description="仅direction=step时提供，从1开始的原菜谱步骤编号。")
+    recipe_id: Text | None = Field(default=None,
+        description="当前餐单的真实菜谱ID；省略使用当前正在做的菜。")
+
+    @model_validator(mode="after")
+    def numbered_target(self):
+        if (self.direction == "step") != (self.step_number is not None):
+            raise ValueError("Only step navigation requires a step_number")
+        return self
+
+
 class UpdatePreferencesInput(ExpectedRevisionInput):
     values: PreferencePatch
     changed_fields: Annotated[list[PreferenceName], Field(min_length=1, max_length=8)] = Field(
@@ -626,6 +641,7 @@ TOOL_REQUEST_MODELS = {
     "show_recipe_details": RecipeDetailInput, "set_meal_plan": MealPlanInput,
     "show_meal_plan": EmptyInput, "show_prep_checklist": ChecklistInput,
     "show_cooking_guide": CookingGuideInput, "set_cooking_timer": TimerInput,
+    "navigate_cooking_step": NavigateCookingStepInput,
     "show_timers": EmptyInput, "get_cooking_workspace": EmptyInput, "advance_cooking_stage": StageInput,
     "update_cooking_guidance": AdaptCookingInput,
     "update_preferences": UpdatePreferencesInput, "select_recipes": SelectRecipesInput,

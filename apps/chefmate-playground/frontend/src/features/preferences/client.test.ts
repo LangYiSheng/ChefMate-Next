@@ -5,8 +5,8 @@ import { initializeUiPreferences, readUiPreferences, saveUiPreferences } from '.
 const fixture = vi.hoisted(() => ({ api: vi.fn(), appearance: vi.fn(), listener: null as null | (() => void), listeners: new Set<() => void>(), state: { runs: {} as Record<string, any>, cache: {} as Record<string, any> }, loadStatus: vi.fn(async () => {}) }));
 vi.mock('../../runtime/http', async () => ({ ...await vi.importActual('../../runtime/http'), api: fixture.api }));
 vi.mock('../../runtime/store', () => ({ chefStore: { subscribe: (listener: () => void) => { fixture.listeners.add(listener); fixture.listener = () => { for (const notify of fixture.listeners) notify(); }; return () => { fixture.listeners.delete(listener); }; }, getSnapshot: () => fixture.state, loadStatus: fixture.loadStatus } }));
-vi.mock('../settings/appearance', () => ({ applyAppearance: fixture.appearance, readAppearance: () => ({ theme: 'dark', light_palette: 'blue', dark_palette: 'night', font_pairing: 'mixed', density: 'compact', inline_limit: 1, show_estimates: false, api_key: 'must-not-leave-browser' }) }));
-const prefs = (revision: string, extra: Record<string, unknown> = {}) => ({ revision, initialized: true, values: { theme: 'light', light_palette: 'ink', dark_palette: 'graphite', font_pairing: 'mixed', density: 'comfortable', inline_limit: 2, show_estimates: true, reply_suggestions: true, reply_suggestion_count: 3, ...extra } });
+vi.mock('../settings/appearance', () => ({ applyAppearance: fixture.appearance, readAppearance: () => ({ theme: 'dark', light_palette: 'blue', dark_palette: 'night', font_pairing: 'mixed', font_size: 'small', density: 'compact', inline_limit: 1, show_estimates: false, api_key: 'must-not-leave-browser' }) }));
+const prefs = (revision: string, extra: Record<string, unknown> = {}) => ({ revision, initialized: true, values: { theme: 'light', light_palette: 'ink', dark_palette: 'graphite', font_pairing: 'mixed', font_size: 'medium', density: 'comfortable', inline_limit: 2, show_estimates: true, reply_suggestions: true, reply_suggestion_count: 3, ...extra } });
 async function settled() { for (let i = 0; i < 30; i++) await Promise.resolve(); }
 const cleanups: Array<() => void> = [];
 function start() { const cleanup = initializeUiPreferences(); cleanups.push(cleanup); return cleanup; }
@@ -19,6 +19,7 @@ describe('safe application preference synchronization', () => {
     const cleanup = start(); await settled();
     const request = JSON.parse(fixture.api.mock.calls[1][1].body);
     expect(request.revision).toBe('uninitialized'); expect(request.changes.theme).toBe('dark');
+    expect(request.changes.font_size).toBe('small');
     expect(request.changes).not.toHaveProperty('reply_suggestions'); expect(request.changes).not.toHaveProperty('api_key');
     expect(fixture.appearance).toHaveBeenCalledWith(expect.objectContaining({ theme: 'light' })); cleanup();
   });
@@ -31,6 +32,13 @@ describe('safe application preference synchronization', () => {
     fixture.api.mockResolvedValue(prefs('save')); await saveUiPreferences({ theme: 'dark' }, 'base');
     expect(JSON.parse(fixture.api.mock.calls[0][1].body)).toEqual({ revision: 'base', changes: { theme: 'dark' } });
     await expect(saveUiPreferences({ model: 'forbidden' }, 'base')).rejects.toThrow('只能修改'); expect(fixture.api).toHaveBeenCalledOnce();
+  });
+  it('persists and applies font size through the same server revision and local cache as other appearance values', async () => {
+    fixture.api.mockResolvedValue(prefs('font-size-saved', { font_size: 'large' }));
+    await saveUiPreferences({ font_size: 'large' }, 'font-size-base');
+    expect(JSON.parse(fixture.api.mock.calls[0][1].body)).toEqual({ revision: 'font-size-base', changes: { font_size: 'large' } });
+    expect(fixture.appearance).toHaveBeenLastCalledWith(expect.objectContaining({ font_size: 'large' }));
+    expect(JSON.parse(localStorage.getItem('chefmate:ui-settings')!).font_size).toBe('large');
   });
   it('never applies historical tool snapshots and refreshes authority on a live preference tool completion', async () => {
     fixture.api.mockResolvedValueOnce(prefs('start')).mockResolvedValueOnce(prefs('live', { theme: 'dark' }));

@@ -1,11 +1,16 @@
-.react-cooking-focus .focus-assistant{width:100%;max-width:900px;max-height:clamp(100px,24vh,260px);overflow:auto;overscroll-behavior:contain;padding:8px 4px 4px;scrollbar-gutter:stable}
-.react-cooking-focus .focus-assistant.is-expanded{max-height:none;height:100%;padding:8px 12px}
-.focus-exchange+.focus-exchange{margin-top:12px}
-.focus-user-message{margin:0 0 8px auto;width:fit-content;max-width:90%;padding:6px 12px;border-radius:12px;background:var(--color-surface);font:14px/1.7 var(--font-reading);white-space:pre-wrap;overflow-wrap:anywhere}
-.focus-assistant .assistant-heading{margin-bottom:5px}
-.focus-assistant .markdown{font-size:15px;line-height:1.8}
-.focus-assistant .assistant-progress{margin:5px 0}
+.react-cooking-focus .focus-reply{display:flex;flex-direction:column;flex:0 1 auto;width:100%;max-width:900px;min-height:0}
+.react-cooking-focus .focus-reply-toggle{display:flex;justify-content:flex-start;flex:none;gap:7px;min-height:30px;width:100%;padding:3px 4px;border:0;border-radius:7px;background:transparent;color:var(--color-muted);font:0.8125rem/1.6 var(--font-ui);text-align:left}
+.focus-reply-toggle .icon{width:15px;height:15px}.focus-reply-toggle .icon:last-child{margin-left:auto}
+.react-cooking-focus .focus-assistant{width:100%;max-height:clamp(80px,22vh,240px);min-height:0;overflow:auto;overscroll-behavior:contain;padding:5px 4px;scrollbar-gutter:stable}
+.react-cooking-focus .focus-reply.is-expanded,.react-cooking-focus .focus-assistant.is-expanded{max-height:none;height:100%}
+.focus-exchange+.focus-exchange{margin-top:8px}
+.focus-user-message{margin:0 0 6px auto;width:fit-content;max-width:90%;padding:7px 12px;border:1px solid var(--color-border);border-radius:14px 14px 4px 14px;background:var(--color-surface);font:0.9375rem/1.7 var(--font-reading);white-space:pre-wrap;overflow-wrap:anywhere}
+.focus-assistant .markdown{font-size:0.9375rem;line-height:1.8}.focus-assistant .assistant-progress{margin:5px 0}
 .react-cooking-focus .focus-footer{max-height:48%;display:flex;flex-direction:column;align-items:center;min-height:0}
 .react-cooking-focus .focus-composer-slot{flex:none;width:100%;min-height:0}
-@media(max-height:540px){.react-cooking-focus .focus-assistant{max-height:100px}.react-cooking-focus .focus-footer{max-height:48%}.focus-assistant:not(.is-expanded) .focus-exchange.user{display:none}}
-@media(max-width:600px){.focus-assistant .markdown{font-size:15px}.react-cooking-focus .focus-assistant{max-height:23vh}}
+.react-cooking-focus .focus-chat-surface{display:flex;flex-direction:column;height:100%;min-height:0;min-width:0}
+.react-cooking-focus .focus-chat-surface .conversation{padding:18px 16px 12px}
+.react-cooking-focus[data-active-view=conversation] .focus-content{overflow:hidden}
+.react-cooking-focus .focus-chat-surface .user-bubble{font-size:1rem;padding:11px 17px;max-width:85%;border-radius:16px 16px 4px 16px}
+@media(max-height:540px){.react-cooking-focus .focus-assistant{max-height:90px}.react-cooking-focus .focus-footer{max-height:48%}.react-cooking-focus .focus-reply-toggle{min-height:24px;font-size:0.75rem}.focus-user-message{max-height:3.4em;overflow:auto}}
+@media(max-width:600px){.react-cooking-focus .focus-assistant{max-height:22vh}.react-cooking-focus .focus-chat-surface .conversation{padding:12px 0}}

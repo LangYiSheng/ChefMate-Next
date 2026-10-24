@@ -24,7 +24,12 @@ export const FONT_PAIRINGS=Object.freeze([
   Object.freeze({id:'serif',name:'书卷宋体',note:'宋体标题与正文，黑体数值',title:serif,titleWeight:600,reading:serif,numeric:sans,ui:sans}),
   Object.freeze({id:'wenkai',name:'温柔文楷',note:'文楷标题与正文，黑体数值',title:wenkai,titleWeight:400,reading:wenkai,numeric:sans,ui:sans}),
 ]);
-export const DEFAULT_APPEARANCE=Object.freeze({theme:'light',light_palette:'ink',dark_palette:'graphite',font_pairing:'mixed',show_estimates:true});
+export const FONT_SIZES=Object.freeze([
+  Object.freeze({id:'small',label:'小',pixels:14}),
+  Object.freeze({id:'medium',label:'中',pixels:15}),
+  Object.freeze({id:'large',label:'大',pixels:16}),
+]);
+export const DEFAULT_APPEARANCE=Object.freeze({theme:'light',light_palette:'ink',dark_palette:'graphite',font_pairing:'mixed',font_size:'medium',show_estimates:true});
 export const THEME_MODES=Object.freeze(['system','light','dark']);
 export function normalizeAppearance(value?:Record<string,any>): Record<string,any> {
   const saved=value && typeof value==='object' && !Array.isArray(value)?value:{};
@@ -32,15 +37,16 @@ export function normalizeAppearance(value?:Record<string,any>): Record<string,an
     light_palette:PALETTES.some(p=>p.id===saved.light_palette && p.mode==='light')?saved.light_palette:DEFAULT_APPEARANCE.light_palette,
     dark_palette:PALETTES.some(p=>p.id===saved.dark_palette && p.mode==='dark')?saved.dark_palette:DEFAULT_APPEARANCE.dark_palette,
     font_pairing:FONT_PAIRINGS.some(f=>f.id===saved.font_pairing)?saved.font_pairing:DEFAULT_APPEARANCE.font_pairing,
+    font_size:FONT_SIZES.some(size=>size.id===saved.font_size)?saved.font_size:DEFAULT_APPEARANCE.font_size,
     show_estimates:typeof saved.show_estimates==='boolean'?saved.show_estimates:true,
     inline_limit:saved.inline_limit===1?1:2,density:saved.density==='compact'?'compact':'comfortable'};
 }
 export function resolveTheme(mode:string,darkSystem=false) { return mode==='dark' || mode==='system' && darkSystem?'dark':'light'; }
 export function resolveAppearance(value?:Record<string,any>,darkSystem=false) {
   const preferences=normalizeAppearance(value),theme=resolveTheme(preferences.theme,darkSystem);
-  return {preferences,theme,palette:PALETTES.find(p=>p.id===preferences[`${theme}_palette`])!,fonts:FONT_PAIRINGS.find(f=>f.id===preferences.font_pairing)!};
+  return {preferences,theme,palette:PALETTES.find(p=>p.id===preferences[`${theme}_palette`])!,fonts:FONT_PAIRINGS.find(f=>f.id===preferences.font_pairing)!,fontSize:FONT_SIZES.find(size=>size.id===preferences.font_size)!};
 }
-export function appearanceTokens(palette:Palette,fonts:FontPairing) {
+export function appearanceTokens(palette:Palette,fonts:FontPairing,fontSize:FontSize=FONT_SIZES[1]) {
   const dark=palette.mode==='dark';
   return {'--color-background':palette.background,'--color-canvas':palette.canvas,'--color-surface':palette.surface,
     '--color-hover':palette.soft,'--color-border':palette.border,'--color-border-strong':palette.muted,
@@ -50,8 +56,9 @@ export function appearanceTokens(palette:Palette,fonts:FontPairing) {
     '--color-warning':dark?'#e7c48d':'#816024','--color-warning-soft':dark?'#3c3425':'#fbf7ef',
     '--color-danger':dark?'#f0aca2':'#a34138','--color-danger-soft':dark?'#432f2b':'#fcf2ef',
     '--color-overlay':dark?'#050c08b3':'#17281e80','--color-shadow':dark?'#00000033':'#17281e12',
-    '--font-ui':fonts.ui,'--font-title':fonts.title,'--font-title-weight':String(fonts.titleWeight),'--font-body':fonts.reading,'--font-reading':fonts.reading,'--font-numeric':fonts.numeric};
+    '--font-ui':fonts.ui,'--font-title':fonts.title,'--font-title-weight':String(fonts.titleWeight),'--font-body':fonts.reading,'--font-reading':fonts.reading,'--font-numeric':fonts.numeric,'--font-size-base':`${fontSize.pixels}px`};
 }
 
 export type Palette = (typeof PALETTES)[number];
 export type FontPairing = (typeof FONT_PAIRINGS)[number];
+export type FontSize = (typeof FONT_SIZES)[number];

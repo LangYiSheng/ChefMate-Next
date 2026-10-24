@@ -1,4 +1,4 @@
-import { useRef, useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Icon } from '../../components/Icon';
 import { type Json, type View, type Timer, labels, stages, safeReference, durationText, manualTimerSeconds, timerPresentation, timerCapacity, completionText } from './protocol';
 import { workspaceStore, type Entry } from './store';
@@ -155,47 +155,57 @@ export function CompleteMeal({ ctx }: { ctx: Context }) {
 function CookingGuide({ view, ctx }: { view: View; ctx: Context }) {
   const data = view.data, steps: Json[] = data.steps || [];
   const [mode, setMode] = useState('detail');
-  const [outlineOpen, setOutlineOpen] = useState(() => window.innerWidth >= 1000);
-  const [browsing, setBrowsing] = useState<{ recipeId: string; stepId: string } | null>(null);
+  const [outlineOpen, setOutlineOpen] = useState(() => !!ctx.focused && window.innerWidth >= 1000);
+  const [browsing, setBrowsing] = useState<{ recipeId: string; stepId: string; activeStepId?: string; navigationId?: string } | null>(null);
+  // Keep an observed navigation anchor when it ages out of the bounded action history.
+  const navigationId = ctx.entry.snapshot?.recent_actions?.findLast((item: Json) => item.type === 'navigate_cooking_step')?.action_id ?? browsing?.navigationId;
+  useEffect(() => { setBrowsing(null); }, [data.recipe_id, data.active_step_id, navigationId]);
   const activeIndex = Math.max(0, steps.findIndex(step => step.id === data.active_step_id));
-  const browseIndex = browsing?.recipeId === data.recipe_id ? steps.findIndex(step => step.id === browsing?.stepId) : -1;
-  const index = browseIndex >= 0 ? browseIndex : activeIndex;
+  const browseIndex = browsing && browsing.recipeId === data.recipe_id && browsing.activeStepId === data.active_step_id && browsing.navigationId === navigationId ? steps.findIndex(step => step.id === browsing.stepId) : -1;
+  const index = browseIndex >= 0 ? browseIndex : activeIndex, selected = steps[index];
   const recipes: Json[] = ctx.entry.views.find(item => item.kind === 'meal_plan')?.data.recipes || [];
   const disabled = locked(view, ctx) || ctx.entry.snapshot?.stage !== 'cooking';
-  const jump = (next: number) => setBrowsing({ recipeId: data.recipe_id, stepId: steps[next].id });
+  const jump = (next: number) => setBrowsing({ recipeId: data.recipe_id, stepId: steps[next].id, activeStepId: data.active_step_id, navigationId });
   const completed = steps.filter(step => step.status === 'done').length;
-  const renderStep = (step: Json) => {
-    const state = step.status === 'done' ? 'done' : step.id === data.active_step_id ? 'current' : 'browsing';
+  const stepState = (step: Json) => step.status === 'done' ? 'done' : step.id === data.active_step_id ? 'current' : 'pending';
+  const finishStep = async (step: Json) => {
+    await action(view, ctx, 'complete_step', { recipe_id: data.recipe_id, step_id: step.id, completed: step.status !== 'done' });
+    setBrowsing(null);
+  };
+  const completionButton = (step: Json) => <Button className={`ui-button step-completion ${step.status === 'done' ? 'cooking-secondary' : 'cooking-primary'}`} disabled={disabled} onClick={() => finishStep(step)}><Icon name={step.status === 'done' ? 'undo-2' : 'check'} />{step.status === 'done' ? '取消完成' : '完成这一步'}</Button>;
+  const stepTimer = (step: Json) => {
     const matches = (data.timers || []).filter((timer: Timer) => timer.recipe_id === data.recipe_id && timer.step_id === step.id);
     const timer = matches.find((timer: Timer) => ['running', 'paused'].includes(timer.status)) || matches.at(-1);
-    const display = timer && timerPresentation(timer, ctx.entry.clock());
-    const instruction = step.adapted_instruction || step.instruction || '';
-    return <article className={`ui-cooking-step ${state}`} key={step.id} data-step-id={step.id}>
-      <div className="ui-step-heading"><span className="cooking-step-number">第 {Number(step.ordinal) + 1} 步</span><span className={`cooking-step-status ${state}`}>{({ done: '已完成', current: '正在做', browsing: '浏览中' } as Json)[state]}</span></div>
-      <div className="cooking-step-main">
-        {ctx.focused && mode === 'detail' ? <ReadingPages key={`${data.recipe_id}:${step.id}`} text={instruction} label="步骤说明" /> : <p className="ui-step-instruction">{instruction}</p>}
-        {step.adapted_instruction && <div className="step-adaptation"><Hint>按你的条件调整：{step.adaptation_reason || ''}</Hint><details className="workspace-disclosure"><summary>查看原菜谱步骤</summary><p>{step.instruction}</p></details></div>}
-      </div>
-      <div className="ui-actions cooking-step-actions">
-        <Button className={`ui-button ${step.status === 'done' ? 'cooking-secondary' : 'cooking-primary'}`} disabled={disabled} onClick={async () => { await action(view, ctx, 'complete_step', { recipe_id: data.recipe_id, step_id: step.id, completed: step.status !== 'done' }); setBrowsing(null); }}>{step.status === 'done' ? '取消完成' : '完成这一步'}</Button>
-        {step.id !== data.active_step_id && data.active_step_id && <><Button className="ui-button cooking-secondary" onClick={() => setBrowsing(null)}>回到正在做的步骤</Button>{step.status !== 'done' && <Button className="ui-button cooking-secondary" disabled={disabled} onClick={async () => { await action(view, ctx, 'set_active_step', { recipe_id: data.recipe_id, step_id: step.id }); setBrowsing(null); }}>从这一步继续</Button>}</>}
-        {timer && ['running', 'paused'].includes(timer.status) ? <Button className="ui-button cooking-secondary step-timer-shortcut" aria-label={`查看这一步的计时：${timer.label}`} onClick={() => workspaceStore.openTimers(ctx.sessionId, timer.id)}><Icon name="timer" /><time>{display.clock}</time><span>{display.status}</span></Button> : step.timer_seconds > 0 && !step.adapted_instruction && step.status !== 'done' && <Button className="ui-button cooking-secondary timer-start-button" disabled={disabled} onClick={() => action(view, ctx, 'start_timer', { recipe_id: data.recipe_id, step_id: step.id, seconds: step.timer_seconds, label: `${data.recipe_name} · 第 ${Number(step.ordinal) + 1} 步` })}><Icon name="timer" />开始 {durationText(step.timer_seconds)}计时</Button>}
-      </div>
-    </article>;
+    if (timer && ['running', 'paused'].includes(timer.status)) {
+      const display = timerPresentation(timer, ctx.entry.clock());
+      return <Button className="ui-button cooking-secondary step-timer-shortcut" aria-label={`查看这一步的计时：${timer.label}`} onClick={() => workspaceStore.openTimers(ctx.sessionId, timer.id)}><Icon name="timer" /><time>{display.clock}</time><span>{display.status}</span></Button>;
+    }
+    return step.timer_seconds > 0 && !step.adapted_instruction && step.status !== 'done' ? <Button className="ui-button cooking-secondary timer-start-button" disabled={disabled} onClick={() => action(view, ctx, 'start_timer', { recipe_id: data.recipe_id, step_id: step.id, seconds: step.timer_seconds, label: `${data.recipe_name} · 第 ${Number(step.ordinal) + 1} 步` })}><Icon name="timer" />开始 {durationText(step.timer_seconds)}计时</Button> : null;
   };
+  const detail = selected && <article className={`ui-cooking-step ${stepState(selected)}`} data-step-id={selected.id}>
+    <div className="ui-step-heading"><span className="cooking-step-number">第 {Number(selected.ordinal) + 1} / {steps.length} 步</span><span className={`cooking-step-status ${stepState(selected)}`}>{selected.status === 'done' ? '已完成' : selected.id === data.active_step_id ? '正在做' : '浏览中'}</span></div>
+    <div className="cooking-step-main">
+      {ctx.focused ? <ReadingPages key={`${data.recipe_id}:${selected.id}`} text={selected.adapted_instruction || selected.instruction || ''} label="步骤说明" /> : <p className="ui-step-instruction">{selected.adapted_instruction || selected.instruction}</p>}
+      {selected.adapted_instruction && <div className="step-adaptation"><Hint>按你的条件调整：{selected.adaptation_reason || ''}</Hint><details className="workspace-disclosure"><summary>查看原菜谱步骤</summary><p>{selected.instruction}</p></details></div>}
+    </div>
+    {stepTimer(selected) && <div className="cooking-step-timer">{stepTimer(selected)}</div>}
+  </article>;
+  const outline = <details className={`cooking-step-outline${ctx.focused ? ' focus-step-outline' : ''}`} open={outlineOpen} onToggle={event => setOutlineOpen(event.currentTarget.open)}><summary>全部步骤大纲</summary><div className="focus-step-outline-body"><ol>{steps.map((step, itemIndex) => <li key={step.id}><Button className="workflow-step-jump" aria-current={itemIndex === index ? 'step' : undefined} onClick={() => jump(itemIndex)}><span className="workflow-step-index">{itemIndex + 1}</span><span>{step.status === 'done' ? '已完成 · ' : ''}{step.adapted_instruction || step.instruction}</span></Button></li>)}</ol></div></details>;
   if (!data.recipe_id) return <Hint>在餐单中选择一道菜，开始查看步骤。</Hint>;
   return <div className={`ui-cooking-guide cooking-mode-${mode}`}>
     <div className="cooking-guide-tools"><DisplayModes mode={mode} setMode={setMode} />
       {recipes.length > 1 && <nav className="cooking-recipe-scope" aria-label="切换本餐菜品">{recipes.map(recipe => <Button className="ui-text-button" key={recipe.recipe_id} aria-pressed={recipe.recipe_id === data.recipe_id} disabled={locked(view, ctx)} onClick={() => action(view, ctx, 'set_active_recipe', { recipe_id: recipe.recipe_id })}>{recipe.name}</Button>)}</nav>}
       <div className="cooking-context"><span className="cooking-recipe-label">{data.recipe_name}</span><span className="cooking-progress-label">{completed} / {steps.length} 步完成</span><progress className="cooking-progress" aria-label="烹饪步骤完成进度" max={Math.max(steps.length, 1)} value={completed} /></div>
-      {(data.guidance || []).map((text: string, index: number) => <div className="ui-adaptation" key={index}>{text}</div>)}
+      {(data.guidance || []).map((text: string, itemIndex: number) => <div className="ui-adaptation" key={itemIndex}>{text}</div>)}
     </div>
-    {!steps.length && <Hint>这道菜暂时没有可用步骤。</Hint>}
-    {ctx.focused && mode === 'detail' ? <div className="focus-cooking-layout">
-      <details className="focus-step-outline" open={outlineOpen} onToggle={event => setOutlineOpen(event.currentTarget.open)}><summary>全部步骤大纲</summary><div className="focus-step-outline-body"><ol>{steps.map((step, itemIndex) => <li key={step.id}><Button className="workflow-step-jump" aria-current={itemIndex === index ? 'step' : undefined} onClick={() => jump(itemIndex)}><span className="workflow-step-index">{itemIndex + 1}</span><span>{step.status === 'done' ? '已完成 · ' : ''}{step.adapted_instruction || step.instruction}</span></Button></li>)}</ol></div></details>
-      <div className="focus-step-reading">{steps[index] && renderStep(steps[index])}<CompleteMeal ctx={ctx} /></div>
-    </div> : <>{mode === 'list' ? <div className="workflow-list cooking-flat-list">{steps.map(renderStep)}</div> : steps[index] && renderStep(steps[index])}<CompleteMeal ctx={ctx} /></>}
-    {mode === 'detail' && !!steps.length && <nav className="step-navigator cooking-step-nav" aria-label="浏览烹饪步骤"><Button className="page-button" disabled={index === 0} onClick={() => jump(index - 1)}><Icon name="chevron-left" />上一步</Button><label className="cooking-step-picker"><span className="visually-hidden">跳到烹饪步骤</span><select aria-label="跳到烹饪步骤" value={steps[index]?.id || ''} onChange={event => { const next = steps.findIndex(step => step.id === event.target.value); if (next >= 0) jump(next); }}>{steps.map((step, stepIndex) => <option key={step.id} value={step.id}>第 {stepIndex + 1} / {steps.length} 步{step.status === 'done' ? ' · 已完成' : ''}</option>)}</select></label><Button className="page-button" disabled={index >= steps.length - 1} onClick={() => jump(index + 1)}>下一步<Icon name="chevron-right" /></Button></nav>}
+    {!steps.length ? <Hint>这道菜暂时没有可用步骤。</Hint> : mode === 'detail' ? <>
+      <div className={ctx.focused ? 'focus-cooking-layout' : 'inline-cooking-layout'}>{outline}<div className="focus-step-reading">{detail}</div></div>
+      <nav className="step-navigator cooking-step-nav" aria-label="浏览烹饪步骤"><Button className="page-button" disabled={index === 0} onClick={() => jump(index - 1)}><Icon name="chevron-left" /><span>上一步</span></Button>{completionButton(selected)}<Button className="page-button" disabled={index >= steps.length - 1} onClick={() => jump(index + 1)}><span>下一步</span><Icon name="chevron-right" /></Button></nav>
+    </> : <ol className="cooking-compact-list" aria-label="完整烹饪步骤">{steps.map((step, itemIndex) => {
+      const state = stepState(step), isSelected = itemIndex === index;
+      return <li key={step.id} data-step-id={step.id} className={`cooking-list-row ${state}${isSelected ? ' selected' : ''}`}><button type="button" className="cooking-list-copy" aria-label={`查看第 ${itemIndex + 1} 步：${step.adapted_instruction || step.instruction}`} aria-current={step.id === data.active_step_id ? 'step' : undefined} aria-expanded={isSelected} onClick={() => jump(itemIndex)}><span className="workflow-step-index">{String(itemIndex + 1).padStart(2, '0')}</span><span className="cooking-list-instruction">{step.adapted_instruction || step.instruction}</span><span className={`cooking-list-status ${state}`}>{state === 'done' ? '已完成' : state === 'current' ? '正在做' : ''}</span></button>{isSelected && <div className="cooking-list-actions">{completionButton(step)}{stepTimer(step)}</div>}</li>;
+    })}</ol>}
+    <CompleteMeal ctx={ctx} />
   </div>;
 }
 export function TimerRow({ timer, ctx, view }: { timer: Timer; ctx: Context; view: View }) {

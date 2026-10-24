@@ -1,5 +1,5 @@
 /* Shared text controls use the same shape and typography as the themed Select. */
-:where(input:not([type=checkbox]):not([type=radio]):not([type=file]):not([type=range]):not([type=hidden]),textarea){min-height:40px;max-width:100%;padding:9px 12px;border:1px solid var(--color-border);border-radius:var(--radius-control,9px);background:var(--color-canvas);color:var(--color-text);font:400 16px/1.6 var(--font-ui);outline:none;box-sizing:border-box;transition:border-color .14s,box-shadow .14s}
+:where(input:not([type=checkbox]):not([type=radio]):not([type=file]):not([type=range]):not([type=hidden]),textarea){min-height:40px;max-width:100%;padding:9px 12px;border:1px solid var(--color-border);border-radius:var(--radius-control,9px);background:var(--color-canvas);color:var(--color-text);font:400 1rem/1.6 var(--font-ui);outline:none;box-sizing:border-box;transition:border-color .14s,box-shadow .14s}
 :where(input:not([type=checkbox]):not([type=radio]):not([type=file]):not([type=range]):not([type=hidden]),textarea):hover:not(:disabled):not(:focus){border-color:var(--color-border-strong)}
 :where(input:not([type=checkbox]):not([type=radio]):not([type=file]):not([type=range]):not([type=hidden]),textarea):focus{border-color:var(--color-accent);box-shadow:0 0 0 2px color-mix(in srgb,var(--color-accent) 12%,transparent)}
 :where(input:not([type=checkbox]):not([type=radio]),textarea):disabled{background:var(--color-surface);color:var(--color-muted);opacity:.7}
@@ -14,5 +14,5 @@
 :where(input[type=checkbox]:not([role=switch])):checked::before{transform:rotate(-45deg) scale(1)}
 :where(input[type=checkbox]:not([role=switch]),input[type=radio]):focus-visible{outline:2px solid var(--color-accent);outline-offset:3px}
 :where(input[type=checkbox]:not([role=switch]),input[type=radio]):disabled{opacity:.5;cursor:default}
-@media(max-width:760px){:where(input:not([type=checkbox]):not([type=radio]):not([type=file]):not([type=range]):not([type=hidden]),textarea){font-size:16px}}
+@media(max-width:760px){:where(input:not([type=checkbox]):not([type=radio]):not([type=file]):not([type=range]):not([type=hidden]),textarea){font-size:1rem}}
 @media(forced-colors:active){:where(input[type=checkbox]:not([role=switch]),input[type=radio]){appearance:auto}}

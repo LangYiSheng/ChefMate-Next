@@ -23,10 +23,10 @@ export class PageBoundary extends Component<PageBoundaryProps, PageBoundaryState
       flex: 1, minWidth: 0, minHeight: 0, overflow: 'auto', display: 'grid', alignContent: 'center',
       justifyItems: 'center', gap: 14, padding: '32px 24px', textAlign: 'center',
     }}>
-      <h2 style={{margin: 0, fontFamily: 'var(--font-title)', fontWeight: 'var(--font-title-weight)', fontSize: 24, lineHeight: 1.5}}>
+      <h2 style={{margin: 0, fontFamily: 'var(--font-title)', fontWeight: 'var(--font-title-weight)', fontSize: '1.5rem', lineHeight: 1.5}}>
         {this.props.pageName ? `${this.props.pageName}暂时没有打开` : '这个页面暂时没有打开'}
       </h2>
-      <p style={{maxWidth: 420, margin: 0, color: 'var(--color-muted)', fontFamily: 'var(--font-ui)', fontSize: 14, lineHeight: 1.85}}>
+      <p style={{maxWidth: 420, margin: 0, color: 'var(--color-muted)', fontFamily: 'var(--font-ui)', fontSize: '.875rem', lineHeight: 1.85}}>
         加载页面时遇到了一点问题，可以重试，也可以先返回对话。
       </p>
       <div style={{display: 'flex', justifyContent: 'center', flexWrap: 'wrap', gap: 10, marginTop: 8}}>

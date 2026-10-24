@@ -35,7 +35,7 @@ COMPONENTS = (
                   ("show_prep_checklist", "update_prep_items"), ("prep_checklist",),
                   factories=("workflow",), dependencies=("retrieval",), stage_targets=("prep",)),
     ComponentSpec("cooking-guide", "烹饪引导", "跟随做法、计时并确认完成。",
-                  ("show_cooking_guide", "update_cooking_guidance", "set_cooking_timer", "show_timers"),
+                  ("show_cooking_guide", "navigate_cooking_step", "update_cooking_guidance", "set_cooking_timer", "show_timers"),
                   ("cooking_guide", "timers", "task_progress"), factories=("workflow",),
                   dependencies=("retrieval",), stage_targets=("cooking", "completed")),
     ComponentSpec("recipe-authoring", "个人菜谱", "整理、核对并管理自己的菜谱。",

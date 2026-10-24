@@ -1,0 +1,16 @@
+.react-settings .font-size-setting{max-width:440px;margin:0 0 26px;padding:0}
+.react-settings .font-size-label{display:flex;align-items:center;justify-content:space-between;gap:16px;font:500 1rem/1.6 var(--font-ui)}
+.react-settings .font-size-label output{color:var(--color-accent);font-weight:600}
+.react-settings .font-size-setting input[type=range]{display:block;width:100%;height:32px;margin:10px 0 0;padding:0;accent-color:var(--color-accent);cursor:pointer}
+.react-settings .font-size-setting input[type=range]:focus-visible{outline:2px solid var(--color-accent);outline-offset:3px;box-shadow:none;border-radius:6px}
+.react-settings .font-size-ticks{display:flex;justify-content:space-between;padding:0 2px;color:var(--color-muted);font:.875rem/1.6 var(--font-ui)}
+.react-settings .font-size-ticks [data-selected=true]{color:var(--color-accent);font-weight:600}
+.react-settings .font-size-setting>p{margin:8px 0 0;color:var(--color-muted);font:.875rem/1.75 var(--font-ui)}
+/* Preview text uses its own draft size while the rest of the page keeps the saved size. */
+.react-settings .appearance-preview[data-font-size]{font-size:var(--font-size-base)}
+.react-settings .appearance-preview[data-font-size] .appearance-preview-bar{font-size:calc(var(--font-size-base) * 1.0625)}
+.react-settings .appearance-preview[data-font-size] .appearance-preview-title{font-size:calc(var(--font-size-base) * 1.3125)}
+.react-settings .appearance-preview[data-font-size] :is(.appearance-preview-caption,.appearance-preview-metrics dt,.appearance-preview-metrics small){font-size:calc(var(--font-size-base) * .8125)}
+.react-settings .appearance-preview[data-font-size] .appearance-preview-metrics dd{font-size:calc(var(--font-size-base) * 1.5625)}
+.react-settings .appearance-preview[data-font-size] :is(.appearance-preview-chat strong,.appearance-preview-action){font-size:calc(var(--font-size-base) * .875)}
+.react-settings .appearance-preview[data-font-size] .appearance-preview-chat p{font-size:calc(var(--font-size-base) * .9375)}

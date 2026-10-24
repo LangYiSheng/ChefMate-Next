@@ -4,7 +4,7 @@ import {beforeEach, describe, expect, it, vi} from 'vitest';
 import {Settings} from './Settings';
 import {MemorySettings} from './MemorySettings';
 import {advanceRevisions, createDrafts} from './settings-state';
-import {PALETTES, FONT_PAIRINGS, normalizeAppearance, resolveAppearance} from './appearance-presets';
+import {PALETTES, FONT_PAIRINGS, FONT_SIZES, normalizeAppearance, resolveAppearance} from './appearance-presets';
 import {applyAppearance, readAppearance} from './appearance';
 import {SettingsInsights, usageCalendar} from './SettingsInsights';
 
@@ -18,6 +18,25 @@ const choose = (label: string, option: string) => {fireEvent.click(screen.getByR
 beforeEach(() => {localStorage.clear(); request.mockReset(); readPreferences.mockReset(); savePreferences.mockReset(); readPreferences.mockResolvedValue(preferences()); savePreferences.mockImplementation(async changes => ({...preferences(), revision: revision(101), values: {...preferences().values, ...changes}})); request.mockImplementation((path: string) => Promise.resolve(path === '/api/settings' ? fixture() : {ready: true, model: 'test-model', database: {ready: true}}));});
 
 describe('React settings transactions', () => {
+  it('previews the three-step font size draft and saves only that field without applying unsaved size globally', async () => {
+    const view = render(<Settings onClose={vi.fn()}/>); await screen.findByLabelText('显示模式');
+    const slider = screen.getByRole('slider', {name: '字号'}), initialRootSize = document.documentElement.style.fontSize;
+    expect(slider).toHaveValue('1'); expect(slider).toHaveAttribute('aria-valuetext', '中');
+    expect(slider).toHaveAttribute('min', '0'); expect(slider).toHaveAttribute('max', '2'); expect(slider).toHaveAttribute('step', '1');
+    fireEvent.change(slider, {target: {value: '0'}});
+    expect(slider).toHaveAttribute('aria-valuetext', '小');
+    expect(view.container.querySelector('.appearance-preview')).toHaveAttribute('data-font-size', 'small');
+    expect((view.container.querySelector('.appearance-preview') as HTMLElement).style.getPropertyValue('--font-size-base')).toBe('14px');
+    expect(document.documentElement.style.fontSize).toBe(initialRootSize);
+    expect(savePreferences).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('tab', {name: '对话建议'}));
+    fireEvent.click(screen.getByRole('tab', {name: '配色与字体'}));
+    expect(screen.getByRole('slider', {name: '字号'})).toHaveValue('0');
+    fireEvent.click(screen.getByRole('button', {name: '保存修改'}));
+    await waitFor(() => expect(savePreferences).toHaveBeenCalledExactlyOnceWith({font_size: 'small'}, revision(100)));
+    await waitFor(() => expect(screen.getByRole('button', {name: '保存修改'})).toBeDisabled());
+  });
+
   it('keeps the short about and data sections on one page instead of hiding each paragraph behind a tab', async () => {
     render(<Settings onClose={vi.fn()}/>); await screen.findByLabelText('显示模式');
     fireEvent.click(screen.getByRole('button', {name: '关于 ChefMate'}));
@@ -232,6 +251,17 @@ describe('appearance and usage semantics', () => {
     expect(resolveAppearance({theme: 'system', dark_palette: 'deep-blue', font_pairing: 'wenkai'}, true).palette.id).toBe('deep-blue');
     expect(normalizeAppearance({theme: 'invalid', light_palette: 'graphite'})).toMatchObject({theme: 'light', light_palette: 'ink'});
     localStorage.setItem('chefmate:ui-settings', '{broken'); expect(readAppearance().font_pairing).toBe('mixed');
+    expect(normalizeAppearance().font_size).toBe('medium');
+    expect(normalizeAppearance({font_size: 'giant'}).font_size).toBe('medium');
+    expect(FONT_SIZES.map(size => [size.id, size.pixels])).toEqual([['small', 14], ['medium', 15], ['large', 16]]);
+  });
+  it.each(FONT_SIZES)('applies $id size to the shared typography root without scaling the page geometry', size => {
+    applyAppearance({font_size: size.id});
+    expect(document.documentElement.dataset.fontSize).toBe(size.id);
+    expect(document.documentElement.style.getPropertyValue('--font-size-base')).toBe(`${size.pixels}px`);
+    expect(document.documentElement.style.fontSize).toBe('var(--font-size-base, 15px)');
+    expect(document.documentElement.style.transform).toBe('');
+    expect(document.documentElement.style.zoom).toBe('');
   });
   it('distinguishes partial, missing and zero reported token days', () => {
     const calendar = usageCalendar({period: {from: '2026-10-20', to: '2026-10-23'}, daily: [{date: '2026-10-20', model_calls: 2, known_totals: {total_tokens: 50}, coverage: {total_tokens: {known: 1, calls: 2}}}, {date: '2026-10-21', model_calls: 1}, {date: '2026-10-22', model_calls: 1, known_totals: {total_tokens: 0}}]});
