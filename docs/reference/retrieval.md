@@ -26,9 +26,9 @@ schema = IngredientLookupRequest.model_json_schema()
 | 方法 | 输入 | 主要输出 |
 | --- | --- | --- |
 | `find_ingredients` | `IngredientLookupRequest` 或字典 | 当前库中的食材候选、使用数量、匹配原因和原文例子 |
-| `search_recipes` | `RecipeSearchRequest` 或字典 | 菜谱摘要、匹配食材、营养、warnings、分页 |
+| `search_recipes` | `RecipeSearchRequest` 或字典 | 菜谱摘要、匹配食材、营养、warnings、分页与选项规范化记录 |
 | `get_recipe` | `RecipeDetailRequest` 或字典 | `recipe` 下的完整食材、用量、步骤、营养与原文依据 |
-| `get_search_options` | 无参数 | 当前快照、代码/中文名称/关联菜谱数、营养单位、排序字段 |
+| `get_search_options` | 无参数 | 当前快照、代码/中文名称/关联菜谱数、营养单位、排序字段与 `input_contracts` |
 
 公开参数模型支持 `model_json_schema()`，可以直接用于框架无关的工具注册。参数拒绝额外字段、空字符串、错误类型、非法数值、未知难度和排序字段；数据库中的食材引用及标签代码还会在同一读取事务内检查。
 
@@ -73,11 +73,16 @@ result = tools.search_recipes({
 
 支持名称、总耗时上下限、三种难度、`taste_tags_all` / `taste_tags_any` / `exclude_taste_tags`、`cooking_methods_any`、`nutrition_tags_all`、`exclude_allergens` 和推荐资格。所有不同条件同时满足。口味、方法、厨具等代码从 `get_search_options` 获取，未识别的选项返回明确错误，而不是删除条件。
 
+食材选择器优先直接使用 `find_ingredients.items[].selector`，不要从原文猜 ID。“家里有 A、B，尽量利用”属于库存或搭配偏好，可将任一可用食材放同一 OR 组，不默认把每个库存拆成 AND 条件；只有明确要求同一道菜必须同时含 A、B 才分组。`taste_tags_all` 和 `taste_tags_any` 都是硬过滤，不能把普通历史口味当作推荐排序参数；未明确要求的口味和过敏排除不自动添加。
+
+口味、方法、厨具、营养标签和过敏原优先传当前选项的 `code`。精确且唯一的显示 `label`（例如“炒锅”对应 `wok`）可在同一读取事务中规范为代码，返回 `normalized_options` 的 `{field,value,code,reason:"exact_label"}`，`normalized_query` 保存实际查询值；相同代码去重，不删除任何条件。未知名称、模糊别名、大小写变体或对应多个代码的显示名称拒绝，不猜测、不自动放宽。固定难度仍仅接受 `beginner/normal/advanced`。
+
 `available_tools=null` 不限制厨具；`[]` 表示没有厨具，只匹配没有已记录必需厨具的菜谱。提供集合时，菜谱已记录的全部必需厨具必须为该集合的子集。
+该集合必须是完整可用厨具清单；只传 `wok` 会排除同时需要 `stove` 的菜谱。用户只列举某个锅或热源时，不把未提及设备推断为不存在，应省略这个筛选再核对候选的 `required_tools`；用户明确限定完整设备时，保留该限制并说明真实冲突。规范化标签不会补造缺失设备。
 
 六种营养范围支持 `total` / `per_serving`。上下限包含边界；未知值为 `null`，范围筛选不匹配未知值。`allow_estimated=false` 只检查正在筛选的指标和基准，不因其他指标估算而排除整道菜。每份营养沿用菜谱人数基准，并返回人数是否估算；工具不换算人数、不自行设定“低脂”等阈值。
 
-支持菜谱 ID、名称、总时间、难度及 12 种营养数值排序。SQL 先筛选、计数、排序，再分页；相同排序值以菜谱 ID 升序稳定裁决，未知值始终放最后。难度使用 `beginner → normal → advanced`。`limit` 为 1–100，默认 20，`offset` 为 0–100000。
+支持菜谱 ID、名称、总时间、难度及 12 种营养数值排序。SQL 先筛选、计数、排序，再分页；相同排序值以菜谱 ID 升序稳定裁决，未知值始终放最后。难度使用 `beginner → normal → advanced`。`limit` 为 1–100，默认 8，`offset` 为 0–100000。
 
 搜索摘要包含具体命中食材、对应组编号、原文与克重标记、菜谱 warnings，以及营养数值/逐指标估算标记。`matched_groups` 从 0 开始。当前库没有可靠的主料、必选、可选字段，不支持将这些语义当成硬过滤；可选组成只能据原文和 warnings 解释。标签缺失也不能证明不辣或过敏安全。
 
@@ -91,11 +96,12 @@ result = tools.search_recipes({
 | --- | --- |
 | `ok` | 查询成功；有效条件命中 0 条时仍为 `ok`，条件保留在 `normalized_query` |
 | `snapshot_changed` | 当前数据集已变化；没有继续执行引用查询，应重新找候选 |
-| `invalid_selection` | 某食材 ID/形态或选项不存在；列出 `unknown_ingredients` / `unknown_options` |
+| `invalid_selection` | 某食材 ID/形态或选项不存在或有歧义；列出 `unknown_ingredients` / `unknown_options`、对应字段 `valid_options` 与 `recovery` |
 | `not_found` | 该快照不存在此菜谱，`recipe=null` |
 | `usda_unavailable` | 仅 USDA 的查找请求无法执行，提供具体原因 |
 
 请求结构错误抛出 Pydantic `ValidationError`；连接和数据库故障继续抛出底层异常，由应用转为合适的错误响应。工具没有隐藏重试或失败时的假数据。
+选项错误包含 `field/value/reason/candidate_codes`，未知值为 `unknown_option`，同名多代码为 `ambiguous_label`。仅选项出错时，修正对应字段即可，不必重查有效食材；仅食材失效时，提示重新取得真实 `selector`。所有失败都不执行菜谱查询，也不丢弃原来的有效硬条件。
 
 ## 验证
 

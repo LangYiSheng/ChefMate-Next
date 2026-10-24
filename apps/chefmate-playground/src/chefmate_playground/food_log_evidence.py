@@ -5,6 +5,15 @@ import re
 from datetime import date as Day, timedelta
 
 
+class FoodLogEvidenceError(ValueError):
+    """Static field repairs survive the agent's safe error boundary."""
+
+    def __init__(self, code, location, message):
+        super().__init__(message)
+        self.code = code
+        self.location = location
+
+
 def _date_matches_source(day, evidence, source, today):
     if not evidence or evidence not in source:
         return False
@@ -36,7 +45,7 @@ def _provided_nutrient(key, value, evidence):
 
 def _validate_item_sources(items, user_text, baseline_items=()):
     remaining = list(baseline_items)
-    for item in items:
+    for index, item in enumerate(items):
         original = next((old for old in remaining if old["name"] == item.name), None)
         if original is not None:
             remaining.remove(original)  # An old verified item cannot authorize multiple new copies.
@@ -53,14 +62,16 @@ def _validate_item_sources(items, user_text, baseline_items=()):
                 raise ValueError("已核实的用户来源说明只能沿用原文或替换为本轮实际提供的原文")
         if item.portion_basis == "user_provided" and quantity_changed:
             if item.portion not in user_text:
-                raise ValueError("用户提供的份量需引用本轮原话；视觉份量请标记为估算并说明假设")
+                raise FoodLogEvidenceError("food_portion_not_quoted", ["items", index, "portion"],
+                    "portion须逐字引用用户本轮连续原话，保留一/1与标点；只修正份量字段，不覆盖原始source_text或照片来源。估算份量标estimated并说明假设")
             if item.amount_g is not None:
                 grams = re.escape(f"{item.amount_g:g}")
                 kilograms = re.escape(f"{item.amount_g / 1000:g}")
                 if not re.search(
                     rf"(?<![\d.])(?:{grams}\s*(?:克|g)|{kilograms}\s*(?:千克|kg))(?![a-z])", item.portion, re.IGNORECASE
                 ):
-                    raise ValueError("用户未提供这项克重；从碗、盘推算的克重请标为估算")
+                    raise FoodLogEvidenceError("food_grams_not_provided", ["items", index, "amount_g"],
+                        "用户没有给出质量克数；amount_g不是升/毫升。可保留原体积且amount_g留null；体积/碗盘换算克重须portion_basis=estimated并说明密度或份量假设，保留source_text")
         if item.nutrition_basis == "user_provided":
             numbers = item.nutrition.model_dump()
             changed = {

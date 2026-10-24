@@ -74,7 +74,7 @@ def test_pantry_shortcut_survives_model_replies_and_requires_live_pending_prepar
     ]}}]}
     replies = finalize_reply_suggestions(REPLIES, context)
     assert len(replies) == 3 and replies[0] == PANTRY_REPLY
-    assert "主料保持原来的状态" in replies[0]["text"]
+    assert "不把未说明的食材标为备齐" in replies[0]["text"]
     assert context["components"][0]["data"]["items"][0]["status"] == "pending"
     # The host finalizes the agent result again using the newest authoritative snapshot.
     assert finalize_reply_suggestions(replies, context) == replies
@@ -93,6 +93,29 @@ def test_pantry_shortcut_deduplicates_model_suggestion_without_hiding_other_choi
     ]}}]}
     replies = finalize_reply_suggestions([REPLIES[0], PANTRY_REPLY, REPLIES[1]], context)
     assert replies == [PANTRY_REPLY, REPLIES[0], REPLIES[1]]
+
+
+@pytest.mark.parametrize("items,offer_check", [
+    ([{"status": "pending", "availability": "missing"}, {"status": "ready", "availability": "available"}], False),
+    ([{"status": "pending", "availability": "missing"}, {"status": "pending", "availability": "unknown"}], True),
+    ([{"status": "pending"}], True),
+    ([{"status": "ready"}, {"status": "skipped", "availability": "unknown"}], False),
+])
+def test_availability_checks_only_target_unknown_pending_stock(items, offer_check):
+    context = {"stage": "prep", "components": [{"kind": "prep_checklist", "data": {"items": items}}]}
+    replies = finalize_reply_suggestions(REPLIES, context)
+    assert (PANTRY_REPLY in replies) is offer_check
+    assert all("小料我都已有" not in reply["text"] for reply in replies)
+    assert finalize_reply_suggestions(replies, context) == replies
+
+
+def test_old_ownership_shortcut_is_removed_when_only_explicit_missing_stock_remains():
+    context = {"stage": "prep", "components": [{"kind": "prep_checklist", "data": {"items": [
+        {"status": "pending", "availability": "missing"},
+    ]}}]}
+    old = {"title": "已拥有所有小料，帮我勾选掉", "text": "当前清单里的调味小料我都已有，请帮我勾选为已备齐；主料保持原来的状态，不确定属于小料的项目先问我。"}
+    replies = finalize_reply_suggestions([old, *REPLIES[:2]], context)
+    assert old not in replies and PANTRY_REPLY not in replies and len(replies) == 3
 
 
 @pytest.mark.parametrize("bad", [

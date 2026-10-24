@@ -9,9 +9,10 @@ from .models import ReplySuggestion
 
 REPLY_SUGGESTIONS_TOOL = "suggest_replies"
 PANTRY_REPLY = {
-    "title": "已拥有所有小料，帮我勾选掉",
-    "text": "当前清单里的调味小料我都已有，请帮我勾选为已备齐；主料保持原来的状态，不确定属于小料的项目先问我。",
+    "title": "核对未确认食材",
+    "text": "请帮我核对清单里尚未确认的食材，我会补充哪些已经有了；明确缺少的项目保留待购买，不把未说明的食材标为备齐。",
 }
+_OLD_PANTRY_TITLE = "已拥有所有小料，帮我勾选掉"
 
 
 class ReplySuggestionsRequest(BaseModel):
@@ -54,7 +55,7 @@ def make_reply_suggestions_tool(count: int = 3) -> InjectedToolSpec:
 _FALLBACKS = {
     "planning": (
         ("核对餐单", "请帮我核对当前选菜和用餐需求。"),
-        ("准备食材", "请根据当前餐单整理需要准备的食材，缺少信息时先问我。"),
+        ("准备食材", "请直接打开当前餐单的备菜清单，并记录我已经明确确认的现有食材。"),
         ("调整搭配", "我想调整这顿饭的搭配，请先看看当前餐单。"),
     ),
     "shopping": (
@@ -102,10 +103,12 @@ def finalize_reply_suggestions(value, ui_context: dict | None = None, *, count: 
         replies = [item.model_dump(mode="json") for item in batch.suggested_replies]
     except (ValidationError, TypeError):
         replies = [{"title": title, "text": text} for title, text in fallbacks[:count]]
-    replies = [item for item in replies if item["title"] != PANTRY_REPLY["title"] and item["text"] != PANTRY_REPLY["text"]]
+    replies = [item for item in replies if item["title"] not in {PANTRY_REPLY["title"], _OLD_PANTRY_TITLE}
+               and item["text"] != PANTRY_REPLY["text"]]
     pending_prep = context.get("stage") == "prep" and any(
         view.get("kind") == "prep_checklist"
-        and any(item.get("status") == "pending" for item in (view.get("data") or {}).get("items", []))
+        and any(item.get("status") == "pending" and item.get("availability", "unknown") == "unknown"
+                for item in (view.get("data") or {}).get("items", []))
         for view in context.get("components", [])
     )
     if pending_prep:

@@ -114,8 +114,16 @@ class AgentTools(RetrievalEvidence):
                             "message": "本轮已经查询过相同条件，请使用该调用的结果。查某道菜请传name，更多候选请更改offset；不要重复空参数查询。"}
                 context.read_queries[fingerprint] = call_id
                 output = await self._invoke_tool(call, history)
+                snapshot = output.get("snapshot")
+                official = not (name == "get_recipe" and str(arguments.get("recipe_id", "")).startswith("custom-"))
+                if official and isinstance(snapshot, dict):
+                    if context.read_snapshot is not None and context.read_snapshot != snapshot:
+                        context.read_queries.clear()
+                    context.read_snapshot = copy.deepcopy(snapshot)
                 if output.get("status") != "ok":
                     context.read_queries.pop(fingerprint, None)
+                else:
+                    context.read_queries[fingerprint] = call_id
                 return output
             if name == "list_skills":
                 return {"status": "ok", "items": self.skills.list_metadata()}

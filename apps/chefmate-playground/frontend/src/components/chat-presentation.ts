@@ -5,6 +5,7 @@ export const toolNames: Record<string, string> = { find_ingredients: '识别食�
 Object.assign(toolNames, {
   set_kitchen_display: '切换厨房显示方式', advance_cooking_stage: '切换做菜阶段',
   navigate_cooking_step: '切换烹饪步骤',
+  complete_cooking_step: '记录步骤完成',
   update_preferences: '保存用餐条件', select_recipes: '确认菜品', show_recipe_details: '读取菜谱详情',
   update_prep_items: '更新备菜进度', update_cooking_guidance: '更新烹饪步骤', set_cooking_timer: '设置厨房计时', show_timers: '查看厨房计时',
   get_user_profile: '读取饮食偏好', update_user_profile: '记住饮食偏好', search_conversation_history: '查找历史对话',

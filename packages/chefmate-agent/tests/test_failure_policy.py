@@ -166,3 +166,18 @@ def test_registered_recipe_validation_codes_keep_only_static_repair_hints():
     assert "Markdown" in errors[0]["hint"]
     assert "private" not in json.dumps(errors) and "untrusted" not in json.dumps(errors)
     assert safe_errors(errors) == errors
+
+
+def test_missing_ingredient_weight_evidence_repairs_grams_without_discarding_suggested_amount():
+    errors = safe_errors([{"loc": ["ingredients", 0, "amount_evidence"], "type": "recipe_evidence_required",
+                           "hint": "use invented measurements", "input": "private"}])
+    assert "grams设为null" in errors[0]["hint"] and "建议用量保留在amount" in errors[0]["hint"]
+    assert "private" not in json.dumps(errors) and "invented" not in json.dumps(errors)
+    assert safe_errors(errors) == errors
+
+
+def test_snapshot_time_error_points_to_real_snapshot_without_echoing_invalid_value():
+    errors = safe_errors([{"loc": ["expected_snapshot", "imported_at"], "type": "value_error",
+                           "input": "private invalid value", "msg": "untrusted"}])
+    assert "snapshot.imported_at" in errors[0]["hint"] and "data_version" in errors[0]["hint"]
+    assert "private" not in json.dumps(errors) and "untrusted" not in json.dumps(errors)

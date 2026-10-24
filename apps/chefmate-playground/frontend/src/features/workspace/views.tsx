@@ -136,6 +136,7 @@ function PrepChecklist({ view, ctx }: { view: View; ctx: Context }) {
       <label className="ui-check-row"><input type="checkbox" aria-label={`${item.canonical_name}已备齐`} checked={item.status === 'ready'} disabled={disabled} onChange={event => { void action(view, ctx, 'check_prep_item', { item_id: item.id, status: event.target.checked ? 'ready' : 'pending' }).catch(() => {}); }} />
         <span title={item.raw_text ? `原文：${item.raw_text}` : undefined}><strong>{item.canonical_name}</strong><small className="prep-amount">{amount(item)}{item.estimated && <Estimate />}</small></span>
       </label>
+      {item.status === 'pending' && item.availability === 'missing' && <span className="ui-badge muted">待购买</span>}
       {item.status === 'skipped' && <span className="ui-badge muted">已跳过</span>}
       {item.status !== 'ready' && <Button className="ui-text-button" disabled={disabled} onClick={() => action(view, ctx, 'check_prep_item', { item_id: item.id, status: item.status === 'skipped' ? 'pending' : 'skipped' })}>{item.status === 'skipped' ? '恢复' : '跳过'}</Button>}
     </li>)}</ul>

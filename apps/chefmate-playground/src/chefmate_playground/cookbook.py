@@ -22,6 +22,18 @@ from .recipe_drafts import (
     _document,
 )
 from .recipe_tools import make_recipe_tools as make_recipe_tools
+from .recipe_provenance import metadata_evidence, metadata_time_evidence, require_storage_provenance
+
+
+def _draft_nutrition(document, draft):
+    nutrition = calculate_nutrition(document, {})
+    if draft.metadata_provenance.servings and draft.metadata_provenance.servings.kind == "suggested":
+        nutrition["estimated_servings"] = True
+        nutrition["estimated"] = True
+        nutrition["estimated_per_serving_fields"] = sorted(nutrition["total"])
+        if nutrition["status"] == "complete":
+            nutrition["status"] = "estimated"
+    return nutrition
 
 
 class CookbookRepository:
@@ -68,22 +80,26 @@ class CookbookRepository:
             return record if record and (include_deleted or record["status"] != "deleted") else None
 
     def create_draft(
-        self, values, *, session_id=None, image_ids=(), operation_id=None, guard=None, active_turn_id=None
+        self, values, *, session_id=None, image_ids=(), operation_id=None, guard=None, active_turn_id=None,
+        provenance_context=None
     ):
         draft = RecipeDraftRequest.model_validate(values)
         if draft.source_kind == "image" and not image_ids:
             raise ValueError("本轮没有图片来源，不能标记为图片提取")
         document = _document(draft)
         # Nutrition belongs to the existing deterministic processor, never model-authored numbers.
-        nutrition = calculate_nutrition(document, {})
+        nutrition = _draft_nutrition(document, draft)
         body = {
             "document": document.model_dump(mode="json"),
             "nutrition": nutrition,
             "source_text": draft.source_text,
             "source_kind": draft.source_kind,
             "source_image_ids": list(image_ids),
-            "time_evidence": draft.time_evidence,
-            "difficulty_evidence": draft.difficulty_evidence,
+            "time_evidence": metadata_time_evidence(draft),
+            "difficulty_evidence": metadata_evidence(draft, "difficulty", draft.difficulty_evidence),
+            "metadata_provenance": draft.metadata_provenance.model_dump(exclude_none=True),
+            "source_metadata_evidence": {"servings": draft.servings_evidence, "difficulty": draft.difficulty_evidence,
+                                         "time": draft.time_evidence},
         }
         stamp = now()
         with self._connect() as db:
@@ -100,6 +116,7 @@ class CookbookRepository:
                         raise ValueError("同一操作标识已用于其他草稿内容，请读取已有草稿后核对")
                     return self._public(existing)
             identity = "custom-" + str(uuid4())
+            require_storage_provenance(draft, context=provenance_context)
             if guard:
                 guard()
             db.execute(
@@ -119,7 +136,8 @@ class CookbookRepository:
                 guard()
         return self.get(identity)
 
-    def update_draft(self, recipe_id, values, revision, *, guard=None, session_id=None, active_turn_id=None):
+    def update_draft(self, recipe_id, values, revision, *, guard=None, session_id=None, active_turn_id=None,
+                     provenance_context=None, metadata_fields=None):
         draft = RecipeDraftRequest.model_validate(values)
         document = _document(draft)
         with self._connect() as db:
@@ -133,15 +151,31 @@ class CookbookRepository:
             record = self._public(row)
             if not record or record["status"] != "draft" or record["revision"] != revision:
                 raise ValueError("草稿已更新或已保存，请刷新后核对")
+            require_storage_provenance(draft, record, provenance_context)
             old = json.loads(row[-1])
             if draft.source_kind != old["source_kind"]:
                 raise ValueError("请保留原始来源类型")
+            if metadata_fields is not None:
+                if not set(metadata_fields) <= {"servings", "difficulty", "total_time_min"}:
+                    raise ValueError("元数据patch不能修改食材、步骤或分项时间")
+                preserved = dict(old["document"])
+                rebuilt = document.model_dump(mode="json")
+                for field in metadata_fields:
+                    preserved[field] = rebuilt[field]
+                if "servings" in metadata_fields:
+                    for field in ("servings_evidence", "original_servings"):
+                        preserved[field] = rebuilt[field]
+                preserved["warnings"] = rebuilt["warnings"]
+                document = validate_recipe(preserved)
             old.update(
                 document=document.model_dump(mode="json"),
-                nutrition=calculate_nutrition(document, {}),
+                nutrition=_draft_nutrition(document, draft),
                 source_text=draft.source_text,
-                time_evidence=draft.time_evidence,
-                difficulty_evidence=draft.difficulty_evidence,
+                time_evidence=metadata_time_evidence(draft),
+                difficulty_evidence=metadata_evidence(draft, "difficulty", draft.difficulty_evidence),
+                metadata_provenance=draft.metadata_provenance.model_dump(exclude_none=True),
+                source_metadata_evidence={"servings": draft.servings_evidence, "difficulty": draft.difficulty_evidence,
+                                          "time": draft.time_evidence},
             )
             if guard:
                 guard()
@@ -378,7 +412,8 @@ class CookbookRepository:
             "origin": "user",
             "is_custom": True,
             "source": "user",
-            "estimated_servings": False,
+            "estimated_servings": (record.get("metadata_provenance", {}).get("servings") or {}).get("kind") == "suggested",
+            "metadata_provenance": record.get("metadata_provenance", {}),
             "ready_for_recommendation": True,
             "blocking_reasons": [],
             "nutrition": record["nutrition"],

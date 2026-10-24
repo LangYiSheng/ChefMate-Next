@@ -17,6 +17,17 @@ from .models import (
 Request = TypeVar("Request", bound=ToolRequest)
 REFERENCE_NOTE = "USDA FDC 是营养参考；共享 FDC ID 不代表食材同义、相同组成或必然含有某种食材。"
 EVIDENCE_NOTE = "当前库没有可靠的主料/必选/可选字段；原文和 warnings 是核对依据，不作为确定组成的硬过滤。"
+OPTION_FIELDS = {
+    "taste_tags_all": "taste", "taste_tags_any": "taste", "exclude_taste_tags": "taste",
+    "cooking_methods_any": "cooking_method", "available_tools": "tool",
+    "nutrition_tags_all": "nutrition", "exclude_allergens": "allergen",
+}
+QUERY_GUIDANCE = {
+    "option_values": "口味、方法、厨具、营养标签和过敏原优先传options中真实code；仅精确且唯一的显示label可规范为code，未知或歧义值拒绝。difficulty使用固定英文code。",
+    "ingredient_groups": "组内OR、组间AND。库存/尽量利用不等于每道菜必须包含全部库存；可将任一可用食材的真实selector放同一any_of组。",
+    "available_tools": "仅传完整可用厨具code集合，全部required_tools须为其子集；wok不包含stove，部分厨具清单应省略此过滤并核对候选required_tools。null不限，[]表示无厨具。",
+    "taste_tags": "all/any都是硬过滤，不是软偏好排序；未明确要求不额外限制口味。",
+}
 
 
 def _request(model: type[Request], request: dict | Request) -> Request:
@@ -56,6 +67,36 @@ def _options(session) -> dict:
         result[kind] = [{"code": code, "label": defaults.get(code, code), "recipe_count": counts.get(code, 0)}
                         for code in sorted(defaults.keys() | counts.keys())]
     return result
+
+
+def _option_values(query: RecipeSearchRequest, options: dict) -> tuple[RecipeSearchRequest, list, list, dict]:
+    """Accept real codes or exact unique labels; never guess aliases or drop a filter."""
+    changes, normalized, invalid, choices = {}, [], [], {}
+    for field, kind in OPTION_FIELDS.items():
+        values = getattr(query, field)
+        if values is None:
+            continue
+        entries = options[kind]
+        known = {item["code"] for item in entries}
+        labels: dict[str, set[str]] = {}
+        for item in entries:
+            labels.setdefault(item["label"], set()).add(item["code"])
+        canonical = []
+        for value in values:
+            matches = sorted(labels.get(value, set()))
+            if value in known:
+                canonical.append(value)
+            elif len(matches) == 1:
+                canonical.append(matches[0])
+                normalized.append({"field": field, "value": value, "code": matches[0], "reason": "exact_label"})
+            else:
+                canonical.append(value)
+                invalid.append({"field": field, "value": value,
+                                "reason": "ambiguous_label" if matches else "unknown_option",
+                                "candidate_codes": matches})
+                choices[field] = [{"code": item["code"], "label": item["label"]} for item in entries]
+        changes[field] = list(dict.fromkeys(canonical))
+    return _request(RecipeSearchRequest, {**query.model_dump(), **changes}), normalized, invalid, choices
 
 
 class RetrievalService:
@@ -124,6 +165,7 @@ class RetrievalService:
                     "nutrients": [{"code": name, "unit": "kcal" if name == "calories_kcal"
                                    else "mg" if name == "sodium_mg" else "g"} for name in NUTRIENTS],
                     "nutrition_bases": ["total", "per_serving"], "sort_fields": list(SORT_FIELDS),
+                    "input_contracts": dict(QUERY_GUIDANCE),
                     "notes": [EVIDENCE_NOTE, "标签和过敏原排除仅针对已记录的信息，未记录不等于不存在。",
                               "营养未知值保留 null；范围筛选不匹配未知值。估算限制逐个指标检查。",
                               "每份营养沿用菜谱人数基准；人数估算标记随结果返回。"]}
@@ -134,26 +176,30 @@ class RetrievalService:
             snapshot = _snapshot(session.metadata())
             if error := _stale(query.expected_snapshot, snapshot):
                 return error
+            options = _options(session)
+            query, normalized_options, invalid_options, valid_options = _option_values(query, options)
             selectors = [selection for group in query.ingredient_groups for selection in group.any_of]
             selectors.extend(query.exclude_ingredients)
             unknown = session.missing_selectors(tuple(IngredientSelector(selection.ingredient_id,
                                                                         selection.canonical_name)
                                                        for selection in selectors))
-            options = _options(session)
-            invalid_options = []
-            for kind, fields in (
-                ("taste", ("taste_tags_all", "taste_tags_any", "exclude_taste_tags")),
-                ("cooking_method", ("cooking_methods_any",)), ("tool", ("available_tools",)),
-                ("nutrition", ("nutrition_tags_all",)), ("allergen", ("exclude_allergens",)),
-            ):
-                known = {item["code"] for item in options[kind]}
-                for field in fields:
-                    invalid_options.extend({"field": field, "value": value} for value in getattr(query, field) or []
-                                           if value not in known)
             if unknown or invalid_options:
+                recovery = []
+                if unknown:
+                    recovery.append("用find_ingredients重新取得unknown_ingredients对应的真实selector；不要修改其他有效筛选条件。")
+                if invalid_options:
+                    fields = "、".join(dict.fromkeys(item["field"] for item in invalid_options))
+                    recovery.append(f"只修正{fields}，使用valid_options中对应的code；不必重新查找已有效的食材。")
+                failures = []
+                if unknown:
+                    failures.append("食材ID或形态不存在")
+                failures.extend(f"{item['field']}={item['value']}" + (
+                    "对应多个code" if item["reason"] == "ambiguous_label" else "不在可用选项中") for item in invalid_options)
                 return {"status": "invalid_selection", "snapshot": snapshot,
                         "unknown_ingredients": unknown, "unknown_options": invalid_options,
-                        "message": "部分食材或选项不存在；请使用 find_ingredients / get_search_options 的真实候选。",
+                        "valid_options": valid_options, "recovery": recovery,
+                        "normalized_options": normalized_options,
+                        "message": "；".join(failures) + "。未执行查询，请按recovery修正。",
                         "normalized_query": query.model_dump(mode="json")}
             filters = RecipeFilter(
                 name=query.name, ingredient_groups=tuple(IngredientGroup(tuple(IngredientSelector(
@@ -185,6 +231,7 @@ class RetrievalService:
             if query.exclude_taste_tags or query.exclude_allergens:
                 notes.append("排除仅针对已记录的标签/过敏原，缺失信息不能证明口味或过敏安全。")
             return {"status": "ok", "snapshot": snapshot, "normalized_query": query.model_dump(mode="json"),
+                    "normalized_options": normalized_options,
                     **result, "limit": query.limit, "offset": query.offset,
                     "has_more": query.offset + len(result["items"]) < result["total"], "notes": notes}
 

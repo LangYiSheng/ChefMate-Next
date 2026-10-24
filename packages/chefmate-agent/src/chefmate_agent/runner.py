@@ -27,6 +27,7 @@ class TurnRuntimeContext:
     loaded_skills: set[str] = field(default_factory=set)
     usage: list[dict] = field(default_factory=list)
     read_queries: dict[str, str] = field(default_factory=dict)
+    read_snapshot: dict[str, Any] | None = None
     image_contents: dict[str, str] = field(default_factory=dict)
     debug_trace: list[dict] = field(default_factory=list)
     skill_events: list[dict] = field(default_factory=list)

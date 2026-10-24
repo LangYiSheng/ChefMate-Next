@@ -30,7 +30,15 @@ _TYPE_HINTS = {
     "recipe_grams_mismatch": "grams须匹配引用原文中的克重；不能把个数或毫升换成克重，不明确时留null。",
     "recipe_time_mismatch": "这个耗时须匹配time_evidence中明确的时长；不能用总时间减去其他时间倒推。没有该项原文时留null，并保留有依据的其他时间。",
     "recipe_total_time_ambiguous": "total_time_min仅填写原文明确的整道菜总耗时或菜谱的制作时间；步骤时长保留在steps中，总耗时不明确时留null。",
+    "recipe_metadata_value_missing": "metadata_provenance只填写实际提供了数值的字段；该字段没有数值时删除对应来源标记。",
+    "recipe_metadata_confirmation_mismatch": "用户确认字段的数值须与真实本轮原话或已绑定答案一致；不要让用户换句式，修正字段值或来源。",
+    "recipe_metadata_question_invalid": "question_id只能使用服务器last_answer里的真实问题ID，且答案必须属于本轮确认；不能捏造或复用过期答案。",
+    "recipe_edit_mode_required": "完整recipe与metadata_patch严格二选一；仅改难度、份数、总耗时时选metadata_patch。",
+    "recipe_metadata_patch_empty": "metadata_patch至少列出一个需改的难度、份数或总耗时字段；未改字段省略。",
+    "recipe_metadata_patch_unrelated": "只为metadata_patch里明确提供的字段填写metadata_provenance，不能带未改字段的来源。",
     "recipe_step_invalid": "此步骤须为非空、至多2000字符的可执行文本。",
+    "food_portion_not_quoted": "portion逐字引用本轮用户说过的连续份量原话，保留原有source_text；不要改写原始来源去迎合字段。",
+    "food_grams_not_provided": "体积和个数不能当作用户提供的克重。amount_g可留null；确需近似换算时改为estimated并写明假设，保留原始来源。",
 }
 
 
@@ -49,8 +57,13 @@ def safe_errors(errors) -> list[dict]:
         if not isinstance(location, (list, tuple)):
             location = []
         location = [part if isinstance(part, int) else str(part)[:80] for part in location[:12]]
-        result.append({"loc": location, "type": error_type,
-                       "hint": _TYPE_HINTS.get(error_type, "检查这个字段的类型和约束；没有修改的字段请省略。")})
+        hint = _TYPE_HINTS.get(error_type, "检查这个字段的类型和约束；没有修改的字段请省略。")
+        if (error_type == "recipe_evidence_required" and len(location) == 3
+                and location[0] == "ingredients" and location[2] == "amount_evidence"):
+            hint = "缺少原文明示克重时将同一食材的grams设为null；建议用量保留在amount，不能补造amount_evidence。"
+        if len(location) >= 2 and location[-2:] == ["expected_snapshot", "imported_at"]:
+            hint = "复制最近成功工具返回的snapshot.imported_at完整时间（含时区），不要把data_version填进时间字段。"
+        result.append({"loc": location, "type": error_type, "hint": hint})
     return result
 
 
@@ -121,6 +134,9 @@ class FailurePolicy:
         else:
             action = "repair"
             hint = "按字段错误、工具schema和当前状态修正参数后再试；不要原样重复这次失败调用。"
+        code = result.get("code")
+        if attempts < 3 and isinstance(code, str) and code in {"food_portion_not_quoted", "food_grams_not_provided"}:
+            hint += _TYPE_HINTS[code]
         result["recovery"] = {"attempt": attempts, "action": action, "hint": hint}
         return result
 

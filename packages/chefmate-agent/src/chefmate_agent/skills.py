@@ -18,7 +18,7 @@ KITCHEN_TOOL_SKILLS = {
                      "show_preference_form", "update_preferences", "show_recipe_choices",
                      "show_recipe_details", "select_recipes", "set_meal_plan", "show_meal_plan"), "meal-planning"),
     **dict.fromkeys(("show_prep_checklist", "update_prep_items"), "pantry-preparation"),
-    **dict.fromkeys(("show_cooking_guide", "navigate_cooking_step", "update_cooking_guidance", "set_cooking_timer",
+    **dict.fromkeys(("show_cooking_guide", "navigate_cooking_step", "complete_cooking_step", "update_cooking_guidance", "set_cooking_timer",
                      "show_timers"), "cooking-guide"),
     "advance_cooking_stage": {
         "idea": "meal-planning", "planning": "meal-planning", "prep": "pantry-preparation",

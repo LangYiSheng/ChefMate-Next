@@ -115,6 +115,7 @@ class IngredientView(StrictModel):
     estimated: bool = False
     scaled: bool = False
     status: PrepStatus = "pending"
+    availability: Literal["unknown", "available", "missing"] = "unknown"
     raw_text: str = ""
     unit: str | None = None
     amount_value: float | None = None
@@ -339,6 +340,7 @@ class WorkspaceState(StrictModel):
     candidates: list[FrozenRecipe] = Field(default_factory=list)
     meal_plan: list[FrozenRecipe] = Field(default_factory=list)
     prep_status: dict[str, PrepStatus] = Field(default_factory=dict)
+    prep_availability: dict[str, Literal["unknown", "missing"]] = Field(default_factory=dict)
     step_status: dict[str, StepStatus] = Field(default_factory=dict)
     active_recipe_id: str | None = None
     active_step_id: str | None = None
@@ -485,6 +487,13 @@ class NavigateCookingStepInput(ExpectedRevisionInput):
         return self
 
 
+class CompleteCookingStepInput(ExpectedRevisionInput):
+    recipe_id: Text | None = Field(default=None, description="当前餐单真实菜谱ID；省略使用当前正在做的菜。")
+    step_id: Text | None = Field(default=None, description="该菜的真实步骤ID；省略只作用于当前正在做的步骤，不批量完成。")
+    completed: bool = Field(default=True,
+        description="用户明确说这一步已做好/搞定/完成，或要求标记完成才传true；仅下一步不算完成。用户要求撤销该步完成时传false。")
+
+
 class UpdatePreferencesInput(ExpectedRevisionInput):
     values: PreferencePatch
     changed_fields: Annotated[list[PreferenceName], Field(min_length=1, max_length=8)] = Field(
@@ -506,7 +515,7 @@ class SelectRecipesInput(ExpectedRevisionInput):
     servings: dict[str, Positive] = Field(default_factory=dict,
         description="仅覆盖某盘的配方等效份量，通常省略让系统分配共享菜量；不是整餐人数。只有用户明确要求某道的量时才填写。")
     diners: Positive | None = Field(default=None,
-        description="整餐实际用餐人数；省略沿用偏好中的用餐人数。5人共享4菜应填5，通常不要填写servings。")
+        description="整餐实际用餐人数；已有餐单收到新的明确人数，也要重新select同一餐单并填写此值，先更新量再备菜。省略沿用偏好中的人数。5人共享4菜填5，通常不填写servings。")
     portion_mode: Literal["shared", "per_dish"] = Field(default="shared",
         description="shared按整餐人数与菜数分配每盘共享量；仅用户明确每道都要足额人数份时用per_dish。")
 
@@ -514,6 +523,14 @@ class SelectRecipesInput(ExpectedRevisionInput):
 class PrepItemUpdate(StrictModel):
     item_id: Text
     status: PrepStatus
+    availability: Literal["unknown", "missing"] | None = Field(default=None,
+        description="仅status=pending时可用。用户明确说缺少/需购买才填missing；未提及或未选中的项目保持unknown，不能从未选择推断缺货。ready表示用户已明确拥有/备齐。")
+
+    @model_validator(mode="after")
+    def availability_is_pending_only(self):
+        if self.availability is not None and self.status != "pending":
+            raise ValueError("Availability detail applies only to pending preparation items")
+        return self
 
 
 class UpdatePrepItemsInput(ExpectedRevisionInput):
@@ -642,6 +659,7 @@ TOOL_REQUEST_MODELS = {
     "show_meal_plan": EmptyInput, "show_prep_checklist": ChecklistInput,
     "show_cooking_guide": CookingGuideInput, "set_cooking_timer": TimerInput,
     "navigate_cooking_step": NavigateCookingStepInput,
+    "complete_cooking_step": CompleteCookingStepInput,
     "show_timers": EmptyInput, "get_cooking_workspace": EmptyInput, "advance_cooking_stage": StageInput,
     "update_cooking_guidance": AdaptCookingInput,
     "update_preferences": UpdatePreferencesInput, "select_recipes": SelectRecipesInput,

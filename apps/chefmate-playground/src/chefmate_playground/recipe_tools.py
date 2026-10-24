@@ -2,8 +2,10 @@
 
 import re
 import json
+from pydantic import ValidationError
 from .recipe_drafts import (ConfirmRecipeDeletionRequest, CustomSearchRequest, RecipeDeletionRequest,
-                            RecipeDraftRequest, RecipeDraftReadRequest, RecipeDraftRevisionRequest)
+                            RecipeDraftRequest, RecipeDraftReadRequest, RecipeDraftRevisionRequest, apply_metadata_patch)
+from .recipe_provenance import validate_metadata_provenance
 
 
 def _read_draft(messages, recipe_id, revision):
@@ -54,6 +56,10 @@ def make_recipe_tools(cookbook):
 
         latest = next((m for m in reversed(context.messages) if m.get("role") == "user"), {})
         try:
+            request = RecipeDraftRequest.model_validate(values)
+            provenance_error = validate_metadata_provenance(request, context.messages, host)
+            if provenance_error:
+                return {"status": "invalid_recipe_provenance", "message": provenance_error}
             if values.get("source_kind", "text") == "text":
                 source = re.sub(r"\s+", "", values.get("source_text", ""))
                 supplied = [
@@ -68,6 +74,7 @@ def make_recipe_tools(cookbook):
                 operation_id=f"{getattr(host, 'turn_id', '')}:{context.call_id}",
                 guard=guard,
                 active_turn_id=host.turn_id if binding is not None and hasattr(binding.repository, "path") else None,
+                provenance_context=(context.messages, host),
             )
             return {
                 "status": "ok",
@@ -99,7 +106,7 @@ def make_recipe_tools(cookbook):
         if not record:
             return {"status": "not_found", "message": "个人菜谱不存在或已删除。"}
         return {"status": "ok", "draft": record,
-                "message": "聊天审核卡展示此真实版本；draft可继续修改，saved已保存，不能用草稿工具覆盖。"}
+                "message": "聊天审核卡展示此真实版本；draft可继续修改。保留metadata_provenance；source_metadata_evidence保留原文依据，建议/用户确认与原文分开。saved不能用草稿工具覆盖。"}
 
     def revise_draft(values, context):
         from .interactions import ScopedWorkspace
@@ -111,8 +118,21 @@ def make_recipe_tools(cookbook):
         baseline = _read_draft(context.messages, request.recipe_id, request.revision)
         if baseline is None:
             return {"status": "read_required", "message": "请先get_recipe_draft读取这份真实版本，再修改同一个id。"}
+        metadata_fields = None
+        recipe = request.recipe
+        if request.metadata_patch is not None:
+            try:
+                recipe, metadata_fields = apply_metadata_patch(baseline, request.metadata_patch)
+            except ValidationError as error:
+                return {"status": "invalid_arguments", "message": "元数据patch未通过来源校验，请修正所列字段；没有修改草稿。",
+                        "errors": error.errors(include_input=False, include_context=False, include_url=False)}
+            except ValueError as error:
+                return {"status": "invalid_recipe_metadata_patch", "message": str(error)}
+        provenance_error = validate_metadata_provenance(recipe, context.messages, host, baseline)
+        if provenance_error:
+            return {"status": "invalid_recipe_provenance", "message": provenance_error}
         original = baseline["source_text"]
-        supplied = request.recipe.source_text
+        supplied = recipe.source_text
         latest = next((item.get("content", "") for item in reversed(context.messages) if item.get("role") == "user"), "")
         # Revisions can retain provenance or append the user's actual supplement.
         if supplied != original:
@@ -120,11 +140,12 @@ def make_recipe_tools(cookbook):
             if not supplement or supplement not in latest:
                 return {"status": "invalid_recipe_source", "message": "保留原始来源；新增依据必须来自本轮用户实际补充的文字。"}
         try:
-            record = cookbook.update_draft(request.recipe_id, request.recipe, request.revision,
+            record = cookbook.update_draft(request.recipe_id, recipe, request.revision,
                                            guard=_turn_guard(host), session_id=host.session_id,
-                                           active_turn_id=host.turn_id if hasattr(host.binding.repository, "path") else None)
+                                           active_turn_id=host.turn_id if hasattr(host.binding.repository, "path") else None,
+                                           provenance_context=(context.messages, host), metadata_fields=metadata_fields)
             return {"status": "ok", "draft": record,
-                    "message": "已修改同一份草稿，审核卡展示新版本；旧版本的发布确认失效，需要用户重新确认。"}
+                    "message": "已修改同一份草稿，审核卡展示新版本；已有明确参数答案不需重复询问。旧版发布确认失效，正式发布时再核对当前版本。"}
         except ValueError as error:
             return {"status": "recipe_changed", "message": str(error)}
 
@@ -238,7 +259,7 @@ def make_recipe_tools(cookbook):
             name="create_recipe_draft",
             args_schema=RecipeDraftRequest,
             handler=create,
-            description="将用户文字或本轮图片转写为可在聊天审核的自定义菜谱草稿。缺失时间/人数/克重/难度保留未知，不生成营养数字；用户确认发布后才可烹饪。",
+            description="将用户文字/本轮图片整理为草稿。原文缺失值默认未知；用户要求建议时元数据可用metadata_provenance标记suggested并引用其请求，已选定值用user_confirmed及真实question_id，不为字段反复确认。不生成营养数字；发布仍需审核。",
             required_skill="recipe-authoring",
             effect="write",
             side_effects=("保存待确认菜谱草稿",),
@@ -257,7 +278,7 @@ def make_recipe_tools(cookbook):
         ),
         InjectedToolSpec(
             name="revise_recipe_draft", args_schema=RecipeDraftRevisionRequest, handler=revise_draft,
-            description="修改已经get_recipe_draft读回的同一份草稿，传真实id/revision与完整recipe，保留来源。不会新建或发布，用户需审核新版本。",
+            description="修改已读回的同一草稿。只改难度/份数/总耗时优先metadata_patch，只列需改值及对应metadata_provenance，未列内容原样保留；不会为凑总时长改动分项。改食材/步骤才传完整recipe，二者严格二选一。真实id/revision与来源校验照旧，发布仍需确认。",
             required_skill="recipe-authoring", effect="write", side_effects=("修改待审核菜谱草稿",),
         ),
         InjectedToolSpec(

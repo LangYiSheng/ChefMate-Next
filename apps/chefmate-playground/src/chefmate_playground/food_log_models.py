@@ -32,9 +32,12 @@ class FoodLogNutrition(FoodLogModel):
 
 class FoodLogItem(FoodLogModel):
     name: Annotated[str, Field(min_length=1, max_length=120)]
-    portion: Annotated[str, Field(max_length=160)] = ""
-    amount_g: Annotated[float | None, Field(gt=0, le=10000)] = None
-    portion_basis: Literal["unknown", "user_provided", "estimated"] = "unknown"
+    portion: Annotated[str, Field(max_length=160,
+        description="user_provided时逐字复制用户本轮原话中的连续份量片段，保留一/1和标点，不改写单位格式。例如原话一瓶净含量1升就直接填这段。estimated可写约量。修复此字段不要改动source_text。")] = ""
+    amount_g: Annotated[float | None, Field(gt=0, le=10000,
+        description="质量克数，不是毫升/升。用户只给1升时可留null并按原体积估营养；若假设密度换算1000克，portion_basis必须estimated且assumptions写明近似换算，不能标user_provided。")] = None
+    portion_basis: Literal["unknown", "user_provided", "estimated"] = Field(default="unknown",
+        description="同时标明portion/amount_g来源。用户原文份量且没有推算克重可user_provided；从体积/碗盘换算克重须estimated并保留原份量与假设。")
     nutrition: FoodLogNutrition = Field(default_factory=FoodLogNutrition)
     nutrition_basis: Literal["unknown", "user_provided", "estimated"] = "unknown"
     evidence: Annotated[
@@ -45,7 +48,7 @@ class FoodLogItem(FoodLogModel):
         ),
     ] = ""
     assumptions: Annotated[list[Annotated[str, Field(min_length=1, max_length=400)]], Field(max_length=12)] = Field(
-        default_factory=list
+        default_factory=list, description="估算所用假设。体积近似转质量时说明密度假设；按每100毫升推算营养不要求同时换成克，不能把假设说成用户实测。"
     )
 
     @model_validator(mode="after")

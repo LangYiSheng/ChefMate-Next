@@ -3,6 +3,7 @@
 from contextlib import contextmanager
 from copy import deepcopy
 from datetime import datetime, timezone
+from types import SimpleNamespace
 
 import pytest
 from pydantic import ValidationError
@@ -178,3 +179,66 @@ def test_options_labels_come_from_contracts_and_current_data(service):
     assert result["snapshot"] == SNAPSHOT
     assert {item["code"]: item["label"] for item in result["options"]["taste"]}["spicy"] == "辣"
     assert {item["code"] for item in result["options"]["difficulty"]} == {"beginner", "normal", "advanced"}
+    assert "required_tools" in result["input_contracts"]["available_tools"]
+
+
+def test_exact_unique_option_labels_are_canonicalized_without_relaxing_filters(service):
+    request = {"ingredient_groups": [{"any_of": [{"ingredient_id": "shrimp", "canonical_name": "虾仁"}]}],
+               "available_tools": ["炒锅", "wok", "炉灶"], "taste_tags_any": ["辣"],
+               "max_total_time_min": 20, "expected_snapshot": SNAPSHOT}
+    result = service.search_recipes(request)
+    assert result["status"] == "ok"
+    assert result["normalized_query"]["available_tools"] == ["wok", "stove"]
+    assert result["normalized_query"]["taste_tags_any"] == ["spicy"]
+    assert result["normalized_options"] == [
+        {"field": "taste_tags_any", "value": "辣", "code": "spicy", "reason": "exact_label"},
+        {"field": "available_tools", "value": "炒锅", "code": "wok", "reason": "exact_label"},
+        {"field": "available_tools", "value": "炉灶", "code": "stove", "reason": "exact_label"},
+    ]
+    filters = next(call[1] for call in service.store.session.calls if call[0] == "search")
+    assert filters.available_tools == ("wok", "stove")
+    assert filters.taste_tags_any == ("spicy",)
+    assert filters.max_total_time_min == 20
+    assert filters.ingredient_groups[0].any_of[0].ingredient_id == "shrimp"
+    assert request["available_tools"] == ["炒锅", "wok", "炉灶"]
+
+
+@pytest.mark.parametrize("value", ["WOK", "炒锅子", "made_up_tool"])
+def test_unknown_option_returns_field_specific_codes_and_does_not_guess(service, value):
+    result = service.search_recipes({"available_tools": [value], "max_total_time_min": 20,
+                                     "ingredient_groups": [{"any_of": [{"ingredient_id": "shrimp"}]}]})
+    assert result["status"] == "invalid_selection"
+    assert result["unknown_ingredients"] == []
+    assert result["unknown_options"] == [{"field": "available_tools", "value": value,
+                                           "reason": "unknown_option", "candidate_codes": []}]
+    assert {"code": "wok", "label": "炒锅"} in result["valid_options"]["available_tools"]
+    assert "available_tools" in result["message"]
+    assert "食材ID或形态不存在" not in result["message"]
+    assert result["normalized_query"]["max_total_time_min"] == 20
+    assert any("只修正available_tools" in hint for hint in result["recovery"])
+    assert not any(call[0] == "search" for call in service.store.session.calls)
+
+
+def test_ambiguous_display_label_is_rejected_instead_of_selecting_a_code(service, monkeypatch):
+    monkeypatch.setattr("chefmate_retrieval.service.default_vocabulary", lambda: [
+        SimpleNamespace(code="wok", label="炒锅", kind="tool", enabled=True),
+        SimpleNamespace(code="pan", label="炒锅", kind="tool", enabled=True),
+    ])
+    result = service.search_recipes({"available_tools": ["炒锅"]})
+    assert result["status"] == "invalid_selection"
+    assert result["unknown_options"] == [{"field": "available_tools", "value": "炒锅",
+                                           "reason": "ambiguous_label", "candidate_codes": ["pan", "wok"]}]
+    assert result["normalized_options"] == []
+    assert not any(call[0] == "search" for call in service.store.session.calls)
+    assert service.search_recipes({"available_tools": ["wok"]})["status"] == "ok"
+
+
+def test_unknown_ingredient_recovery_does_not_blame_valid_options(service):
+    result = service.search_recipes({"ingredient_groups": [{"any_of": [{"ingredient_id": "made_up_shrimp"}]}],
+                                     "available_tools": ["wok"]})
+    assert result["status"] == "invalid_selection"
+    assert result["unknown_options"] == []
+    assert result["valid_options"] == {}
+    assert "食材ID或形态不存在" in result["message"]
+    assert "find_ingredients" in result["recovery"][0]
+    assert not any(call[0] == "search" for call in service.store.session.calls)

@@ -130,7 +130,7 @@ class ToolCommands:
                 if any(item.item_id not in valid for item in validated.items):
                     raise DomainConflict("invalid_reference", "部分食材不属于当前餐单，没有修改任何准备状态。")
                 for item in validated.items:
-                    state.prep_status[item.item_id] = item.status
+                    self._set_prep_status(state, item.item_id, item.status, item.availability)
                 return self._ensure_component(state, PrepChecklist, "逐项确认备料", PrepData(
                     items=self._prep_items(state), notes=[PREP_NOTE]))
             if name == "show_preference_form":
@@ -173,6 +173,14 @@ class ToolCommands:
             if name == "navigate_cooking_step":
                 self._navigate_step(state, validated.direction, recipe_id=validated.recipe_id,
                                     step_number=validated.step_number)
+                return self._ensure_component(state, CookingGuide, "烹饪步骤", CookingData(
+                    recipe_id=state.active_recipe_id, recipe_name=None, steps=[], active_step_id=state.active_step_id))
+            if name == "complete_cooking_step":
+                recipe_id = validated.recipe_id or state.active_recipe_id
+                step_id = validated.step_id or (state.active_step_id if recipe_id == state.active_recipe_id else None)
+                if step_id is None:
+                    raise DomainConflict("step_required", "当前没有可标记的步骤，请指定当前任务中的真实菜谱和步骤。")
+                self._complete_step(state, recipe_id, step_id, validated.completed)
                 return self._ensure_component(state, CookingGuide, "烹饪步骤", CookingData(
                     recipe_id=state.active_recipe_id, recipe_name=None, steps=[], active_step_id=state.active_step_id))
             if name == "update_cooking_guidance":

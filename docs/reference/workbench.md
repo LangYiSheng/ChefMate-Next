@@ -93,9 +93,13 @@ uv run --project apps/chefmate-playground chefmate-playground
 
 `show_prep_checklist(recipe_ids=null)` 展示整餐合并清单，`recipe_ids=[真实菜谱ID]` 展示指定菜品，也可选择多个已入餐单的 ID；界面用 `set_checklist_scope` 动作切换同一范围。单菜准备完成不代表整餐已备齐。
 
+已有餐单时，要求整理、打开或核对备料会进入prep，缺少食材也可先准备。清单 `status=pending/ready/skipped` 与 `availability=unknown/available/missing` 分开：尚未说明或未选项目保持unknown，明确缺少保存为pending+missing并显示“待购买”，明确拥有/备齐才记录ready并投影为available。`update_prep_items` 仅对pending项接受 `availability=missing|unknown`；所有pending仍阻止进入cooking，不因标记缺货而绕过门槛。[备菜确认协议](workflow.md#备菜与步骤确认)
+
 `set_kitchen_display` 属于 `app-preferences`，参数为 `{mode:"focus"|"conversation",view_kind?}`。进入专注模式时，可指定当前已打开的厨房卡片；省略按阶段选择。返回普通对话须省略 `view_kind`。工具只生成带稳定 `action_id` 的会话展示动作，不推进阶段、不确认食材或步骤，也不修改持久外观偏好。浏览器仅执行当前可见聊天中新到达的动作，按会话和动作 ID 去重；首次读取历史只建立基线，恢复当前运行轮次时可接收此前未交付的动作，旧历史与后台会话不能强行切换当前页面。[展示动作接收](../../apps/chefmate-playground/frontend/src/runtime/store.ts)
 
 `navigate_cooking_step` 属于 `cooking-guide`，仅在烹饪阶段使用：`direction=next|previous|current|step`、必填 `expected_revision`，只有 `step` 提供从 1 开始的 `step_number`；`recipe_id` 省略使用当前菜，指定时必须来自当前餐单。它切换真实活动步骤并刷新卡片，保留所有完成标记，遵守已有的换步计时策略；不以“下一步”推断用户完成了上一步。首尾返回 `first_step/last_step`，不循环、不自动完成或推进阶段。界面大纲和前后按钮仅浏览；助手工具的真实导航会清除过时的本地浏览位置。[导航实现](../../packages/chefmate-workflow/src/chefmate_workflow/kitchen.py)
+
+`complete_cooking_step` 同属 `cooking-guide`，只在用户明确确认单步完成或撤销时使用。必填 `expected_revision`，`recipe_id/step_id` 省略表示当前步，`completed` 默认true、false撤销；成功更新卡片并定位该菜首个未完成步骤，不自动结束本餐。用户只说“下一步”仍使用导航工具，不能代替完成授权。无当前步且未指定真实步骤时返回 `step_required`，旧版本或非法引用不会修改任何进度。
 完整模型字段见[工作流参考](workflow.md)与[智能界面设计](../design/agent-ui.md)。
 
 ## 会话、图片与厨房 API
@@ -161,10 +165,15 @@ uv run --project apps/chefmate-playground chefmate-playground
 | `POST /api/tools/{tool_name}` | 直接测试四个只读检索工具 |
 
 个人菜谱标记 `origin=user`，使用自己的真实快照，基础菜谱仍来自 PostgreSQL。
-草稿复用处理包的结构校验和确定性营养计算；时间、人数、克重缺乏原文依据时留空。
+草稿复用处理包的结构校验和确定性营养计算；原文缺失且用户未要求补充的时间、人数、难度保留未知，克重仍只接受原文明确值。食材建议用量写在 `amount` 并标明建议，不冒充实测 `grams`。
 `get_recipe_draft/revise_recipe_draft` 支持对话内核对和修改；`request_recipe_publication` 发起真实问题，`confirm_recipe_publication` 绑定会话、草稿版本和用户答案执行。修改草稿使旧确认失效，助手自行传入“已批准”不能发布。回复审核卡也会重新读取当前记录，按版本确认保存；已有待回答问题时以问题面板为唯一确认入口。
-个人菜谱采用基础菜谱相同的 `raw_amount/raw_unit/grams` 食材契约。难度仅接受有原文依据的 `beginner/normal/advanced`，否则为未知；编辑器中的手动选择记为用户补充。
-个人记录包含 `document`（标准 RecipeDocument）及记录外层的 `time_evidence/difficulty_evidence`；依据不写入共享文档结构，历史缺失也不补造。
+个人菜谱采用基础菜谱相同的 `raw_amount/raw_unit/grams` 食材契约，难度取 `beginner/normal/advanced`。用户要求建议或明确给出参数时，创建请求顶层、修订请求的 `recipe` 中可填写 `metadata_provenance`，固定可选字段为 `servings/difficulty/prep_time_min/cook_time_min/total_time_min`。每项为 `{kind:"suggested"|"user_confirmed",evidence,question_id?}`：建议引用本轮真实请求；用户确认引用真实数值答案，通过选项回答时还须绑定宿主 `last_answer.question_id`。同组选项“普通、1人份、30分钟”可直接用于这三项，不需要重新措辞或再次确认。未标记字段继续严格核对原文，步骤计时不能变成整道菜总耗时。
+
+仅改难度、份数、总耗时优先 `revise_recipe_draft(recipe_id,revision,metadata_patch)`，与完整 `recipe` 严格二选一。`metadata_patch` 只接受 `difficulty/servings/total_time_min` 及按字段提供的 `metadata_provenance`；未列字段和来源保留，`null` 明确清空对应值与来源，非空新值须有该项真实依据。服务器从已读的同一版本重建校验输入，只更新所列字段及派生标记，食材、步骤、原文和备菜/烹饪分项保持原样，不为凑总时间重写其他内容。
+
+个人记录包含标准 `document`、记录外层的 `metadata_provenance`，以及 `source_metadata_evidence:{servings,difficulty,time}` 中保留的原文引用。外层 `time_evidence/difficulty_evidence` 可包含用户确认或助手建议的展示标签，不能直接当原文写回。建议参数自动加入说明，建议份数在营养与规范化菜谱中标为估算；用户只改总耗时不应自动补齐或凑改备菜、烹饪小计。原始 `source_text` 保留，实际补充另有依据，来源信息不挤入共享 RecipeDocument 的其他字段。
+
+新增或改变对话参数来源会在写入事务内核对当前请求及宿主答案；手工 HTTP 写入不能伪造对话确认。未改的值可完整保留原有 `metadata_provenance`；编辑器手动改值时将该字段改为用户补充的原文依据并清除该项旧来源标记，其余字段沿用。参数确认只修改草稿，发布仍使用独立的版本绑定确认流程。[参数来源实现](../../apps/chefmate-playground/src/chefmate_playground/recipe_provenance.py)
 
 | 智能体菜谱工具 | 成功结果与确认边界 |
 | --- | --- |
@@ -187,6 +196,10 @@ uv run --project apps/chefmate-playground chefmate-playground
 | `GET/PATCH/DELETE /api/memory` | 当前偏好、摘要与版本；修改或清空需核对 revision |
 
 照片或文字记餐先生成草稿，用户核对后保存才计入个人摄入。
+饮食项的 `portion` 是份量文字，`portion_basis=user_provided` 时须引用本轮用户连续原话，保留原有数字写法和标点；例如“一瓶净含量1升”不能改写成“1瓶（净含量1升）”。`amount_g` 仅为质量克数，不是升或毫升。只提供体积时可保留原份量、`amount_g=null`，按每100毫升等依据估算所需营养；若按密度近似换成克数，`portion_basis` 必须为 `estimated`，且 `assumptions` 说明密度假设，不能标成用户称量。未要求或未知的营养继续留空。
+
+来源错误返回 `food_portion_not_quoted` 或 `food_grams_not_provided`，附对应字段位置及修复提示。只修正错误的份量、质量或来源标记，不重写已有正确 `source_text`、照片原文及图片引用；修订继续基于 `get_food_log` 读回的同一记录和版本。[饮食字段](../../apps/chefmate-playground/src/chefmate_playground/food_log_models.py) · [来源核对](../../apps/chefmate-playground/src/chefmate_playground/food_log_evidence.py)
+
 真实完成烹饪会保存本次冻结配方制作历史；启用饮食记录组件时，单人餐按明确产品规则整份自动登记并标为估算，可继续更正。
 多人或人数未知时先进入 `awaiting_portions`，等本人逐菜比例，不按人数擅自均分或把全桌记作个人摄入。
 `get_cooked_meal_intake` 读取本餐版本，`record_cooked_meal_intake` 核对本轮原话与逐菜比例，营养由服务端按冻结配方计算。

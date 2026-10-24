@@ -154,6 +154,7 @@ class KitchenCommands:
         state.meal_id, state.started_at, state.completed_at = str(uuid4()), None, None
         state.stage = "planning"
         state.prep_status = {}
+        state.prep_availability = {}
         state.step_status = {}
         state.timers = []
         state.adaptations = []
@@ -236,6 +237,7 @@ class KitchenCommands:
         state.stage = stage
         if stage == "idea":
             state.meal_plan, state.prep_status, state.step_status = [], {}, {}
+            state.prep_availability = {}
             state.active_recipe_id, state.active_step_id, state.timers = None, None, []
             state.adaptations = []
             state.meal_id, state.started_at, state.completed_at, state.meal_diners = None, None, None, None
@@ -267,6 +269,14 @@ class KitchenCommands:
                                  data=ProgressData(stage=state.stage, recipe_count=0, prep_total=0,
                                                    prep_ready=0, steps_done=0, steps_total=0))
         return self._component_data(temporary, state)
+
+    @staticmethod
+    def _set_prep_status(state, item_id, status, availability=None):
+        state.prep_status[item_id] = status
+        if status != "pending" or availability == "unknown":
+            state.prep_availability.pop(item_id, None)
+        elif availability == "missing":
+            state.prep_availability[item_id] = "missing"
 
     def _activate_step(self, state, recipe_id, step_id):
         if state.stage != "cooking":
@@ -304,6 +314,16 @@ class KitchenCommands:
                 raise DomainConflict("first_step", "已经是这道菜的第一步，没有更早的步骤。")
             index -= 1
         self._activate_step(state, recipe.recipe_id, steps[index].id)
+
+    def _complete_step(self, state, recipe_id, step_id, completed=True):
+        self._activate_step(state, recipe_id, step_id)
+        state.step_status[step_id] = "done" if completed else "current"
+        if completed:
+            recipe = self._find_recipe(state, recipe_id)
+            next_step = next((step for step in self._recipe_view(recipe, state).steps if step.status != "done"), None)
+            state.active_step_id = next_step.id if next_step else None
+            if next_step:
+                state.step_status[next_step.id] = "current"
 
     def _start_timer(self, state, payload, basis="user"):
         if state.stage != "cooking":

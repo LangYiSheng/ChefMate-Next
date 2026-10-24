@@ -103,7 +103,7 @@ class UserActions:
                 scope = origin.data.recipe_ids if origin else None
                 if payload["item_id"] not in {item.id for item in self._prep_items(state, scope)}:
                     raise DomainConflict("invalid_reference", "食材不属于本次餐单。")
-                state.prep_status[payload["item_id"]] = payload["status"]
+                self._set_prep_status(state, payload["item_id"], payload["status"], "unknown")
             elif kind == "set_active_recipe":
                 recipe = self._find_recipe(state, payload["recipe_id"])
                 steps = self._recipe_view(recipe, state).steps
@@ -116,15 +116,7 @@ class UserActions:
             elif kind == "set_active_step":
                 self._activate_step(state, payload["recipe_id"], payload["step_id"])
             elif kind == "complete_step":
-                self._activate_step(state, payload["recipe_id"], payload["step_id"])
-                completed = value.payload.completed
-                state.step_status[payload["step_id"]] = "done" if completed else "current"
-                recipe = self._find_recipe(state, payload["recipe_id"])
-                if completed:
-                    next_step = next((step for step in self._recipe_view(recipe, state).steps if step.status != "done"), None)
-                    state.active_step_id = next_step.id if next_step else None
-                    if next_step:
-                        state.step_status[next_step.id] = "current"
+                self._complete_step(state, payload["recipe_id"], payload["step_id"], value.payload.completed)
             elif kind == "change_stage":
                 return self._set_stage(state, payload["stage"])
             elif kind == "complete_meal":

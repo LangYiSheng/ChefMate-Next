@@ -23,7 +23,8 @@ class ToolRequest(BaseModel):
 
 class DatasetSnapshot(ToolRequest):
     data_version: Text
-    imported_at: Annotated[str, Field(min_length=1, max_length=100)]
+    imported_at: Annotated[str, Field(min_length=1, max_length=100,
+        description="逐字复制最近成功查询snapshot.imported_at的完整ISO时间，保留时区与小数秒；不要填data_version或自行生成时间。")]
 
     @field_validator("imported_at")
     @classmethod
@@ -43,7 +44,8 @@ class IngredientSelection(ToolRequest):
 
 
 class IngredientMatchGroup(ToolRequest):
-    any_of: Annotated[list[IngredientSelection], Field(min_length=1, max_length=50)]
+    any_of: Annotated[list[IngredientSelection], Field(min_length=1, max_length=50)] = Field(
+        description="本组至少命中一个真实selector。用于同义形态或任一可利用食材，不是每项都必须包含。")
 
 
 class IngredientLookupRequest(ToolRequest):
@@ -92,23 +94,27 @@ class SearchSort(ToolRequest):
 
 class RecipeSearchRequest(ToolRequest):
     ingredient_groups: Annotated[list[IngredientMatchGroup], Field(max_length=20)] = Field(
-        default_factory=list, description="组内 OR、组间 AND。虾和番茄必须放在两个组内。")
+        default_factory=list, description="组内OR、组间AND。仅用户明确要求每道菜同时含有的食材才分组AND；家里有A/B、尽量利用时，不代表每道菜必须两者都有，可将真实候选放同一any_of组。selector取自find_ingredients，不能猜ID。")
     exclude_ingredients: Annotated[list[IngredientSelection], Field(max_length=100)] = Field(default_factory=list)
     name: Text | None = None
     min_total_time_min: Nonnegative | None = None
     max_total_time_min: Nonnegative | None = None
     difficulties: Annotated[list[Literal["beginner", "normal", "advanced"]], Field(max_length=3)] = Field(
         default_factory=list)
-    taste_tags_all: Annotated[list[Text], Field(max_length=30)] = Field(default_factory=list)
-    taste_tags_any: Annotated[list[Text], Field(max_length=30)] = Field(default_factory=list)
+    taste_tags_all: Annotated[list[Text], Field(max_length=30)] = Field(
+        default_factory=list, description="硬过滤：必须拥有全部指定口味标签。使用get_search_options返回的code；普通偏好不自动升级为必需标签。")
+    taste_tags_any: Annotated[list[Text], Field(max_length=30)] = Field(
+        default_factory=list, description="硬过滤：必须拥有任一指定口味标签，并非推荐排序。使用get_search_options返回的code；未明确要求可省略。")
     exclude_taste_tags: Annotated[list[Text], Field(max_length=30)] = Field(
-        default_factory=list, description="排除已记录的标签；缺少辣标签不构成不辣的证明。")
-    cooking_methods_any: Annotated[list[Text], Field(max_length=30)] = Field(default_factory=list)
+        default_factory=list, description="使用get_search_options的code，仅按用户明确禁忌排除已记录标签；缺少辣标签不构成不辣的证明。")
+    cooking_methods_any: Annotated[list[Text], Field(max_length=30)] = Field(
+        default_factory=list, description="必须匹配任一烹饪方法，取get_search_options.options.cooking_method中的code。")
     available_tools: Annotated[list[Text], Field(max_length=50)] | None = Field(
-        default=None, description="已记录的全部必需厨具必须是该集合的子集；null 不限制，[] 表示无厨具。")
-    nutrition_tags_all: Annotated[list[Text], Field(max_length=30)] = Field(default_factory=list)
+        default=None, description="完整可用厨具code集合（get_search_options.options.tool），不是已知某一个锅/热源。菜谱全部required_tools必须是其子集；只传wok会排除还需要stove的菜。清单不完整时省略/null后核对候选真实厨具；[]明确表示无厨具。")
+    nutrition_tags_all: Annotated[list[Text], Field(max_length=30)] = Field(
+        default_factory=list, description="必须拥有全部营养标签，取get_search_options.options.nutrition中的code；不把普通健康偏好擅自当硬条件。")
     exclude_allergens: Annotated[list[Text], Field(max_length=30)] = Field(
-        default_factory=list, description="排除已记录的过敏原，无法证明未记录过敏原的菜谱安全。")
+        default_factory=list, description="仅按用户明确过敏/禁忌传get_search_options.options.allergen中的code；排除已记录过敏原，不证明未记录信息的安全性。未提及时不自行添加。")
     nutrients: Annotated[list[NutrientConstraint], Field(max_length=12)] = Field(default_factory=list)
     ready_for_recommendation: bool | None = True
     sort: SearchSort = Field(default_factory=SearchSort)

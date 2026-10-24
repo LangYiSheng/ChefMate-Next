@@ -92,12 +92,14 @@ class WorkspaceProjection:
                 amount_text = _amount(grams, "g") if grams is not None else "用量未知"
                 if grams is not None:
                     unit, number = "g", grams
+            status = state.prep_status.get(identity, "pending") if selected else "pending"
+            availability = ("available" if status == "ready" else state.prep_availability.get(identity, "unknown")) if selected else "unknown"
             ingredients.append(IngredientView(
                 id=identity, recipe_id=frozen.recipe_id, ingredient_id=item["ingredient_id"],
                 canonical_name=item["canonical_name"], raw_text=item.get("raw_text") or "",
                 amount_text=amount_text, grams=grams, unit=unit, amount_value=number, scaled=scaled,
                 estimated=bool(item.get("estimated_grams") or (ratio is not None and recipe.get("estimated_servings"))),
-                status=state.prep_status.get(identity, "pending") if selected else "pending",
+                status=status, availability=availability,
             ))
         steps = []
         for index, raw in enumerate(recipe.get("steps") or []):
@@ -237,7 +239,7 @@ class WorkspaceProjection:
                 data = {"recipe_id": recipe["recipe_id"], "name": recipe["name"], "source": recipe["source"]}
             elif view.kind == "prep_checklist":
                 data = {"items": [{key: item[key] for key in ("id", "recipe_id", "canonical_name", "status",
-                                  "amount_text", "amount_value", "unit", "scaled", "estimated")}
+                                  "amount_text", "amount_value", "unit", "scaled", "estimated", "availability")}
                                   for item in raw["items"]], "recipe_ids": raw["recipe_ids"], "guidance": raw["guidance"]}
             elif view.kind == "cooking_guide":
                 data = {"recipe_id": raw["recipe_id"], "active_step_id": raw["active_step_id"],

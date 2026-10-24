@@ -12,6 +12,7 @@ from .food_log_models import (
     _encoded,
 )
 from .food_log_evidence import (
+    FoodLogEvidenceError,
     _date_matches_source,
     _draft_receipt,
     _explicit_confirmation,
@@ -21,6 +22,14 @@ from .food_log_evidence import (
     _turn_guard,
     _validate_item_sources,
 )
+
+
+def _food_log_failure(status, error):
+    result = {"status": status, "message": str(error)}
+    if isinstance(error, FoodLogEvidenceError):
+        location = ["record", *error.location] if status == "invalid_food_log_revision" else error.location
+        result.update(code=error.code, errors=[{"loc": location, "type": error.code}])
+    return result
 
 
 def make_meal_logging_tools(journal):
@@ -63,7 +72,7 @@ def make_meal_logging_tools(journal):
                 "message": "草稿已整理，当前聊天组件会展示食物、份量与营养。等待用户核对或继续修改；明确确认保存后才计入个人记录。",
             }
         except ValueError as error:
-            return {"status": "invalid_food_log", "message": str(error)}
+            return _food_log_failure("invalid_food_log", error)
 
     def read(values, context):
         request = FoodLogIdentityRequest.model_validate(values)
@@ -152,7 +161,7 @@ def make_meal_logging_tools(journal):
         except KeyError:
             return {"status": "not_found", "message": "饮食草稿不存在或已经移除。"}
         except ValueError as error:
-            return {"status": "invalid_food_log_revision", "message": str(error)}
+            return _food_log_failure("invalid_food_log_revision", error)
 
     def confirm(values, context):
         host = context.host_context
@@ -240,6 +249,7 @@ def make_meal_logging_tools(journal):
             "create_food_log_draft",
             CHAT_COMPONENT_PRESENTATION + "把用户本轮的饭菜照片或文字整理为个人饮食草稿，用户明确确认后才计入统计。"
             "每项营养是用户自己吃的这一份的总量；份量未知时克重和营养留null。视觉/描述估算必须标estimated并写assumptions，不能说精确识别。"
+            "user_provided的portion直接引用本轮连续原话；amount_g是质量，1升不能直接标为用户提供1000克。体积换算克重须estimated并说明密度，也可amount_g留null按体积估营养。"
             "source_kind=image仅可用本轮真实图片。date不确定留null按今天；历史日期需引用本轮date_evidence。不能把多人制作量当个人摄入。",
             FoodLogDraftRequest,
             create,

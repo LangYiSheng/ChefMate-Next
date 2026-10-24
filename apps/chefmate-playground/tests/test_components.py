@@ -71,13 +71,14 @@ def test_actual_disabled_components_are_hidden_and_reject_fabricated_execution(t
     agent, components = build_agent(config, Service(), memory=memory, cookbook=cookbook, journal=journal,
                                     preferences=SimpleNamespace(read=lambda: {}))
     context = TurnRuntimeContext(ui_context={"stage": "idea"})
-    hidden = {"read_long_term_memory", "create_recipe_draft", "create_food_log_draft", "get_search_options", "get_app_preferences", "set_kitchen_display", "navigate_cooking_step"}
+    hidden = {"read_long_term_memory", "create_recipe_draft", "create_food_log_draft", "get_search_options", "get_app_preferences", "set_kitchen_display", "navigate_cooking_step", "complete_cooking_step"}
     assert hidden.isdisjoint({tool.name for tool in agent._model_tools(context)})
     assert "ask_user" in {tool.name for tool in agent._model_tools(context)}
     for name, request in [("read_long_term_memory", {}), ("get_search_options", {}),
                           ("advance_cooking_stage", {"stage": "cooking"}), ("get_app_preferences", {}),
                           ("set_kitchen_display", {"mode": "conversation"}),
-                          ("navigate_cooking_step", {"expected_revision": 0, "direction": "next"})]:
+                          ("navigate_cooking_step", {"expected_revision": 0, "direction": "next"}),
+                          ("complete_cooking_step", {"expected_revision": 0})]:
         result = asyncio.run(agent._make_tool(name, context, [], "forged").ainvoke(request))
         assert result["status"] == "skill_disabled"
     assert components.enabled_ids == ()
@@ -95,6 +96,8 @@ def test_real_app_agent_builds_with_registered_kitchen_display_tool(tmp_path):
         assert display["available"] is True and display["required_skill"] == "app-preferences"
         navigation = next(tool for tool in catalog["tools"] if tool["name"] == "navigate_cooking_step")
         assert navigation["required_skill"] == "cooking-guide"
+        completion = next(tool for tool in catalog["tools"] if tool["name"] == "complete_cooking_step")
+        assert completion["required_skill"] == "cooking-guide"
 
 
 def test_generated_stage_targets_keep_each_transition_owners_permission():

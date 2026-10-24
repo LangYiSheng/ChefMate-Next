@@ -110,4 +110,4 @@ class RecipePublicationRepository:
                 return {"status": "turn_closed", "message": "本轮已经停止，没有发布菜谱，请重新确认。"}
             saved = self.cookbook._public(db.execute("SELECT * FROM personal_recipes WHERE id=?", (recipe_id,)).fetchone())
             return {"status": "ok", "published": True, "draft": saved,
-                    "message": "已按用户确认保存菜谱，现在可以读取并安排烹饪；未知信息保持未知。"}
+                    "message": "已按用户确认保存菜谱；如要安排烹饪，先search_custom_recipes和get_recipe取得当前真实snapshot，再select_recipes建立餐单。发布成功本身没有建立餐单；未知信息保持未知。"}

@@ -44,7 +44,7 @@ class RetrievalEvidence:
         result = copy.deepcopy(result)
         if result.get("status") != "ok":
             return result
-        # The normalized query is already present in the native call arguments.
+        # Native arguments plus explicit normalized_options preserve any label-to-code changes.
         result.pop("normalized_query", None)
         if name == "search_recipes":
             for item in result.get("items", []):
@@ -92,8 +92,23 @@ class RetrievalEvidence:
         snapshot = None
         selectors: set[tuple[str, str | None]] = set()
         recipe_ids: set[str] = set()
+        personal_details: set[str] = set()
         for message in history:
-            if message.get("role") != "tool":
+            if message.get("role") == "assistant":
+                for call in message.get("tool_calls", []):
+                    function = call.get("function", {})
+                    if function.get("name") != "get_recipe":
+                        continue
+                    try:
+                        values = json.loads(function["arguments"])
+                    except (KeyError, TypeError, ValueError):
+                        continue
+                    if (isinstance(call.get("id"), str) and isinstance(values, dict)
+                            and str(values.get("recipe_id", "")).startswith("custom-")):
+                        personal_details.add(call["id"])
+                continue
+            if (message.get("role") != "tool"
+                    or message.get("name") not in {"find_ingredients", "search_recipes", "get_recipe", "get_search_options"}):
                 continue
             try:
                 output = json.loads(message["content"])
@@ -101,6 +116,11 @@ class RetrievalEvidence:
                 continue
             if not isinstance(output, dict):
                 continue
+            recipe = output.get("recipe")
+            if (message.get("name") == "get_recipe" and (
+                    message.get("tool_call_id") in personal_details
+                    or isinstance(recipe, dict) and str(recipe.get("recipe_id", "")).startswith("custom-"))):
+                continue  # Personal recipe versions do not replace the official dataset snapshot.
             current_snapshot = output.get("snapshot")
             if current_snapshot is not None and current_snapshot != snapshot:
                 snapshot = current_snapshot
@@ -114,8 +134,10 @@ class RetrievalEvidence:
                         selectors.add((item["ingredient_id"], item.get("canonical_name")))
                         selectors.add((item["ingredient_id"], None))
             elif message.get("name") == "search_recipes":
-                recipe_ids = {item["recipe_id"] for item in output.get("items", [])
-                              if isinstance(item, dict) and item.get("recipe_id")}
+                # Several searches/pages can contribute to one recommendation.
+                # Provenance lasts for this snapshot; presentation still uses the latest result set.
+                recipe_ids.update(item["recipe_id"] for item in output.get("items", [])
+                                  if isinstance(item, dict) and item.get("recipe_id"))
             elif message.get("name") == "get_recipe" and isinstance(output.get("recipe"), dict):
                 if output["recipe"].get("recipe_id"):
                     recipe_ids.add(output["recipe"]["recipe_id"])

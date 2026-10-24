@@ -12,8 +12,30 @@ export function intakeMetric(summary: any, key: string) {
   return {value: full ?? known, partial: full === null && known !== null, coverage: summary?.coverage?.[key]};
 }
 export function recipeDraft(record: Data) {
-  const recipe = record.document;
-  return {name: recipe.name, description: recipe.description || '', servings: recipe.servings, servings_evidence: recipe.servings_evidence || '', prep_time_min: recipe.prep_time_min, cook_time_min: recipe.cook_time_min, total_time_min: recipe.total_time_min, time_evidence: record.time_evidence || '', difficulty: recipe.difficulty ?? null, difficulty_evidence: record.difficulty_evidence || '', taste_tags: [...(recipe.taste_tags || [])], cooking_methods: [...(recipe.cooking_methods || [])], required_tools: [...(recipe.required_tools || [])], source_kind: record.source_kind, source_text: record.source_text || '', warnings: [...(recipe.warnings || [])], steps: [...recipe.steps], ingredients: recipe.ingredients.map((food: Data) => ({name: food.canonical_name || '', amount: food.raw_amount ? `${food.raw_amount}${food.raw_unit || ''}` : '适量', grams: food.grams, amount_evidence: food.amount_evidence || '', scalable: food.scalable, usda_query: food.usda_query || '', allergens: food.allergens || []}))};
+  const recipe = record.document, provenance = orderedProvenance(record.metadata_provenance || {}), sources = record.source_metadata_evidence || {};
+  const original = (field: string, fallback: string, derived: boolean) => sources[field] ?? (derived ? '' : fallback || '');
+  return {name: recipe.name, description: recipe.description || '', servings: recipe.servings, servings_evidence: original('servings', recipe.servings_evidence, !!provenance.servings), prep_time_min: recipe.prep_time_min, cook_time_min: recipe.cook_time_min, total_time_min: recipe.total_time_min, time_evidence: original('time', record.time_evidence, ['prep_time_min', 'cook_time_min', 'total_time_min'].some(field => !!provenance[field])), difficulty: recipe.difficulty ?? null, difficulty_evidence: original('difficulty', record.difficulty_evidence, !!provenance.difficulty), metadata_provenance: provenance, taste_tags: [...(recipe.taste_tags || [])], cooking_methods: [...(recipe.cooking_methods || [])], required_tools: [...(recipe.required_tools || [])], source_kind: record.source_kind, source_text: record.source_text || '', warnings: [...(recipe.warnings || [])], steps: [...recipe.steps], ingredients: recipe.ingredients.map((food: Data) => ({name: food.canonical_name || '', amount: food.raw_amount ? `${food.raw_amount}${food.raw_unit || ''}` : '适量', grams: food.grams, amount_evidence: food.amount_evidence || '', scalable: food.scalable, usda_query: food.usda_query || '', allergens: food.allergens || []}))};
+}
+function orderedProvenance(value: Data): Data { return Object.fromEntries(Object.keys(value).sort().map(key => [key, structuredClone(value[key])])); }
+export type RecipeMetadataField = 'servings' | 'difficulty' | 'total_time_min';
+export type RecipeMetadataNotes = Partial<Record<RecipeMetadataField, string>>;
+function metadataSupplement(notes: RecipeMetadataNotes, reference: Data) {
+  const time = notes.total_time_min ? [reference.time_evidence, notes.total_time_min].filter(Boolean).join('\n') : '';
+  const parts = [notes.servings, notes.difficulty, time].filter(Boolean);
+  return parts.length ? `\n\n用户补充\n${parts.join('\n')}` : '';
+}
+/** Manual values become quoted UI supplements; untouched conversation provenance remains intact. */
+export function updateRecipeMetadata(previous: Data, field: RecipeMetadataField, value: any, reference: Data, notes: RecipeMetadataNotes = {}) {
+  const unchanged = value === reference[field], provenance = {...(previous.metadata_provenance || {})}, nextNotes = {...notes};
+  const label = field === 'servings' ? value == null ? '' : `份数：${value}人份` : field === 'total_time_min' ? value == null ? '' : `总耗时：${value}分钟` : ({beginner: '难度：新手', normal: '难度：普通', advanced: '难度：进阶'} as Data)[value] || '';
+  if (unchanged || !label) delete nextNotes[field]; else nextNotes[field] = label;
+  if (unchanged && reference.metadata_provenance?.[field]) provenance[field] = reference.metadata_provenance[field]; else delete provenance[field];
+  const previousSupplement = metadataSupplement(notes, reference), nextSupplement = metadataSupplement(nextNotes, reference);
+  const source = previousSupplement && previous.source_text.endsWith(previousSupplement) ? previous.source_text.slice(0, -previousSupplement.length) : previous.source_text;
+  if (source.length + nextSupplement.length > 20000) return {draft: previous, notes, error: '来源文字已较长，请先精简来源，再补充份数、耗时或难度。'};
+  const evidenceField = field === 'servings' ? 'servings_evidence' : field === 'difficulty' ? 'difficulty_evidence' : 'time_evidence';
+  const evidence = unchanged ? reference[evidenceField] : field === 'total_time_min' ? [reference.time_evidence, label].filter(Boolean).join('\n') : label;
+  return {draft: {...previous, [field]: value, [evidenceField]: evidence, metadata_provenance: orderedProvenance(provenance), source_text: source + nextSupplement}, notes: nextNotes, error: ''};
 }
 export function updateRecipeIngredient(previous: Data, key: string, value: string, reference: Data = previous) {
   const next = {...previous, [key]: value}, sameName = next.name.trim() === reference.name.trim(), unchanged = sameName && next.amount.trim() === reference.amount.trim();
