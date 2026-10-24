@@ -45,8 +45,11 @@
 模型历史只接收工具回执、必要个人记录和短任务状态，完整厨房 `views` 用于界面渲染。
 
 工作流工具的 `display=inline|workspace|none` 决定展示位置，`UIAction.placement` 承接意图。
+`set_kitchen_display` 返回独立的受控动作 `{kind,action_id,mode,view_kind}`，不承载任意页面代码。`mode=focus` 选择当前可用卡片，省略 `view_kind` 按阶段选择；`conversation` 返回聊天并省略卡片类型。此工具归属 `app-preferences`，只影响会话展示，不确认食材、完成步骤或推进阶段，也不写入普通偏好。
+浏览器按会话与稳定动作 ID 去重，仅执行当前可见聊天中新到达的展示动作。初次载入历史建立已见基线，后台会话不切换当前页面；运行轮次断流恢复时，尚未交付的新动作可从成功历史中补交。刷新旧历史不会重新强制全屏。[展示动作状态](../../apps/chefmate-playground/frontend/src/runtime/store.ts)
 读取工作区返回的 `views` 不自动变成本轮聊天动作。前端限制一次展开的核心内容，按当前组件 ID 绑定交互，避免重复铺满工作区。
 新增交互内容在模型本轮完整输出结束后展示；保存确认成功后才自动续轮，保存失败或版本冲突保留草稿。
+条件表单一次展示全部字段，卡片标题右侧统一展开/收起与全屏入口；正常同步不附加状态文字。`show_prep_checklist(recipe_ids=null)` 展示整餐，指定已入餐单的 ID 列表展示对应菜品；用户切换清单范围沿用 `set_checklist_scope`，单菜准备完成不能当作整餐完成。
 
 <a id="修改表单后模型如何知道"></a>
 
@@ -122,7 +125,7 @@ SSE 活跃事件带 `session_id/turn_id/sequence`。离开视图只断开订阅�
 | `pantry-preparation` | 备菜与准备 |
 | `cooking-guide` | 烹饪引导 |
 | `recipe-authoring` | 个人菜谱草稿、对话审核、修改与保存确认 |
-| `app-preferences` | 白名单普通应用偏好的读取与修改 |
+| `app-preferences` | 白名单普通应用偏好的读取与修改、当前厨房的专注/普通显示切换 |
 | `personal-memory` | 长期记忆与个人历史 |
 | `food-journal` | 饮食草稿、个人摄入与营养统计 |
 
@@ -165,10 +168,11 @@ SSE 活跃事件带 `session_id/turn_id/sequence`。离开视图只断开订阅�
 密钥不可回读，同端点可沿用，更换端点必须明确提供；分类分别保留草稿与读取版本，其他分类刷新不能解除已发生的冲突。
 普通偏好走独立 `/api/ui-preferences` 版本协议，服务端保存并由浏览器投影到本地外观；本机开发者设置继续单独保留。[设置参考](../reference/workbench.md#配置来源与默认值)
 
-`app-preferences` 仅提供 `get_app_preferences/update_app_preferences`，修改白名单为 `theme/light_palette/dark_palette/font_pairing/density/inline_limit/show_estimates/reply_suggestions/reply_suggestion_count`。
+`app-preferences` 提供 `get_app_preferences/update_app_preferences` 和独立的 `set_kitchen_display`。普通偏好修改白名单为 `theme/light_palette/dark_palette/font_pairing/density/inline_limit/show_estimates/reply_suggestions/reply_suggestion_count`。
 修改只应用明确传入字段并检查版本，未知字段拒绝；不能通过这个工具读取或修改模型、密钥、组件、开发者、系统或运行参数。前端对当前执行与服务恢复重新 GET 权威值，历史工具快照不能覆盖当前偏好。[偏好合同与服务](../../apps/chefmate-playground/src/chefmate_playground/ui_preferences.py) · [浏览器同步](../../apps/chefmate-playground/frontend/src/features/preferences/client.ts)
 
 专注厨房由常驻普通场景承载，进入与退出时主区、已打开右栏和厨房场景协同平移；非活动场景 `inert/aria-hidden`，输入草稿与后台任务保持原归属，减少动态效果时即时切换。[场景实现](../../apps/chefmate-playground/frontend/src/features/workspace/index.tsx) · [应用框架](../../apps/chefmate-playground/frontend/src/App.tsx)
+专注状态下真实阶段改变会自动选择对应厨房卡片；底部持续呈现当前交流和工具活动，“和助手聊聊”展开完整对话。备菜按实际卡片宽度双列或单列展示；烹饪突出当前步骤，提供直接选步与完整列表，浏览和滚动不修改执行进度。
 
 ## 参数完整性、恢复与观测
 
