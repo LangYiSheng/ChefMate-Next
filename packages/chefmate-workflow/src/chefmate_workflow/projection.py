@@ -20,7 +20,8 @@ from .models import (
     SourceInfo,
     StepView,
     TimersData,
-    UIAction,
+    KitchenDisplayAction,
+    ShowComponentAction,
     UISnapshot,
 )
 from .support import PREP_NOTE, DomainConflict, _amount, _explicit_durations, _finite, _ingredient_id, _stamp, _step_id
@@ -273,10 +274,12 @@ class WorkspaceProjection:
         views = self._views(state)
         snapshot = self._compact(state, views).model_dump(mode="json")
         actions = []
-        if action_component is not None:
+        if isinstance(action_component, KitchenDisplayAction):
+            actions = [action_component.model_dump(mode="json")]
+        elif action_component is not None:
             current = next((view for view in views if view.id == action_component.id), None)
             if current:
-                actions = [UIAction(component=current).model_dump(mode="json")]
+                actions = [ShowComponentAction(component=current).model_dump(mode="json")]
         result = {"status": status, "workspace": snapshot, "views": [view.model_dump(mode="json") for view in views],
                   "ui_snapshot": snapshot, "actions": actions,
                   "pending_question": snapshot["pending_question"], "last_answer": snapshot["last_answer"]}

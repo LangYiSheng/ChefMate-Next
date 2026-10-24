@@ -76,6 +76,36 @@ describe('Sidebar navigation and anchored session menu', () => {
     fireEvent.click(screen.getByRole('button', { name: '加载失败，重试' })); await waitFor(() => expect(more).toHaveBeenCalledOnce());
   });
 
+  it('automatically reads the next page near the list bottom and disconnects while loading or after unmount', async () => {
+    let intersect!: IntersectionObserverCallback;
+    const observe = vi.fn(), disconnect = vi.fn();
+    vi.stubGlobal('IntersectionObserver', class {
+      constructor(callback: IntersectionObserverCallback, options: IntersectionObserverInit) {
+        intersect = callback; expect(options.root).toBe(screen.getByRole('navigation', { name: '最近会话' }));
+      }
+      observe = observe; disconnect = disconnect;
+    });
+    let resolve!: () => void;
+    const more = vi.spyOn(chefStore, 'moreSessions').mockImplementation(() => new Promise<void>(yes => { resolve = yes; }));
+    const view = render(<Sidebar {...props({ state: state({ nextCursor: 'page-2' }) })} />);
+    expect(screen.queryByRole('button', { name: '加载更多对话' })).not.toBeInTheDocument();
+    expect(observe).toHaveBeenCalledOnce();
+    act(() => { intersect([{ isIntersecting: false }] as IntersectionObserverEntry[], {} as IntersectionObserver); });
+    expect(more).not.toHaveBeenCalled();
+    act(() => {
+      intersect([{ isIntersecting: true }] as IntersectionObserverEntry[], {} as IntersectionObserver);
+      intersect([{ isIntersecting: true }] as IntersectionObserverEntry[], {} as IntersectionObserver);
+    });
+    expect(more).toHaveBeenCalledOnce();
+    view.rerender(<Sidebar {...props({ state: state({ nextCursor: 'page-2', sessionsLoading: true }) })} />);
+    expect(disconnect).toHaveBeenCalledOnce(); expect(screen.getByRole('status')).toHaveTextContent('正在读取…');
+    await act(async () => resolve());
+    view.rerender(<Sidebar {...props({ state: state({ nextCursor: 'page-3' }) })} />);
+    expect(observe).toHaveBeenCalledTimes(2);
+    view.unmount(); expect(disconnect).toHaveBeenCalledTimes(2);
+    vi.unstubAllGlobals();
+  });
+
   it('keeps deletion unavailable while the owning session is running', () => {
     render(<Sidebar {...props({ state: state({ cache: { a: { ...session, running: true } } }) })} />);
     fireEvent.click(screen.getByRole('button', { name: '对话操作：周末的番茄菜' }));

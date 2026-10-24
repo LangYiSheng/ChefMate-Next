@@ -356,10 +356,25 @@ class WorkspaceState(StrictModel):
         return migrate_workspace(value)
 
 
-class UIAction(StrictModel):
+class ShowComponentAction(StrictModel):
     kind: Literal["show_component"] = "show_component"
     component: ViewComponent
     placement: Literal["inline", "workspace"] = "inline"
+
+
+DisplayViewKind = Literal["preference_form", "recipe_choices", "recipe_detail", "meal_plan",
+                          "prep_checklist", "cooking_guide", "timers"]
+
+
+class KitchenDisplayAction(StrictModel):
+    kind: Literal["set_kitchen_display"] = "set_kitchen_display"
+    action_id: Text
+    mode: Literal["focus", "conversation"]
+    view_kind: DisplayViewKind | None = None
+
+
+class UIAction(RootModel[Annotated[ShowComponentAction | KitchenDisplayAction, Field(discriminator="kind")]]):
+    """Typed UI events; display requests carry a stable, session-local operation ID."""
 
 
 class WorkflowToolResult(StrictModel):
@@ -382,6 +397,19 @@ class ToolInput(StrictModel):
 
 class EmptyInput(ToolInput):
     pass
+
+
+class KitchenDisplayInput(StrictModel):
+    mode: Literal["focus", "conversation"] = Field(
+        description="focus进入厨房全屏专注模式，conversation返回普通对话；只切换展示，不修改做菜进度。")
+    view_kind: DisplayViewKind | None = Field(default=None,
+        description="focus可指定当前已打开的卡片类型；省略跟随当前做菜阶段。conversation时省略。")
+
+    @model_validator(mode="after")
+    def conversation_has_no_view(self):
+        if self.mode == "conversation" and self.view_kind is not None:
+            raise ValueError("Conversation mode does not select a kitchen view")
+        return self
 
 
 class ChecklistInput(ToolInput):
@@ -593,6 +621,7 @@ class UserActionRequest(RootModel[Annotated[Union[_action_types], Field(discrimi
 
 
 TOOL_REQUEST_MODELS = {
+    "set_kitchen_display": KitchenDisplayInput,
     "show_preference_form": PreferenceFormInput, "show_recipe_choices": RecipeChoicesInput,
     "show_recipe_details": RecipeDetailInput, "set_meal_plan": MealPlanInput,
     "show_meal_plan": EmptyInput, "show_prep_checklist": ChecklistInput,

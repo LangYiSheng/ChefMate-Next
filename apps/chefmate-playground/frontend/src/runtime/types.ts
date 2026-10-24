@@ -52,6 +52,7 @@ export interface Continuation {
 }
 
 export interface RuntimeState {
+  kitchenDisplayRequest?: { sessionId: string; action_id: string; mode: 'focus' | 'conversation'; view_kind?: string | null } | null;
   status: ApiData | null;
   sessions: Session[];
   currentId: string | null;

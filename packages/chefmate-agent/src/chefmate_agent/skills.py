@@ -13,6 +13,7 @@ SKILL_NAME = re.compile(r"^[a-z][a-z0-9_-]{0,63}$")
 # The application opts into these bindings. A standalone agent may provide its
 # own tool/skill ownership without depending on the kitchen workflow package.
 KITCHEN_TOOL_SKILLS = {
+    "set_kitchen_display": "app-preferences",
     **dict.fromkeys(("find_ingredients", "search_recipes", "get_recipe", "get_search_options",
                      "show_preference_form", "update_preferences", "show_recipe_choices",
                      "show_recipe_details", "select_recipes", "set_meal_plan", "show_meal_plan"), "meal-planning"),

@@ -21,7 +21,7 @@ vi.mock('./features/workspace/store', () => ({ workspaceStore: fixture.workspace
 vi.mock('./features/settings/appearance', () => ({ initAppearance: () => () => {} }));
 vi.mock('./components/Sidebar', () => ({ Sidebar: () => <nav aria-label="会话导航内容">最近会话</nav> }));
 vi.mock('./components/Composer', () => ({ Composer: () => <label>对话输入<input aria-label="对话输入" /></label> }));
-vi.mock('./components/Conversation', () => ({ Conversation: ({ active }: { active: boolean }) => <div aria-label="聊天记录" data-active={active}>已有消息</div> }));
+vi.mock('./components/Conversation', () => ({ Conversation: ({ active, onRecipe }: { active: boolean; onRecipe: (id: string) => void }) => <div aria-label="聊天记录" data-active={active}>已有消息<button onClick={() => onRecipe('tomato-eggs')}>查看已选菜谱</button></div> }));
 vi.mock('./components/Details', () => ({ Diagnostics: () => <div>开发请求诊断</div>, RecipeDetails: () => <div>菜谱详情内容</div> }));
 vi.mock('./features/settings/Settings', () => ({ Settings: () => <div>设置内容</div> }));
 vi.mock('./features/centers/KitchenCenters', () => ({ KitchenCenters: () => <div>个人中心内容</div> }));
@@ -80,6 +80,8 @@ describe('App surface coordination', () => {
     expect(panel).toHaveAttribute('inert'); expect(panel).toHaveAttribute('aria-hidden', 'true');
     fireEvent.click(screen.getByRole('button', { name: '展开右侧栏' }));
     expect(panel).not.toHaveAttribute('inert'); expect(panel).toHaveAttribute('aria-hidden', 'false');
+    expect(screen.queryByRole('tab', { name: '菜谱详情' })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '查看已选菜谱' }));
     fireEvent.click(screen.getByRole('tab', { name: '菜谱详情' })); expect(within(panel as HTMLElement).getByText('菜谱详情内容')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: '收起详情面板' }));
     expect(view.container.querySelector('aside[aria-label="厨房工作区"]')).toBe(panel);

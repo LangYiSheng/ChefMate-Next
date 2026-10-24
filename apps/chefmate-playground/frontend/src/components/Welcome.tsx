@@ -2,6 +2,9 @@ import { useMemo, useState, type CSSProperties } from 'react';
 import { Brand, Icon } from './Icon';
 
 const starters = [
+  { category: 'kitchen', icon: 'cooking-pot', featured: true, title: '陪我把这一餐做好', hint: '选菜、逐菜备料，再专注看步骤', text: () => '帮我安排一顿简单晚餐，先选菜，确认后按一道一道菜准备食材，再打开专注模式带我做。' },
+  { category: 'journal', icon: 'utensils', featured: true, title: '多人吃饭，记下我那份', hint: '把整桌的菜和本人食用份额分开', text: () => '这顿饭是多人一起吃的，请先核对餐单，再帮我确认我实际吃了多少，只把我的份额记入个人饮食。' },
+  { category: 'preferences', icon: 'sun-moon', featured: true, title: '把工作台调成我喜欢的样子', hint: '直接聊配色、字体和对话偏好', text: () => '我想调整工作台的配色、字体和对话建议，请先看看当前设置，介绍我可以直接让你调整的选项。' },
   { category: 'kitchen', icon: 'utensils', title: '今天想吃', blank: '虾', hint: '按你想吃的，挑几道好菜', text: (v: string) => `我想吃${v}，推荐几道适合家常做的菜，先让我选一选。` },
   { category: 'kitchen', icon: 'utensils', title: '冰箱里有', blank: '鸡蛋、西红柿', hint: '用现有食材，少买一点', text: (v: string) => `我家有${v}，请尽量利用现有食材，帮我搭配一餐。` },
   { category: 'kitchen', icon: 'timer', title: '留给做饭的时间是', blank: '20 分钟', hint: '把时间也放进菜单里', text: (v: string) => `我只有${v}做饭，一个人吃，请推荐适合的简单菜谱。` },
@@ -20,6 +23,7 @@ const starters = [
   { category: 'journal', icon: 'layers', title: '这一周吃得怎么样', hint: '回顾真实记录，看看营养趋势', text: () => '请根据我最近七天实际保存的饮食记录，回顾营养和饮食习惯；没有记录的日子不要猜测，给我几条适合下一餐的小建议。' },
   { category: 'memory', icon: 'list-filter', title: '以后做饭请记住', blank: '喜欢清淡，少放辣椒', hint: '让口味偏好陪着每一次推荐', text: (v: string) => `我的做饭偏好是：${v}。请帮我维护长期记忆，先核对要记住的内容。` },
   { category: 'memory', icon: 'message-circle', title: '找回上次做饭的灵感', hint: '查找真实历史，再聊聊这次怎么做', text: () => '帮我找找最近聊过或做过的菜，结合实际历史说说哪一道适合再做一次。没有相关记录就告诉我。' },
+  { category: 'preferences', icon: 'list-filter', title: '回复少一点，更清爽', hint: '调整回复建议和卡片展开数量', text: () => '请把推荐回复减少到两条，每次回复只展开一张卡片，其他偏好先保留。' },
 ];
 
 function Starter({ item, onUse }: { item: typeof starters[number]; onUse: (text: string, image?: boolean) => void }) {
@@ -35,11 +39,14 @@ function Starter({ item, onUse }: { item: typeof starters[number]; onUse: (text:
 export function Welcome({ supportsImages, onUse }: { supportsImages: boolean; onUse: (text: string, image?: boolean) => void }) {
   const [category, setCategory] = useState('all');
   const [draw, setDraw] = useState(0);
-  const visible = useMemo(() => starters.filter(item => (!item.image || supportsImages) && (category === 'all' || item.category === category))
-    .map(item => ({ item, sort: Math.random() })).sort((a, b) => a.sort - b.sort).slice(0, 3).map(({ item }) => item), [category, draw, supportsImages]);
+  const visible = useMemo(() => {
+    const candidates = starters.filter(item => (!item.image || supportsImages) && (category === 'all' || item.category === category));
+    if (category === 'all' && draw === 0) return candidates.filter(item => item.featured);
+    return candidates.map(item => ({ item, sort: Math.random() })).sort((a, b) => a.sort - b.sort).slice(0, 3).map(({ item }) => item);
+  }, [category, draw, supportsImages]);
   return <section className="welcome"><Brand className="welcome-icon" /><h1>今天想吃什么？</h1>
-    <p>说说食材、时间和人数，<br className="welcome-break" />一起选菜、备菜，把这顿饭做好。</p>
-    <div className="starter-categories" aria-label="按用途查看开场示例">{[['all', '随便看看'], ['kitchen', '选菜做饭'], ['recipes', '个人菜谱'], ['journal', '饮食记录'], ['memory', '了解你']].map(([id, label]) =>
+    <p>从选菜做饭，到收藏菜谱、记下吃了什么，<br className="welcome-break" />需要时，随时和小锅搭子聊聊。</p>
+    <div className="starter-categories" aria-label="按用途查看开场示例">{[['all', '推荐'], ['kitchen', '选菜做饭'], ['recipes', '个人菜谱'], ['journal', '饮食记录'], ['memory', '了解你'], ['preferences', '调整体验']].map(([id, label]) =>
       <button key={id} type="button" aria-pressed={category === id} onClick={() => setCategory(id)}>{label}</button>)}</div>
     <div className="starter-templates">{visible.map(item => <Starter key={item.title} item={item} onUse={onUse} />)}</div>
     <button type="button" className="starter-shuffle" onClick={() => setDraw(draw + 1)}><Icon name="refresh-cw" />换一组灵感</button>

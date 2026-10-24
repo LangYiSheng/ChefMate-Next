@@ -18,6 +18,18 @@ const choose = (label: string, option: string) => {fireEvent.click(screen.getByR
 beforeEach(() => {localStorage.clear(); request.mockReset(); readPreferences.mockReset(); savePreferences.mockReset(); readPreferences.mockResolvedValue(preferences()); savePreferences.mockImplementation(async changes => ({...preferences(), revision: revision(101), values: {...preferences().values, ...changes}})); request.mockImplementation((path: string) => Promise.resolve(path === '/api/settings' ? fixture() : {ready: true, model: 'test-model', database: {ready: true}}));});
 
 describe('React settings transactions', () => {
+  it('keeps the short about and data sections on one page instead of hiding each paragraph behind a tab', async () => {
+    render(<Settings onClose={vi.fn()}/>); await screen.findByLabelText('显示模式');
+    fireEvent.click(screen.getByRole('button', {name: '关于 ChefMate'}));
+    expect(await screen.findByText(/聊天、个人菜谱、饮食记录和长期记忆保存在本机/)).toBeVisible();
+    expect(screen.getByRole('heading', {name: '营养数据'})).toBeVisible();
+    expect(screen.queryByRole('tablist')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', {name: '数据与状态'}));
+    expect(screen.getByRole('heading', {name: '当前连接'})).toBeVisible();
+    expect(screen.getByRole('heading', {name: '本机保存'})).toBeVisible();
+    expect(screen.queryByRole('tablist')).not.toBeInTheDocument();
+  });
+
   it('keeps dirty drafts in other categories and advances only accepted revision baselines', async () => {
     let settings = fixture(), writes = 1;
     request.mockImplementation((path: string, options: RequestInit = {}) => {
@@ -181,7 +193,7 @@ describe('React settings transactions', () => {
     render(<Settings onClose={vi.fn()}/>); await screen.findByLabelText('显示模式'); fireEvent.click(screen.getByRole('button', {name: '模型连接'}));
     fireEvent.change(screen.getByLabelText('模型名称'), {target: {value: 'kept-draft'}}); fireEvent.click(screen.getByRole('button', {name: '开发者'})); fireEvent.click(screen.getByRole('switch', {name: '开发者模式'}));
     settings = {...settings, revision: revision(2), runtime: {...settings.runtime, max_tool_calls: 25}};
-    fireEvent.click(screen.getByRole('button', {name: '数据与状态'})); fireEvent.click(screen.getByRole('button', {name: '重新读取'})); await screen.findAllByText('已读取最新设置。');
+    fireEvent.click(screen.getByRole('button', {name: '数据与状态'})); fireEvent.click(screen.getByRole('button', {name: '重新读取'})); await waitFor(() => expect(screen.getByRole('button', {name: '重新读取'})).toBeEnabled());
     fireEvent.click(screen.getByRole('button', {name: /开发者/})); fireEvent.click(screen.getByRole('button', {name: '保存修改'})); await screen.findAllByText('设置已保存。接下来的对话使用新设置。');
     fireEvent.click(screen.getByRole('button', {name: /模型连接/})); expect(screen.getByLabelText('模型名称')).toHaveValue('kept-draft'); fireEvent.click(screen.getByRole('button', {name: '保存修改'}));
     await screen.findAllByText('设置已在另一页面更新；当前草稿保留。'); expect(writes).toHaveLength(1); expect(writes[0].revision).toBe(revision(1));

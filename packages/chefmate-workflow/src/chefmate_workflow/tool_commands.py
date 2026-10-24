@@ -10,6 +10,7 @@ from .models import (
     CookingAdaptation,
     CookingData,
     CookingGuide,
+    KitchenDisplayAction,
     MealPlan,
     PendingQuestion,
     PreferenceField,
@@ -43,6 +44,7 @@ class ToolCommands:
             result["recovery"] = ["只修正列出的字段，按当前工具schema重新调用；未修改的偏好不要列入changed_fields。"]
             return result
         args = validated.model_dump(mode="json", exclude_none=False)
+        operation_id = operation_id or str(uuid4())
         if name == "get_cooking_workspace":
             return self.get_workspace()
         initial = self._state(self._get_state())
@@ -91,6 +93,22 @@ class ToolCommands:
             blockers = self._tool_blockers(state, name)
             if blockers:
                 raise DomainConflict(blockers[0]["code"], blockers[0]["message"])
+            if name == "set_kitchen_display":
+                selected = validated.view_kind
+                if validated.mode == "focus":
+                    views = [view for view in self._views(state) if view.kind != "task_progress"
+                             and not (view.kind == "recipe_choices" and state.stage in {"prep", "cooking", "completed"})
+                             and not (view.kind in {"preference_form", "prep_checklist"}
+                                      and state.stage in {"cooking", "completed"})]
+                    preferred = {"idea": "preference_form", "planning": "meal_plan",
+                                 "prep": "prep_checklist", "cooking": "cooking_guide",
+                                 "completed": "meal_plan"}.get(state.stage)
+                    if selected is None:
+                        current = next((view for view in views if view.kind == preferred), views[-1] if views else None)
+                        selected = current.kind if current else None
+                    if selected is None or not any(view.kind == selected for view in views):
+                        raise DomainConflict("view_unavailable", "当前还没有这张厨房卡片，请先打开需要查看的内容。")
+                return KitchenDisplayAction(action_id=operation_id, mode=validated.mode, view_kind=selected)
             if name == "ask_user":
                 state.pending_question = PendingQuestion(id=str(uuid4()), title=validated.title,
                     question=validated.question, options=validated.options,
@@ -180,11 +198,13 @@ class ToolCommands:
                 return self._show(state, Timers, "厨房计时", TimersData(timers=state.timers))
             return self._set_stage(state, validated.stage)
         try:
-            result = self._command(operation_id or str(uuid4()), name, args, base_revision, command)
+            result = self._command(operation_id, name, args, base_revision, command)
         except ValidationError as error:
             result = self._response(self._state(self._get_state()), "invalid_arguments", "修改后的字段值无效，没有保存。")
             result["errors"] = _validation_details(error)
             result["recovery"] = ["修正列出的字段后重新调用，不要原样重试无效参数。"]
+            return result
+        if name == "set_kitchen_display":
             return result
         if validated.display == "none":
             result["actions"] = []

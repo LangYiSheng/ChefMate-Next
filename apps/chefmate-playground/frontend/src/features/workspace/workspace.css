@@ -1,69 +1,69 @@
 /* Kitchen layout is scoped; the shared theme owns colors and font roles. */
-:is(.react-workspace,.react-cooking-focus,.react-timer-popover,.react-kitchen-timers){box-sizing:border-box;min-width:0;color:var(--color-text);font:400 14px/1.65 var(--font-ui)}
+:is(.react-workspace,.react-cooking-focus,.react-timer-popover,.react-kitchen-timers){box-sizing:border-box;min-width:0;color:var(--color-text);font:400 16px/1.65 var(--font-ui)}
 :is(.react-workspace,.react-cooking-focus,.react-timer-popover) *{box-sizing:border-box}
 :is(.react-workspace,.react-cooking-focus,.react-timer-popover) :is(h2,h3,h4,p,ul,ol,fieldset){margin:0}
 :is(.react-workspace,.react-cooking-focus,.react-timer-popover) :is(button,input,textarea,select,summary){font-family:var(--font-ui)}
-:is(.react-workspace,.react-cooking-focus,.react-timer-popover,.react-kitchen-timers) button:not(:where(.composer-area *)){display:inline-flex;align-items:center;justify-content:center;gap:7px;min-height:38px;padding:8px 12px;border:1px solid var(--color-border);border-radius:9px;background:var(--color-canvas);color:var(--color-text);font-size:13px;font-weight:500;line-height:1.45;text-align:center;cursor:pointer;touch-action:manipulation;white-space:normal}
+:is(.react-workspace,.react-cooking-focus,.react-timer-popover,.react-kitchen-timers) button:not(:where(.composer-area *)){display:inline-flex;align-items:center;justify-content:center;gap:7px;min-height:38px;padding:8px 12px;border:1px solid var(--color-border);border-radius:9px;background:var(--color-canvas);color:var(--color-text);font-size:15px;font-weight:500;line-height:1.45;text-align:center;cursor:pointer;touch-action:manipulation;white-space:normal}
 :is(.react-workspace,.react-cooking-focus,.react-timer-popover,.react-kitchen-timers) button:not(:where(.composer-area *)):hover:not(:disabled){background:var(--color-hover)}
 :is(.react-workspace,.react-cooking-focus,.react-timer-popover,.react-kitchen-timers) button:not(:where(.composer-area *)):disabled{opacity:.48;cursor:default}
 :is(.react-workspace,.react-cooking-focus,.react-timer-popover) :is(button,input,textarea,select,summary):focus-visible{outline:2px solid var(--color-accent);outline-offset:2px}
 :is(.react-workspace,.react-cooking-focus,.react-timer-popover) :is(.cooking-primary,.question-confirm){background:var(--color-accent);border-color:var(--color-accent);color:var(--color-on-accent)}
 :is(.react-workspace,.react-cooking-focus,.react-timer-popover) :is(.cooking-primary,.question-confirm):hover:not(:disabled){background:var(--color-accent-hover);border-color:var(--color-accent-hover)}
 :is(.react-workspace,.react-cooking-focus,.react-timer-popover) .ui-text-button{border-color:transparent;background:transparent;color:var(--color-accent);padding:6px 8px}
-:is(.react-workspace,.react-cooking-focus,.react-timer-popover) :is(input:not([type=checkbox]):not([type=radio]),textarea,select):not(:where(.composer-area *)){width:100%;min-width:0;min-height:40px;padding:9px 11px;border:1px solid var(--color-border);border-radius:8px;background:var(--color-surface);color:var(--color-text);font-size:14px;line-height:1.6}
+:is(.react-workspace,.react-cooking-focus,.react-timer-popover) :is(input:not([type=checkbox]):not([type=radio]),textarea,select):not(:where(.composer-area *)){width:100%;min-width:0;min-height:40px;padding:9px 11px;border:1px solid var(--color-border);border-radius:8px;background:var(--color-surface);color:var(--color-text);font-size:16px;line-height:1.6}
 :is(.react-workspace,.react-cooking-focus,.react-timer-popover) textarea{resize:vertical}
 :is(.react-workspace,.react-cooking-focus,.react-timer-popover) :is(input,textarea,select):disabled{opacity:.65;cursor:default}
 :is(.react-workspace,.react-cooking-focus,.react-timer-popover) :is(input[type=checkbox],input[type=radio]){width:18px;height:18px;margin:0;flex:none;accent-color:var(--color-accent);cursor:pointer}
 :is(.react-workspace,.react-cooking-focus,.react-timer-popover) fieldset{padding:0;border:0;min-width:0}
-:is(.react-workspace,.react-cooking-focus,.react-timer-popover) .ui-hint{color:var(--color-muted);font:400 12px/1.75 var(--font-ui);margin:8px 0}
-:is(.react-workspace,.react-cooking-focus,.react-timer-popover) .ui-badge{display:inline-flex;align-items:center;gap:4px;padding:2px 7px;border-radius:5px;background:var(--color-accent-soft);color:var(--color-accent);font:400 11px/1.5 var(--font-ui)}
+:is(.react-workspace,.react-cooking-focus,.react-timer-popover) .ui-hint{color:var(--color-muted);font:400 14px/1.75 var(--font-ui);margin:8px 0}
+:is(.react-workspace,.react-cooking-focus,.react-timer-popover) .ui-badge{display:inline-flex;align-items:center;gap:4px;padding:2px 7px;border-radius:5px;background:var(--color-accent-soft);color:var(--color-accent);font:400 13px/1.5 var(--font-ui)}
 :is(.react-workspace,.react-cooking-focus,.react-timer-popover) .ui-badge.muted{background:var(--color-surface);color:var(--color-muted)}
-:is(.react-workspace,.react-cooking-focus,.react-timer-popover) .estimate-marker{margin-left:5px;color:var(--color-muted);font:400 10px/1.5 var(--font-ui)}
+:is(.react-workspace,.react-cooking-focus,.react-timer-popover) .estimate-marker{margin-left:5px;color:var(--color-muted);font:400 12px/1.5 var(--font-ui)}
 :is(.react-workspace,.react-cooking-focus,.react-timer-popover) .ui-actions{display:flex;align-items:center;flex-wrap:wrap;gap:8px}
-:is(.react-workspace,.react-cooking-focus,.react-timer-popover) .page-controls{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:16px;padding-top:10px;border-top:1px solid var(--color-border)}
-:is(.react-workspace,.react-cooking-focus,.react-timer-popover) .page-controls>span{font:400 12px/1.5 var(--font-numeric);color:var(--color-muted);white-space:nowrap}
-:is(.react-workspace,.react-cooking-focus,.react-timer-popover) .page-button{font-size:12px;min-height:34px;padding:7px 10px}
-:is(.react-workspace,.react-cooking-focus,.react-timer-popover) .error-box{display:flex;align-items:flex-start;flex-wrap:wrap;gap:8px;margin:12px 0;padding:12px;border:1px solid var(--color-danger);border-radius:9px;background:var(--color-danger-soft,var(--color-surface));font:400 13px/1.7 var(--font-ui)}
+:is(.react-workspace,.react-cooking-focus,.react-timer-popover) .page-button{font-size:14px;min-height:34px;padding:7px 10px}
+:is(.react-workspace,.react-cooking-focus,.react-timer-popover) .error-box{display:flex;align-items:flex-start;flex-wrap:wrap;gap:8px;margin:12px 0;padding:12px;border:1px solid var(--color-danger);border-radius:9px;background:var(--color-danger-soft,var(--color-surface));font:400 15px/1.7 var(--font-ui)}
 :is(.react-workspace,.react-cooking-focus,.react-timer-popover) .error-box>p{flex-basis:100%;color:var(--color-danger)}
-:is(.react-workspace,.react-cooking-focus,.react-timer-popover) .workspace-disclosure{border-top:1px solid var(--color-border);padding-top:12px;margin-top:12px;color:var(--color-muted);font:400 12px/1.8 var(--font-ui)}
+:is(.react-workspace,.react-cooking-focus,.react-timer-popover) .workspace-disclosure{border-top:1px solid var(--color-border);padding-top:12px;margin-top:12px;color:var(--color-muted);font:400 14px/1.8 var(--font-ui)}
 :is(.react-workspace,.react-cooking-focus,.react-timer-popover) summary{cursor:pointer;padding:5px 0}
 :is(.react-workspace,.react-cooking-focus,.react-timer-popover) details p{margin-top:8px;white-space:pre-wrap}
 /* Protocol cards and recipe editing. */
 .react-workspace .workspace-heading{display:flex;align-items:center;justify-content:space-between;gap:12px}
-.react-workspace .workspace-stage{color:var(--color-accent);font-size:13px;font-weight:600}
-.react-workspace .workspace-sync{font:400 12px/1.65 var(--font-ui);color:var(--color-muted);margin:6px 0 14px}
+.react-workspace .workspace-stage{color:var(--color-accent);font-size:15px;font-weight:600}
+.react-workspace .workspace-sync{font:400 14px/1.65 var(--font-ui);color:var(--color-muted);margin:6px 0 14px}
 .react-workspace .workspace-navigation{display:flex;flex-wrap:wrap;gap:4px 12px;border-bottom:1px solid var(--color-border);margin-bottom:16px}
 .react-workspace .workspace-nav{border:0;border-radius:0;border-bottom:2px solid transparent;padding:7px 2px;background:transparent;color:var(--color-muted);min-height:36px}
 .react-workspace .workspace-nav[aria-pressed=true]{border-bottom-color:var(--color-accent);color:var(--color-accent)}
-.react-workspace .workspace-view-receipt{display:flex;align-items:center;gap:8px;padding:8px 0;border-top:1px solid var(--color-border)}
+.react-workspace .workspace-view-receipt{display:flex;align-items:center;gap:8px;padding:8px 0}
 .react-workspace .view-receipt{display:flex;align-items:center;justify-content:flex-start;gap:10px;flex:1;min-width:0;text-align:left;padding:9px;border:0;background:transparent}
 .react-workspace .view-receipt>span{display:grid;gap:3px;flex:1;min-width:0}
-.react-workspace .view-receipt strong{font:500 13px/1.5 var(--font-ui)}
-.react-workspace .view-receipt small{font:400 11px/1.6 var(--font-ui);color:var(--color-muted);overflow-wrap:anywhere}
+.react-workspace .view-receipt strong{font:500 15px/1.5 var(--font-ui)}
+.react-workspace .view-receipt small{font:400 13px/1.6 var(--font-ui);color:var(--color-muted);overflow-wrap:anywhere}
 .react-workspace .view-receipt>.icon{width:17px;height:17px;flex:none;color:var(--color-muted)}
-.react-workspace .workspace-inline-controls{display:flex;justify-content:flex-end;margin-top:-8px;padding-bottom:8px}
-.react-workspace .workspace-inline-controls button{min-height:28px;font-size:11px}
-:is(.react-workspace,.react-cooking-focus) .ui-component{min-width:0;padding:16px 0;border-top:1px solid var(--color-border)}
+:is(.react-workspace,.react-cooking-focus) .ui-component{min-width:0;padding:16px 0;border:0;container-type:inline-size;container-name:kitchen-card}
 .react-workspace>.ui-component:first-child{border-top:0;padding-top:0}
 :is(.react-workspace,.react-cooking-focus) .ui-component-heading{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:16px}
-:is(.react-workspace,.react-cooking-focus) .ui-component-heading h3{display:flex;align-items:center;gap:8px;min-width:0;font:600 14px/1.5 var(--font-ui)}
+:is(.react-workspace,.react-cooking-focus) .ui-component-heading h3{display:flex;align-items:center;gap:8px;min-width:0;font:600 16px/1.5 var(--font-ui)}
 :is(.react-workspace,.react-cooking-focus) .ui-component-heading .icon{width:18px;height:18px;color:var(--color-muted);flex:none}
+:is(.react-workspace,.react-cooking-focus) .ui-component-actions{display:flex;align-items:center;justify-content:flex-end;gap:4px;flex:none}
+:is(.react-workspace,.react-cooking-focus) .ui-component-actions .card-heading-action{width:36px;min-height:36px;padding:7px;border:0;border-radius:8px}
+:is(.react-workspace,.react-cooking-focus) .reveal-remaining{margin-top:10px}
 :is(.react-workspace,.react-cooking-focus) .ui-recipe-name{font:var(--font-title-weight,700) 22px/1.5 var(--font-title);margin:8px 0}
 :is(.react-workspace,.react-cooking-focus) .ui-form{display:grid;gap:16px}
+:is(.react-workspace,.react-cooking-focus) .preference-fields{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}
+:is(.react-workspace,.react-cooking-focus) .preference-field-wide{grid-column:1 / -1}
 :is(.react-workspace,.react-cooking-focus,.react-timer-popover) .ui-field{display:grid;gap:7px;min-width:0}
-:is(.react-workspace,.react-cooking-focus,.react-timer-popover) .ui-field-label{display:block;color:var(--color-muted);font:500 12px/1.5 var(--font-ui)}
+:is(.react-workspace,.react-cooking-focus,.react-timer-popover) .ui-field-label{display:block;color:var(--color-muted);font:500 14px/1.5 var(--font-ui)}
 :is(.react-workspace,.react-cooking-focus) .ui-checkbox-field{display:flex;align-items:center;gap:9px;min-height:36px}
 :is(.react-workspace,.react-cooking-focus) .ui-options{display:flex;flex-wrap:wrap;gap:8px 14px;margin-top:7px}
-:is(.react-workspace,.react-cooking-focus) .ui-option{display:inline-flex;align-items:center;gap:7px;min-height:32px;font-size:13px}
-:is(.react-workspace,.react-cooking-focus) .ui-sync-label{color:var(--color-muted);font:400 12px/1.5 var(--font-ui)}
-:is(.react-workspace,.react-cooking-focus) .ui-conflict-values{padding:12px;border:1px solid var(--color-warning);border-radius:8px;background:var(--color-warning-soft,var(--color-surface));font:400 12px/1.7 var(--font-ui)}
+:is(.react-workspace,.react-cooking-focus) .ui-option{display:inline-flex;align-items:center;gap:7px;min-height:32px;font-size:15px}
+:is(.react-workspace,.react-cooking-focus) .ui-conflict-values{padding:12px;border:1px solid var(--color-warning);border-radius:8px;background:var(--color-warning-soft,var(--color-surface));font:400 14px/1.7 var(--font-ui)}
 :is(.react-workspace,.react-cooking-focus) .workspace-draft-actions{margin-top:12px;padding-top:12px;border-top:1px solid var(--color-border)}
 :is(.react-workspace,.react-cooking-focus) .workspace-draft-actions>.ui-hint{flex-basis:100%}
 :is(.react-workspace,.react-cooking-focus) .ui-recipe-choice{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:14px 0;border-bottom:1px solid var(--color-border)}
 :is(.react-workspace,.react-cooking-focus) .ui-choice-label{display:flex;align-items:center;gap:12px;flex:1;min-width:0;cursor:pointer}
 :is(.react-workspace,.react-cooking-focus) .ui-choice-label>span{display:grid;gap:4px;min-width:0}
 :is(.react-workspace,.react-cooking-focus) .ui-choice-label strong{font:500 15px/1.6 var(--font-ui);overflow-wrap:anywhere}
-:is(.react-workspace,.react-cooking-focus) .ui-choice-label small{font:400 12px/1.6 var(--font-ui);color:var(--color-muted)}
+:is(.react-workspace,.react-cooking-focus) .ui-choice-label small{font:400 14px/1.6 var(--font-ui);color:var(--color-muted)}
 :is(.react-workspace,.react-cooking-focus) .selected-recipes{display:flex;flex-wrap:wrap;gap:6px;margin-top:12px}
 :is(.react-workspace,.react-cooking-focus) .section-tabs{display:flex;gap:18px;border-bottom:1px solid var(--color-border);margin:16px 0}
 :is(.react-workspace,.react-cooking-focus) .section-tab{border:0;border-radius:0;border-bottom:2px solid transparent;padding:7px 0;background:transparent;color:var(--color-muted)}
@@ -72,66 +72,70 @@
 :is(.react-workspace,.react-cooking-focus) .ui-ingredient>span:last-child{color:var(--color-muted);text-align:right;font-family:var(--font-numeric)}
 :is(.react-workspace,.react-cooking-focus) .ui-nutrition{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px;padding:12px 0}
 :is(.react-workspace,.react-cooking-focus) .ui-nutrition>div{display:grid;gap:5px}
-:is(.react-workspace,.react-cooking-focus) .ui-nutrition small{font:400 12px/1.5 var(--font-ui);color:var(--color-muted)}
+:is(.react-workspace,.react-cooking-focus) .ui-nutrition small{font:400 14px/1.5 var(--font-ui);color:var(--color-muted)}
 :is(.react-workspace,.react-cooking-focus) .ui-nutrition strong{font:500 16px/1.5 var(--font-numeric);font-variant-numeric:tabular-nums}
 :is(.react-workspace,.react-cooking-focus) .reference-link{display:inline-block;margin:8px 12px 0 0;color:var(--color-accent);text-underline-offset:3px}
 :is(.react-workspace,.react-cooking-focus) .meal-summary{padding-bottom:12px}
-:is(.react-workspace,.react-cooking-focus) .meal-summary strong{font:500 14px/1.6 var(--font-ui)}
+:is(.react-workspace,.react-cooking-focus) .meal-summary strong{font:500 16px/1.6 var(--font-ui)}
 :is(.react-workspace,.react-cooking-focus) .ui-plan-recipe{padding:16px 0;border-top:1px solid var(--color-border)}
 :is(.react-workspace,.react-cooking-focus) .ui-plan-recipe>strong{font:var(--font-title-weight,700) 20px/1.6 var(--font-title)}
 :is(.react-workspace,.react-cooking-focus) .ui-plan-recipe>.ui-actions{margin-top:12px}
-:is(.react-workspace,.react-cooking-focus) .ui-serving-form{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:12px 0;color:var(--color-muted);font-size:12px}
+:is(.react-workspace,.react-cooking-focus) .ui-serving-form{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:12px 0;color:var(--color-muted);font-size:14px}
 :is(.react-workspace,.react-cooking-focus) .ui-serving-form .ui-input{width:90px;font-family:var(--font-numeric)}
 /* Preparation is a complete, compact checklist, not a reading deck. */
 :is(.react-workspace,.react-cooking-focus) .checklist-scope{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px}
 :is(.react-workspace,.react-cooking-focus) :is(.checklist-scope,.cooking-recipe-scope) button[aria-pressed=true]{background:var(--color-accent-soft);color:var(--color-accent)}
-:is(.react-workspace,.react-cooking-focus) .preparation-progress{display:flex;flex-wrap:wrap;gap:6px 16px;align-items:baseline;font:500 13px/1.7 var(--font-ui);padding:8px 0 12px}
-:is(.react-workspace,.react-cooking-focus) .preparation-progress>span{font-weight:400;font-size:12px;color:var(--color-muted)}
-:is(.react-workspace,.react-cooking-focus) .workspace-prep-list{list-style:none;padding:0;margin:0}
-:is(.react-workspace,.react-cooking-focus) .ui-prep-row{display:flex;align-items:center;gap:10px;padding:13px 0;border-top:1px solid var(--color-border)}
+:is(.react-workspace,.react-cooking-focus) .preparation-progress{display:flex;flex-wrap:wrap;gap:6px 16px;align-items:baseline;font:500 15px/1.7 var(--font-ui);padding:8px 0 12px}
+:is(.react-workspace,.react-cooking-focus) .preparation-progress>span{font-weight:400;font-size:14px;color:var(--color-muted)}
+:is(.react-workspace,.react-cooking-focus) .workspace-prep-list{display:grid;grid-template-columns:minmax(0,1fr);gap:8px 12px;list-style:none;padding:0;margin:0}
+:is(.react-workspace,.react-cooking-focus) .ui-prep-row{display:flex;align-items:center;gap:10px;min-width:0;padding:12px;background:var(--color-surface);border:0;border-radius:10px}
 :is(.react-workspace,.react-cooking-focus) .ui-check-row{display:flex;align-items:center;gap:12px;flex:1;min-width:0;cursor:pointer}
 :is(.react-workspace,.react-cooking-focus) .ui-check-row>span{display:grid;gap:3px;min-width:0}
 :is(.react-workspace,.react-cooking-focus) .ui-check-row strong{font:400 15px/1.7 var(--font-ui);overflow-wrap:anywhere}
-:is(.react-workspace,.react-cooking-focus) .ui-check-row small{font:400 12px/1.6 var(--font-numeric);color:var(--color-muted)}
+:is(.react-workspace,.react-cooking-focus) .ui-check-row small{font:400 14px/1.6 var(--font-numeric);color:var(--color-muted)}
 :is(.react-workspace,.react-cooking-focus) .prep-resolved .ui-check-row strong{text-decoration:line-through;text-decoration-color:var(--color-subtle);color:var(--color-muted)}
 :is(.react-workspace,.react-cooking-focus) .preparation-finish{padding-top:16px;margin-top:12px;border-top:1px solid var(--color-border)}
-:is(.react-workspace,.react-cooking-focus) .ui-adaptation{font:400 14px/1.8 var(--font-reading);padding:10px 12px;border-left:2px solid var(--color-accent);background:var(--color-accent-soft);margin:10px 0;white-space:pre-wrap}
+:is(.react-workspace,.react-cooking-focus) .ui-adaptation{font:400 16px/1.8 var(--font-reading);padding:10px 12px;border-left:2px solid var(--color-accent);background:var(--color-accent-soft);margin:10px 0;white-space:pre-wrap}
 /* Cooking separates browsing, reading and explicit execution. */
 :is(.react-workspace,.react-cooking-focus) .workflow-mode-bar{display:flex;gap:18px;border-bottom:1px solid var(--color-border);margin-bottom:12px}
 :is(.react-workspace,.react-cooking-focus) .workflow-mode-tab{border:0;border-radius:0;border-bottom:2px solid transparent;background:transparent;padding:7px 0;color:var(--color-muted)}
 :is(.react-workspace,.react-cooking-focus) .workflow-mode-tab[aria-selected=true]{border-bottom-color:var(--color-accent);color:var(--color-accent)}
 :is(.react-workspace,.react-cooking-focus) .cooking-recipe-scope{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px}
-:is(.react-workspace,.react-cooking-focus) .cooking-overview{display:flex;align-items:center;gap:14px;margin:10px 0}
-:is(.react-workspace,.react-cooking-focus) .cooking-progress-label{font:400 12px/1.5 var(--font-numeric);white-space:nowrap;color:var(--color-muted)}
+:is(.react-workspace,.react-cooking-focus) .cooking-context{display:flex;flex-wrap:wrap;align-items:center;gap:5px 12px;margin-bottom:8px;color:var(--color-muted);font:400 16px/1.6 var(--font-ui)}
+:is(.react-workspace,.react-cooking-focus) .cooking-recipe-label{margin-right:auto}
+:is(.react-workspace,.react-cooking-focus) .cooking-context .cooking-progress{flex-basis:100%;height:3px}
+:is(.react-workspace,.react-cooking-focus) .cooking-progress-label{font:400 14px/1.5 var(--font-numeric);white-space:nowrap;color:var(--color-muted)}
 :is(.react-workspace,.react-cooking-focus) progress{accent-color:var(--color-accent);height:4px;border:0;border-radius:5px;overflow:hidden;background:var(--color-hover)}
 :is(.react-workspace,.react-cooking-focus) .cooking-progress{width:100%}
 :is(.react-workspace,.react-cooking-focus) .cooking-step-nav{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:14px 0}
-:is(.react-workspace,.react-cooking-focus) .cooking-step-nav>strong{font:400 12px/1.5 var(--font-numeric);color:var(--color-muted)}
-:is(.react-workspace,.react-cooking-focus) .ui-cooking-step{padding:18px 0;border-top:1px solid var(--color-border);min-width:0}
-:is(.react-workspace,.react-cooking-focus) .ui-step-heading{display:flex;align-items:center;gap:12px;margin-bottom:14px}
-:is(.react-workspace,.react-cooking-focus) .cooking-step-number{font:500 22px/1.2 var(--font-numeric);font-variant-numeric:tabular-nums;color:var(--color-accent)}
-:is(.react-workspace,.react-cooking-focus) .cooking-step-status{font:400 12px/1.5 var(--font-ui);color:var(--color-muted)}
+:is(.react-workspace,.react-cooking-focus) .ui-cooking-step{padding:18px 0;border:0;min-width:0}
+:is(.react-workspace,.react-cooking-focus) .ui-step-heading{display:flex;align-items:center;gap:12px;margin-bottom:10px}
+:is(.react-workspace,.react-cooking-focus) .cooking-step-number{font:600 16px/1.5 var(--font-numeric);font-variant-numeric:tabular-nums;color:var(--color-accent)}
+:is(.react-workspace,.react-cooking-focus) .cooking-step-status{font:400 14px/1.5 var(--font-ui);color:var(--color-muted)}
 :is(.react-workspace,.react-cooking-focus) .cooking-step-status.current{color:var(--color-accent)}
 :is(.react-workspace,.react-cooking-focus) .cooking-step-status.done{color:var(--color-success)}
-:is(.react-workspace,.react-cooking-focus) .ui-step-instruction{font:400 16px/1.9 var(--font-reading);white-space:pre-wrap;overflow-wrap:anywhere;margin:0}
-:is(.react-workspace,.react-cooking-focus) .cooking-step-actions{margin-top:20px;padding-top:12px;border-top:1px solid var(--color-border);gap:8px}
+:is(.react-workspace,.react-cooking-focus) .ui-step-instruction{font:400 20px/1.85 var(--font-reading);white-space:pre-wrap;overflow-wrap:anywhere;margin:0}
+:is(.react-workspace,.react-cooking-focus) .ui-cooking-guide .ui-step-instruction{font-size:24px;line-height:1.8}
+:is(.react-workspace,.react-cooking-focus) .cooking-step-actions{margin-top:20px;padding-top:0;border:0;gap:8px}
+:is(.react-workspace,.react-cooking-focus) .cooking-step-picker{min-width:0;max-width:160px}
+:is(.react-workspace,.react-cooking-focus) .cooking-step-picker select{border:0;background:transparent;font-size:16px;text-align:center;padding:7px 8px}
 :is(.react-workspace,.react-cooking-focus) .step-timer-shortcut time{font-family:var(--font-numeric);font-variant-numeric:tabular-nums}
-:is(.react-workspace,.react-cooking-focus) .step-timer-shortcut>span{font-size:12px;color:var(--color-muted)}
-:is(.react-workspace,.react-cooking-focus) .workflow-step-jump{display:flex;width:100%;text-align:left;justify-content:flex-start;border:0;border-radius:6px;background:transparent;padding:8px;color:var(--color-muted);font:400 12px/1.7 var(--font-ui)}
+:is(.react-workspace,.react-cooking-focus) .step-timer-shortcut>span{font-size:14px;color:var(--color-muted)}
+:is(.react-workspace,.react-cooking-focus) .workflow-step-jump{display:flex;width:100%;text-align:left;justify-content:flex-start;border:0;border-radius:6px;background:transparent;padding:8px;color:var(--color-muted);font:400 14px/1.7 var(--font-ui)}
 :is(.react-workspace,.react-cooking-focus) .workflow-step-jump[aria-current=step]{color:var(--color-accent);background:var(--color-accent-soft)}
 :is(.react-workspace,.react-cooking-focus) .workflow-step-index{flex:none;font-family:var(--font-numeric)}
 :is(.react-workspace,.react-cooking-focus) .complete-meal-control{margin-top:18px}
 :is(.react-workspace,.react-cooking-focus) .complete-meal-confirm{padding:14px;border:1px solid var(--color-border);border-radius:10px;background:var(--color-surface)}
 :is(.react-workspace,.react-cooking-focus) .complete-meal-confirm>p{margin-bottom:12px}
 :is(.react-workspace,.react-cooking-focus) .complete-meal-confirm>button+button{margin-left:8px}
-:is(.react-workspace,.react-cooking-focus) .workspace-completion{display:flex;align-items:flex-start;gap:8px;padding:12px;background:var(--color-accent-soft);border-radius:9px;margin:12px 0;font:400 13px/1.75 var(--font-ui)}
+:is(.react-workspace,.react-cooking-focus) .workspace-completion{display:flex;align-items:flex-start;gap:8px;padding:12px;background:var(--color-accent-soft);border-radius:9px;margin:12px 0;font:400 15px/1.75 var(--font-ui)}
 :is(.react-workspace,.react-cooking-focus) .workspace-completion .icon{flex:none;margin-top:2px}
 /* App moves this ordinary scene beside the main conversation. */
 .react-cooking-focus{position:fixed;inset:12px;display:flex;flex-direction:column;min-width:0;min-height:0;margin:0;padding:0;border:1px solid var(--color-border);border-radius:20px;background:var(--color-canvas);color:var(--color-text);overflow:hidden;box-shadow:0 12px 56px var(--color-shadow)}
 .react-cooking-focus .focus-header{display:flex;align-items:center;justify-content:space-between;gap:16px;flex:none;padding:14px 24px 10px}
 .react-cooking-focus .focus-heading{display:flex;align-items:baseline;gap:14px;flex:1;min-width:0}
 .react-cooking-focus .focus-heading h2{font:var(--font-title-weight,700) 22px/1.5 var(--font-title);overflow:hidden;white-space:nowrap;text-overflow:ellipsis;min-width:0}
-.react-cooking-focus .focus-header-progress{font:400 12px/1.5 var(--font-ui);color:var(--color-muted);white-space:nowrap}
+.react-cooking-focus .focus-header-progress{font:400 14px/1.5 var(--font-ui);color:var(--color-muted);white-space:nowrap}
 .react-cooking-focus .focus-header-actions{display:flex;align-items:center;gap:10px;flex:none}
 .react-cooking-focus #exit-focus{width:38px;padding:8px}
 .react-cooking-focus .focus-modes{display:flex;flex:none;gap:18px;overflow-x:auto;padding:0 24px;border-bottom:1px solid var(--color-border)}
@@ -143,11 +147,11 @@
 .react-cooking-focus .focus-content>.ui-component{border:0;padding:0;min-height:100%;display:flex;flex-direction:column}
 .react-cooking-focus .focus-content>.ui-component>.ui-component-heading{display:none}
 .react-cooking-focus .focus-content .ui-recipe-name{font-size:20px;margin:0 0 8px}
-.react-cooking-focus .focus-content .ui-step-instruction{font-size:21px;line-height:1.85}
+.react-cooking-focus .focus-content .ui-step-instruction{font-size:26px;line-height:1.85}
 .react-cooking-focus .focus-content .ui-cooking-guide{display:flex;flex:1;min-height:0;flex-direction:column}
 .react-cooking-focus .cooking-guide-tools{flex:none}
 .react-cooking-focus .focus-cooking-layout{display:flex;flex:1;flex-direction:column;gap:10px;min-width:0;min-height:0}
-.react-cooking-focus .focus-step-outline{flex:none;min-width:0;max-height:145px;border-bottom:1px solid var(--color-border);padding-bottom:5px;color:var(--color-muted);font:400 12px/1.7 var(--font-ui)}
+.react-cooking-focus .focus-step-outline{flex:none;min-width:0;max-height:145px;border-bottom:1px solid var(--color-border);padding-bottom:5px;color:var(--color-muted);font:400 14px/1.7 var(--font-ui)}
 .react-cooking-focus .focus-step-outline>summary{min-height:32px;line-height:32px;font-weight:550;cursor:pointer}
 .react-cooking-focus .focus-step-outline-body{max-height:105px;overflow:auto;overscroll-behavior:contain}
 .react-cooking-focus .focus-step-outline ol{list-style:none;padding:0;margin:0}
@@ -156,8 +160,7 @@
 .react-cooking-focus .cooking-mode-detail .cooking-step-main{display:flex;flex:1;flex-direction:column;min-height:120px}
 .react-cooking-focus .cooking-step-actions{position:sticky;bottom:0;z-index:1;background:var(--color-canvas);padding-bottom:4px;flex:none}
 .react-cooking-focus .workspace-reading-pages{display:flex;flex:1;min-height:140px;flex-direction:column}
-.react-cooking-focus .workspace-reading-viewport{flex:1;min-height:100px;max-height:44dvh;overflow:auto;overscroll-behavior:contain;font:400 21px/1.85 var(--font-reading)}
-.react-cooking-focus .reading-pagination{flex:none;margin-top:12px;padding-top:8px}
+.react-cooking-focus .workspace-reading-viewport{flex:1;min-height:100px;max-height:44dvh;overflow:auto;overscroll-behavior:contain;font:400 26px/1.85 var(--font-reading)}
 .react-cooking-focus .focus-message-copy{white-space:pre-wrap;font:400 16px/1.9 var(--font-reading)}
 .react-cooking-focus .focus-footer{flex:none;width:100%;max-height:42dvh;padding:0 24px 16px;background:var(--color-canvas);overflow:auto}
 .react-cooking-focus .focus-composer-slot{max-width:960px;margin:auto}
@@ -165,7 +168,7 @@
 .react-cooking-focus .focus-composer-slot .composer{display:block;width:100%;margin:0;max-width:none}
 .react-cooking-focus .focus-composer-slot .composer textarea{width:100%;min-height:38px;max-height:110px;resize:none;box-sizing:border-box;font:400 16px/1.7 var(--font-ui)}
 .react-cooking-focus .focus-composer-slot .composer-bottom{display:flex;align-items:center;gap:8px;margin-top:8px}
-.react-cooking-focus .focus-composer-slot .composer-bottom .composer-hint{flex:1;font:400 10px/1.6 var(--font-ui);color:var(--color-muted)}
+.react-cooking-focus .focus-composer-slot .composer-bottom .composer-hint{flex:1;font:400 12px/1.6 var(--font-ui);color:var(--color-muted)}
 .react-cooking-focus .focus-composer-slot .composer-bottom>.send-button{margin-left:auto}
 @media(min-width:1000px){
   .react-cooking-focus .focus-cooking-layout{display:grid;grid-template-columns:220px minmax(0,1fr);gap:30px}
@@ -174,34 +177,34 @@
 }
 /* One timer service has independent app and modal popover hosts. */
 .react-kitchen-timers{position:relative;display:inline-flex;flex:none;z-index:20}
-.react-kitchen-timers .timer-trigger{display:inline-flex;align-items:center;gap:7px;min-height:36px;border:0;border-radius:8px;background:transparent;color:var(--color-muted);font:400 13px/1.5 var(--font-ui);font-variant-numeric:tabular-nums;padding:7px 10px}
+.react-kitchen-timers .timer-trigger{display:inline-flex;align-items:center;gap:7px;min-height:36px;border:0;border-radius:8px;background:transparent;color:var(--color-muted);font:400 15px/1.5 var(--font-ui);font-variant-numeric:tabular-nums;padding:7px 10px}
 .react-kitchen-timers .timer-trigger:hover,.react-kitchen-timers .timer-trigger[aria-expanded=true]{background:var(--color-accent-soft);color:var(--color-accent)}
 .react-kitchen-timers .timer-trigger .icon{width:17px;height:17px}
 .react-kitchen-timers .timer-trigger[data-state=expired]{color:var(--color-warning);border:0;background:transparent}
-.react-kitchen-timers .timer-trigger-count{display:inline-flex;align-items:center;justify-content:center;min-width:17px;height:17px;padding:0 4px;background:var(--color-accent-soft);color:var(--color-accent);border-radius:8px;font:500 10px/1 var(--font-ui)}
+.react-kitchen-timers .timer-trigger-count{display:inline-flex;align-items:center;justify-content:center;min-width:17px;height:17px;padding:0 4px;background:var(--color-accent-soft);color:var(--color-accent);border-radius:8px;font:500 12px/1 var(--font-ui)}
 .react-timer-popover{position:fixed;z-index:1200;display:flex;flex-direction:column;gap:12px;min-width:0;overflow:auto;padding:16px;border:1px solid var(--color-border);border-radius:13px;background:var(--color-canvas);box-shadow:0 8px 36px var(--color-shadow)}
 .react-timer-popover .timer-popup-heading{display:flex;align-items:center;justify-content:space-between;gap:12px;flex:none}
-.react-timer-popover .timer-popup-heading h3{font:600 14px/1.5 var(--font-ui)}
+.react-timer-popover .timer-popup-heading h3{font:600 16px/1.5 var(--font-ui)}
 .react-timer-popover .timer-popup-heading>div{display:flex;gap:4px}
 .react-timer-popover .timer-popup-heading .timer-popup-button{width:34px;min-height:34px;padding:6px;border-color:transparent}
 .react-timer-popover .timer-popup-list{min-height:0;overflow-y:auto;overflow-x:hidden;overscroll-behavior:contain}
 :is(.react-workspace,.react-cooking-focus,.react-timer-popover) .timer-popup-row{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex-wrap:wrap;padding:12px 0;border-top:1px solid var(--color-border)}
 :is(.react-workspace,.react-cooking-focus,.react-timer-popover) .timer-popup-copy{display:grid;gap:6px;flex:1;min-width:110px}
-:is(.react-workspace,.react-cooking-focus,.react-timer-popover) .timer-popup-copy strong{font:500 13px/1.6 var(--font-ui);overflow-wrap:anywhere}
-:is(.react-workspace,.react-cooking-focus,.react-timer-popover) .timer-popup-copy p{font:400 11px/1.6 var(--font-ui);color:var(--color-muted)}
+:is(.react-workspace,.react-cooking-focus,.react-timer-popover) .timer-popup-copy strong{font:500 15px/1.6 var(--font-ui);overflow-wrap:anywhere}
+:is(.react-workspace,.react-cooking-focus,.react-timer-popover) .timer-popup-copy p{font:400 13px/1.6 var(--font-ui);color:var(--color-muted)}
 :is(.react-workspace,.react-cooking-focus,.react-timer-popover) .timer-popup-readout{display:flex;align-items:baseline;gap:10px}
 :is(.react-workspace,.react-cooking-focus,.react-timer-popover) .timer-popup-clock{font:500 26px/1.3 var(--font-numeric);font-variant-numeric:tabular-nums}
-:is(.react-workspace,.react-cooking-focus,.react-timer-popover) .timer-popup-readout>span{font:400 11px/1.5 var(--font-ui);color:var(--color-muted)}
+:is(.react-workspace,.react-cooking-focus,.react-timer-popover) .timer-popup-readout>span{font:400 13px/1.5 var(--font-ui);color:var(--color-muted)}
 :is(.react-workspace,.react-cooking-focus,.react-timer-popover) .timer-popup-actions{display:flex;flex-wrap:wrap;gap:6px;align-self:center}
-:is(.react-workspace,.react-cooking-focus,.react-timer-popover) .timer-popup-button{font:400 12px/1.4 var(--font-ui);min-height:34px;padding:7px 9px}
+:is(.react-workspace,.react-cooking-focus,.react-timer-popover) .timer-popup-button{font:400 14px/1.4 var(--font-ui);min-height:34px;padding:7px 9px}
 :is(.react-workspace,.react-cooking-focus,.react-timer-popover) .timer-popup-copy progress{width:100%;height:3px;accent-color:var(--color-accent)}
 :is(.react-workspace,.react-cooking-focus,.react-timer-popover) .timer-popup-row[data-state=expired] .timer-popup-clock{color:var(--color-warning)}
 .react-timer-popover .timer-highlight{background:var(--color-accent-soft);border-radius:9px;padding:0 9px;margin:0 -1px}
-.react-timer-popover .timer-popup-empty{color:var(--color-muted);font:400 13px/1.8 var(--font-ui);padding:12px 0}
-.react-timer-popover .timer-popup-policy{border-top:1px solid var(--color-border);padding-top:10px;color:var(--color-muted);font:400 11px/1.7 var(--font-ui);flex:none}
+.react-timer-popover .timer-popup-empty{color:var(--color-muted);font:400 15px/1.8 var(--font-ui);padding:12px 0}
+.react-timer-popover .timer-popup-policy{border-top:1px solid var(--color-border);padding-top:10px;color:var(--color-muted);font:400 13px/1.7 var(--font-ui);flex:none}
 :is(.react-workspace,.react-cooking-focus,.react-timer-popover) .timer-create-form{display:grid;gap:14px;padding:12px 0 0}
 :is(.react-workspace,.react-cooking-focus,.react-timer-popover) .timer-duration-fields{display:grid;grid-template-columns:1fr 1fr;gap:12px}
-:is(.react-workspace,.react-cooking-focus,.react-timer-popover) .timer-duration-fields>label{display:grid;gap:6px;font:400 12px/1.5 var(--font-ui);color:var(--color-muted)}
+:is(.react-workspace,.react-cooking-focus,.react-timer-popover) .timer-duration-fields>label{display:grid;gap:6px;font:400 14px/1.5 var(--font-ui);color:var(--color-muted)}
 :is(.react-workspace,.react-cooking-focus,.react-timer-popover) .timer-duration-fields input{font-family:var(--font-numeric)}
 @media(max-width:600px){
   :is(.react-workspace,.react-cooking-focus,.react-timer-popover) :is(input:not([type=checkbox]):not([type=radio]),textarea,select):not(:where(.composer-area *)){font-size:16px}
@@ -212,12 +215,13 @@
   .react-cooking-focus .focus-header{padding:12px 14px 8px;gap:10px}
   .react-cooking-focus .focus-heading{gap:6px;display:block}
   .react-cooking-focus .focus-heading h2{font-size:19px}
-  .react-cooking-focus .focus-header-progress{font-size:10px}
+  .react-cooking-focus .focus-header-progress{font-size:12px}
   .react-cooking-focus .focus-header-actions{gap:6px}
   .react-cooking-focus .focus-modes{padding:0 14px;gap:18px}
   .react-cooking-focus .focus-deck{padding:16px 16px 12px}
-  .react-cooking-focus .focus-content .ui-step-instruction{font-size:19px;line-height:1.85}
-  .react-cooking-focus .workspace-reading-viewport{font-size:19px;line-height:1.85;max-height:40dvh}
+  :is(.react-workspace,.react-cooking-focus) .ui-cooking-guide .ui-step-instruction{font-size:22px}
+  .react-cooking-focus .focus-content .ui-step-instruction{font-size:22px;line-height:1.85}
+  .react-cooking-focus .workspace-reading-viewport{font-size:22px;line-height:1.85;max-height:40dvh}
   .react-cooking-focus .focus-footer{padding:0 12px max(12px,env(safe-area-inset-bottom));max-height:44dvh}
   .react-cooking-focus .focus-content .ui-recipe-name{font-size:19px}
 }
@@ -225,7 +229,7 @@
   .react-cooking-focus .focus-header{padding-top:6px;padding-bottom:5px}
   .react-cooking-focus .focus-heading h2{font-size:18px}
   .react-cooking-focus .focus-header-progress{display:none}
-  .react-cooking-focus .focus-modes button{min-height:32px;padding:5px 0;font-size:12px}
+  .react-cooking-focus .focus-modes button{min-height:32px;padding:5px 0;font-size:14px}
   .react-cooking-focus .focus-deck{padding-top:10px;padding-bottom:8px}
   .react-cooking-focus .focus-footer{max-height:35dvh;padding-bottom:8px}
   .react-cooking-focus .focus-footer :is(.resume-draft,.reply-suggestions){display:none}
@@ -234,18 +238,35 @@
   .react-cooking-focus .focus-step-reading>.ui-cooking-step{min-height:0;padding-top:0;padding-bottom:0}
   .react-cooking-focus .cooking-mode-detail .cooking-step-main{min-height:0;flex:none}
   .react-cooking-focus .workspace-reading-pages{min-height:0;flex:none}
-  .react-cooking-focus .workspace-reading-viewport{min-height:40px;max-height:22dvh;font-size:18px;line-height:1.8}
-  .react-cooking-focus .focus-content .ui-step-instruction{font-size:18px;line-height:1.8}
-  .react-cooking-focus .cooking-step-actions{margin-top:10px;padding-top:8px}
+  .react-cooking-focus .workspace-reading-viewport{min-height:40px;max-height:22dvh;font-size:22px;line-height:1.8}
+  .react-cooking-focus .focus-content .ui-step-instruction{font-size:22px;line-height:1.8}
+  .react-cooking-focus .cooking-step-actions{position:static;margin-top:10px;padding-top:8px}
   .react-timer-popover{padding:12px}
 }
 @media(max-height:500px) and (min-width:700px){
-  .react-cooking-focus .focus-cooking-layout{display:grid;grid-template-columns:150px minmax(0,1fr);gap:18px}
-  .react-cooking-focus .focus-step-outline{height:100%;max-height:none;border-bottom:0;border-right:1px solid var(--color-border);padding:0 12px 0 0}
-  .react-cooking-focus .focus-step-outline-body{max-height:calc(100% - 32px)}
+  .react-cooking-focus .cooking-guide-tools{display:flex;align-items:center;flex-wrap:wrap;gap:8px 18px;margin-bottom:8px}
+  .react-cooking-focus .cooking-guide-tools .workflow-mode-bar{margin:0;flex:none}
+  .react-cooking-focus .cooking-context{flex:1;min-width:100px;margin:0}
+  .react-cooking-focus .cooking-recipe-label{display:none}
+  .react-cooking-focus .cooking-recipe-scope{width:100%;margin:0}
+  .react-cooking-focus .focus-cooking-layout{display:grid;flex:none;grid-template-columns:150px minmax(0,1fr);gap:18px;align-items:start}
+  .react-cooking-focus .focus-step-outline{height:auto;max-height:150px;border-bottom:0;border-right:1px solid var(--color-border);padding:0 12px 0 0}
+  .react-cooking-focus .focus-step-outline-body{max-height:118px;overflow:auto}
   .react-cooking-focus .focus-step-reading>.ui-cooking-step{border-top:0}
   .react-cooking-focus .workspace-reading-viewport{max-height:22dvh}
 }
 @media(prefers-reduced-motion:reduce){
   :is(.react-workspace,.react-cooking-focus,.react-timer-popover,.react-kitchen-timers) *{scroll-behavior:auto;animation:none;transition:none}
+}
+
+@container kitchen-card (min-width:560px){
+  :is(.react-workspace,.react-cooking-focus) .workspace-prep-list{grid-template-columns:repeat(2,minmax(0,1fr))}
+  :is(.react-workspace,.react-cooking-focus) .preference-fields{grid-template-columns:repeat(2,minmax(0,1fr))}
+  :is(.react-workspace,.react-cooking-focus) .preference-field-wide{grid-column:auto}
+  :is(.react-workspace,.react-cooking-focus) .preference-fields>fieldset,:is(.react-workspace,.react-cooking-focus) .preference-fields>label:has(textarea){grid-column:1 / -1}
+}
+@container kitchen-card (max-width:320px){
+  :is(.react-workspace,.react-cooking-focus) .preference-fields{grid-template-columns:minmax(0,1fr)}
+  :is(.react-workspace,.react-cooking-focus) .cooking-step-nav{gap:4px}
+  :is(.react-workspace,.react-cooking-focus) .cooking-step-nav .page-button{padding:7px 6px}
 }

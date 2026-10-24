@@ -22,10 +22,32 @@ export function Sidebar({ state, page, collapsed, onCollapse, onClose, navigate,
   const menuPanel = useRef<HTMLDivElement>(null);
   const menuTrigger = useRef<HTMLButtonElement | null>(null);
   const newChat = useRef<HTMLButtonElement>(null);
+  const sessionList = useRef<HTMLElement>(null), sessionSentinel = useRef<HTMLDivElement>(null);
+  const loadingMore = useRef(false);
   const latest = state.session?.messages?.findLast(message => message.role === 'assistant');
   const context = latest?.context_usage;
   const selected = menu ? state.sessions.find(session => session.id === menu.id) || menu : null;
   const selectedRunning = Boolean(selected && (selected.running || state.runs[selected.id] || state.cache[selected.id]?.running));
+  useEffect(() => {
+    const root = sessionList.current, target = sessionSentinel.current;
+    if (!root || !target || collapsed || !state.nextCursor || state.sessionsLoading || state.sessionsError) return;
+    let active = true;
+    const loadMore = () => {
+      if (!active || loadingMore.current) return;
+      loadingMore.current = true;
+      void chefStore.moreSessions().catch(() => { /* The list keeps its inline retry action. */ }).finally(() => { loadingMore.current = false; });
+    };
+    if (typeof IntersectionObserver !== 'undefined') {
+      const observer = new IntersectionObserver(entries => {
+        if (entries.some(entry => entry.isIntersecting)) loadMore();
+      }, { root, rootMargin: '0px 0px 160px 0px', threshold: 0 });
+      observer.observe(target);
+      return () => { active = false; observer.disconnect(); };
+    }
+    const onScroll = () => { if (root.scrollHeight - root.scrollTop - root.clientHeight < 160) loadMore(); };
+    root.addEventListener('scroll', onScroll, { passive: true });
+    return () => { active = false; root.removeEventListener('scroll', onScroll); };
+  }, [collapsed, state.nextCursor, state.sessionsLoading, state.sessionsError]);
   function close(restoreFocus = true) {
     setMenu(null); setAction(null); setError('');
     if (restoreFocus) {
@@ -95,7 +117,7 @@ export function Sidebar({ state, page, collapsed, onCollapse, onClose, navigate,
       <button type="button" title="食光手记" aria-current={page === 'journal' ? 'page' : undefined} onClick={() => navigate('journal')}><Icon name="utensils" /><span>食光手记</span></button>
       <button type="button" title="菜谱中心" aria-current={page === 'recipes' ? 'page' : undefined} onClick={() => navigate('recipes')}><Icon name="book-open" /><span>菜谱中心</span></button>
     </nav><div className="sidebar-heading">最近会话</div>
-    <nav className="sessions" aria-label="最近会话">{state.sessions.map(session => {
+    <nav ref={sessionList} className="sessions" aria-label="最近会话">{state.sessions.map(session => {
       const cached = state.cache[session.id];
       const running = Boolean(state.runs[session.id] || (cached ? cached.running : session.running));
       const waiting = !running && Boolean(cached ? cached.awaiting_user || cached.pending_question : session.awaiting_user);
@@ -111,7 +133,7 @@ export function Sidebar({ state, page, collapsed, onCollapse, onClose, navigate,
       </div>;
     })}{!state.sessions.length && !state.sessionsLoading && !state.sessionsError && <div className="session-empty">从一个新对话开始吧。</div>}
       {state.sessionsError ? <div className="session-error" role="alert">{state.sessionsError}<button type="button" disabled={state.sessionsLoading} onClick={() => void (state.nextCursor ? chefStore.moreSessions() : chefStore.loadSessions()).catch(error => notify(error.message))}>{state.sessionsLoading ? '正在重试…' : '加载失败，重试'}</button></div>
-        : (state.nextCursor || state.sessionsLoading) && <button type="button" className="session-load-more" disabled={state.sessionsLoading} onClick={() => void chefStore.moreSessions().catch(error => notify(error.message))}>{state.sessionsLoading ? '正在读取…' : '加载更多对话'}</button>}
+        : (state.nextCursor || state.sessionsLoading) && <div ref={sessionSentinel} className="session-load-more" role={state.sessionsLoading ? 'status' : undefined} aria-hidden={!state.sessionsLoading}>{state.sessionsLoading ? '正在读取…' : ''}</div>}
     </nav>
     {developer && context && <ContextMeter context={context} onInspect={onInspect} />}
     <div className="sidebar-footer"><button type="button" className="settings-link" title="设置" aria-current={page === 'settings' ? 'page' : undefined} onClick={() => navigate('settings')}><Icon name="settings" /><span>设置</span></button></div>

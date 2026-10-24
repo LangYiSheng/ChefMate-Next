@@ -189,10 +189,13 @@ class AgentTools(RetrievalEvidence):
                 if projection.get("ui_snapshot"):
                     projection["ui_snapshot"] = self._snapshot_delta(previous_ui, projection["ui_snapshot"])
                 if plain.get("actions"):
-                    projection["actions"] = [{"kind": action.get("kind"), "component": {
-                        key: action.get("component", {}).get(key) for key in ("id", "kind", "title")
-                        if key in action.get("component", {})
-                    }} for action in plain["actions"]]
+                    projection["actions"] = [
+                        {key: action[key] for key in ("kind", "action_id", "mode", "view_kind") if key in action}
+                        if action.get("kind") == "set_kitchen_display" else
+                        {"kind": action.get("kind"), "component": {
+                            key: action.get("component", {}).get(key) for key in ("id", "kind", "title")
+                            if key in action.get("component", {})
+                        }} for action in plain["actions"]]
                 return _compact_result(projection, self.config.max_tool_result_chars)
             except Exception:
                 return {"status": "tool_error", "message": "业务工具无法完成操作，请查看当前状态后重试。"}

@@ -15,6 +15,36 @@ beforeEach(() => { request.mockReset(); });
 afterEach(() => { sessions.forEach(id => workspaceStore.remove(id)); sessions.length = 0; });
 
 describe('chat recipe review', () => {
+  it('folds at the header without discarding the current tab, loaded draft revision or confirmation controls', async () => {
+    request.mockResolvedValue({ ...draft, revision: 3 });
+    const view = render(<RecipeReviews {...props()} />); await loaded();
+    fireEvent.click(screen.getByRole('tab', { name: '做法' }));
+    const panel = view.container.querySelector('.recipe-review-body')!;
+    const collapse = screen.getByRole('button', { name: '收起个人菜谱：家常炒蛋' });
+    expect(collapse).toHaveAttribute('aria-expanded', 'true');
+    fireEvent.click(collapse);
+    expect(panel).not.toBeVisible();
+    expect(screen.getByRole('heading', { name: '家常炒蛋' })).toBeVisible();
+    expect(screen.queryByRole('button', { name: '确认保存到我的菜谱' })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '展开个人菜谱：家常炒蛋' }));
+    expect(panel).toBeVisible(); expect(view.container.querySelector('.recipe-review-body')).toBe(panel);
+    expect(screen.getByRole('tab', { name: '做法' })).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByText('个人菜谱 · 第 3 版')).toBeVisible();
+    expect(screen.getByRole('button', { name: '确认保存到我的菜谱' })).toBeEnabled();
+    expect(request).toHaveBeenCalledOnce();
+  });
+
+  it('keeps a late read failure visible even after the recipe card was folded', async () => {
+    let reject!: (reason: Error) => void;
+    request.mockImplementation(() => new Promise((_yes, no) => { reject = no; }));
+    render(<RecipeReviews {...props()} />);
+    fireEvent.click(screen.getByRole('button', { name: '收起个人菜谱：家常炒蛋' }));
+    await act(async () => reject(new Error('暂时无法读取这份菜谱')));
+    expect(screen.getByRole('alert')).toBeVisible();
+    expect(screen.getByRole('alert')).toHaveTextContent('暂时无法读取这份菜谱');
+    expect(screen.getByRole('button', { name: '展开个人菜谱：家常炒蛋' })).toHaveAttribute('aria-expanded', 'false');
+  });
+
   it('collects highest revisions from successful recipe records and renders only the latest message owner', async () => {
     const second = { ...draft, recipe_id: 'custom-second' }, latest = { ...draft, revision: 4 };
     const source = { tool_calls: [

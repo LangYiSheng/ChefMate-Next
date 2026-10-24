@@ -4,6 +4,7 @@ import { chefStore } from '../runtime/store';
 import { workspaceStore } from '../features/workspace/store';
 import { Icon } from './Icon';
 import { Markdown, safeLink } from './Markdown';
+import { CardToggle } from './CardToggle';
 import './RecipeReview.css';
 
 type Data = Record<string, any>;
@@ -65,6 +66,7 @@ type CardState = { scope: string; record: RecipeReviewRecord; phase: 'loading' |
 function RecipeReviewCard({ receipt, sessionId, locked, pendingQuestion, syncing, onAsk }: { receipt: RecipeReviewRecord; sessionId: string; locked: boolean; pendingQuestion: boolean; syncing: boolean; onAsk: (text: string) => void }) {
   const scope = `${sessionId}:${receipt.id}:${receipt.revision}`, [reload, setReload] = useState(0), [tab, setTab] = useState<(typeof tabs)[number][0]>('ingredients');
   const [state, setState] = useState<CardState>({ scope, record: receipt, phase: 'loading', error: '', notice: '', saving: false });
+  const [expanded, setExpanded] = useState(true), bodyId = useId();
   const epoch = useRef(0), latestScope = useRef(scope), working = useRef(false), post = useRef<AbortController | null>(null), tabId = useId();
   latestScope.current = scope;
   useEffect(() => {
@@ -106,7 +108,8 @@ function RecipeReviewCard({ receipt, sessionId, locked, pendingQuestion, syncing
     } finally { if (valid()) { working.current = false; post.current = null; } }
   }
   return <section className="recipe-review" aria-label={`个人菜谱审核：${doc.name || '未命名菜谱'}`}>
-    <header className="recipe-review-heading"><span className="recipe-review-icon"><Icon name="book-open" /></span><div><p>个人菜谱 · 第 {record.revision} 版</p><h3>{doc.name || '未命名菜谱'}</h3></div><span className={`recipe-review-state ${record.status}`}>{record.status === 'saved' ? '已保存' : deleted ? '不再可用' : '待核对'}</span></header>
+    <header className="recipe-review-heading"><span className="recipe-review-icon"><Icon name="book-open" /></span><div><p>个人菜谱 · 第 {record.revision} 版</p><h3>{doc.name || '未命名菜谱'}</h3></div><span className={`recipe-review-state ${record.status}`}>{record.status === 'saved' ? '已保存' : deleted ? '不再可用' : '待核对'}</span><CardToggle title={`个人菜谱：${doc.name || '未命名菜谱'}`} expanded={expanded} controls={bodyId} onToggle={() => setExpanded(value => !value)} /></header>
+    <div id={bodyId} className="card-disclosure-body" hidden={!expanded}>
     {doc.description && <p className="recipe-review-description">{doc.description}</p>}
     <dl className="recipe-review-facts"><div><dt>份数</dt><dd>{doc.servings == null ? '未知' : `${doc.servings} 份`}</dd></div><div><dt>总耗时</dt><dd>{time(doc.total_time_min)}</dd></div><div><dt>难度</dt><dd>{difficulties[doc.difficulty] || '未知'}</dd></div></dl>
     <nav className="recipe-review-tabs" role="tablist" aria-label="菜谱审核内容">{tabs.map(([id, label, icon], index) => <button key={id} type="button" role="tab" id={`${tabId}-${id}`} aria-controls={`${tabId}-panel`} aria-selected={tab === id} tabIndex={tab === id ? 0 : -1} onClick={() => setTab(id)} onKeyDown={event => { if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return; event.preventDefault(); const next = event.key === 'Home' ? 0 : event.key === 'End' ? tabs.length - 1 : (index + (event.key === 'ArrowRight' ? 1 : -1) + tabs.length) % tabs.length; setTab(tabs[next][0]); document.getElementById(`${tabId}-${tabs[next][0]}`)?.focus(); }}><Icon name={icon} />{label}</button>)}</nav>
@@ -122,9 +125,10 @@ function RecipeReviewCard({ receipt, sessionId, locked, pendingQuestion, syncing
     </div>
       {deleted ? <p className="recipe-review-muted">这份个人菜谱已删除，不再可用。</p> : pendingQuestion && isDraft ? <p className="recipe-review-note" role="status">请先完成下方的确认问题，这里暂不重复确认保存。</p> : syncing && isDraft ? <p className="recipe-review-note" role="status">会话确认状态尚未就绪，完成确认或重新读取后再保存。</p> : isDraft && <p className="recipe-review-muted">尚未保存到我的菜谱。核对食材、用量与步骤后再确认；原文未明确的信息保留未知。</p>}
       {(!current || state.phase === 'loading') && <p className="recipe-review-note" role="status"><Icon name="loader-circle" className="spin" />正在读取菜谱当前版本…</p>}
-      {current && state.error && <p className="recipe-review-error" role="alert">{state.error}</p>}
-      {current && state.notice && <p className="recipe-review-note" role="status">{state.notice}</p>}
     </footer>
+    </div>
+    {current && state.error && <p className="recipe-review-error" role="alert">{state.error}</p>}
+    {current && state.notice && <p className="recipe-review-note" role="status">{state.notice}</p>}
   </section>;
 }
 

@@ -32,7 +32,7 @@ describe('conversation reading position', () => {
       runs: { a: { sessionId: 'a', requestId: 'request', input: '登记', status: '正在登记这顿饭…' } } };
     const props = { state, onRecipe: vi.fn(), onAsk: vi.fn(), onFocus: vi.fn() };
     const view = render(<Conversation {...props} developer={false} />);
-    expect(screen.getByRole('status')).toHaveTextContent('正在登记这顿饭…');
+    expect(screen.getByRole('status')).toHaveTextContent('登记实际食用份额…');
     expect(view.container.querySelector('.assistant-progress')).not.toBeNull(); expect(view.container.querySelector('.execution-trace')).toBeNull();
     for (const hidden of ['内部执行说明', '工具内部参数', '工具内部结果', '12345', '尚未完成的过程文字']) expect(view.container).not.toHaveTextContent(hidden);
     view.rerender(<Conversation {...props} developer />);

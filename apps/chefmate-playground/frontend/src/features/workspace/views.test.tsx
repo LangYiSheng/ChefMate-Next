@@ -5,7 +5,8 @@ import { CookingFocus, KitchenTimers, MessageViews, QuestionPanel, WorkspacePane
 import { workspaceStore } from './store';
 import { chefStore } from '../../runtime/store';
 import type { View } from './protocol';
-import { ReadingPages, splitReadingText } from './ReadingPages';
+import { ReadingPages } from './ReadingPages';
+import { ViewCard } from './views';
 
 const form: View = { id: 'prefs', kind: 'preference_form', revision: 1, title: '用餐条件', editable: true, data: { fields: [{ name: 'servings', input_type: 'number', label: '用餐人数' }], values: { servings: 2 } } };
 const snapshot = (views: View[], stage = 'planning', extra = {}) => ({ status: 'ok', workspace: { revision: 1, stage, selected_recipe_ids: [], ...extra }, views });
@@ -160,12 +161,56 @@ describe('React workspace behavior', () => {
     const composer = screen.getByRole('textbox', { name: '交流草稿' }); composer.focus(); fireEvent.keyDown(composer, { key: 'Escape' });
     expect(screen.queryByRole('dialog', { name: '厨房计时' })).not.toBeInTheDocument(); expect(onClose).not.toHaveBeenCalled(); expect(document.activeElement).toBe(composer);
   });
-  it('preserves every character in long cooking directions across reading pages', () => {
-    const text = '翻炒均匀，保持小火。\n注意锅底，不要烧干。🥘'.repeat(90), pages = splitReadingText(text, 120);
-    expect(pages.length).toBeGreaterThan(1); expect(pages.join('')).toBe(text);
-    render(<ReadingPages text={text} label="步骤说明" />); expect(screen.getByRole('navigation', { name: '步骤说明分页' })).toBeInTheDocument();
-    const first = document.querySelector('.workspace-reading-viewport')!.textContent;
-    fireEvent.click(screen.getByRole('button', { name: '下一页' })); expect(document.querySelector('.workspace-reading-viewport')!.textContent).not.toBe(first);
+  it('keeps long cooking directions together in an accessible scrollable reading region', () => {
+    const text = '翻炒均匀，保持小火。\n注意锅底，不要烧干。🥘'.repeat(90);
+    render(<ReadingPages text={text} label="步骤说明" />);
+    expect(screen.getByRole('region', { name: '步骤说明' }).textContent).toBe(text);
+    expect(screen.getByRole('region', { name: '步骤说明' })).toHaveAttribute('tabindex', '0');
+    expect(screen.queryByRole('navigation', { name: '步骤说明分页' })).not.toBeInTheDocument();
+  });
+  it('shows every preference together and leaves successful syncing quiet', () => {
+    const fields = Array.from({ length: 8 }, (_, index) => ({ name: `field-${index}`, label: `用餐条件 ${index + 1}`, input_type: 'text', value: '' }));
+    const view: View = { ...form, data: { fields, values: {} } }, id = seed([view]);
+    render(<WorkspacePanel sessionId={id} running={false} onContinue={() => {}} />);
+    expect(screen.getAllByRole('textbox')).toHaveLength(8);
+    expect(screen.queryByRole('navigation', { name: '条件分页' })).not.toBeInTheDocument();
+    expect(screen.queryByText('已同步')).not.toBeInTheDocument();
+    fireEvent.change(screen.getByRole('textbox', { name: '用餐条件 8' }), { target: { value: '少油' } });
+    expect(workspaceStore.entry(id).drafts.prefs.values['field-7']).toBe('少油');
+  });
+  it('keeps previously revealed recipes in view and expands the remaining choices in one action', () => {
+    const recipes = Array.from({ length: 9 }, (_, index) => ({ recipe_id: `dish-${index}`, name: `菜品 ${index + 1}` }));
+    const view: View = { id: 'choices-reveal', kind: 'recipe_choices', revision: 1, editable: true, data: { recipes } }, id = seed([view]);
+    render(<WorkspacePanel sessionId={id} running={false} onContinue={() => {}} />);
+    expect(screen.getAllByRole('checkbox')).toHaveLength(4);
+    fireEvent.click(screen.getByRole('button', { name: '展开其余 5 项候选菜品' }));
+    expect(screen.getAllByRole('checkbox')).toHaveLength(9);
+    expect(screen.getByText('菜品 1')).toBeInTheDocument(); expect(screen.getByText('菜品 9')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '上一页' })).not.toBeInTheDocument();
+  });
+  it('puts the collapse control next to the card heading and exposes its expanded state', () => {
+    const id = seed([form]), onCollapse = vi.fn();
+    const rendered = render(<ViewCard view={form} entry={workspaceStore.entry(id)} sessionId={id} onCollapse={onCollapse} />);
+    const collapse = screen.getByRole('button', { name: '收起用餐条件' });
+    expect(collapse.closest('.ui-component-heading')).toBe(rendered.container.querySelector('.ui-component-heading'));
+    expect(collapse).toHaveAttribute('aria-expanded', 'true');
+    fireEvent.click(collapse); expect(onCollapse).toHaveBeenCalledTimes(1);
+  });
+  it('jumps directly to a cooking step without changing stored cooking progress', () => {
+    const view: View = { id: 'jump-guide', kind: 'cooking_guide', revision: 1, editable: true, data: { recipe_id: 'soup', recipe_name: '汤', active_step_id: 'wash', steps: [{ id: 'wash', ordinal: 0, instruction: '洗净食材。', status: 'pending' }, { id: 'boil', ordinal: 1, instruction: '加水煮开。', status: 'pending' }] } };
+    const id = seed([view], 'cooking'), dispatch = vi.spyOn(workspaceStore, 'dispatch').mockResolvedValue({ status: 'ok' });
+    render(<ViewCard view={view} entry={workspaceStore.entry(id)} sessionId={id} />);
+    fireEvent.change(screen.getByRole('combobox', { name: '跳到烹饪步骤' }), { target: { value: 'boil' } });
+    expect(screen.getByText('加水煮开。')).toBeInTheDocument(); expect(screen.queryByText('洗净食材。')).not.toBeInTheDocument();
+    expect(dispatch).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: '从这一步继续' }));
+    expect(dispatch).toHaveBeenCalledWith(id, 'set_active_step', { recipe_id: 'soup', step_id: 'boil' }, view);
+  });
+  it('does not call the entire meal prepared when just the selected dish is ready', () => {
+    const view: View = { id: 'prep-one-dish', kind: 'prep_checklist', revision: 1, editable: true, data: { recipe_ids: ['soup'], items: [{ id: 'salt', canonical_name: '盐', status: 'ready' }] } };
+    const id = seed([view], 'prep'); render(<ViewCard view={view} entry={workspaceStore.entry(id)} sessionId={id} />);
+    expect(screen.queryByRole('button', { name: '食材备齐，继续做菜' })).not.toBeInTheDocument();
+    expect(screen.getByText('这道菜已准备好，可切换到其他菜品继续备菜。')).toBeInTheDocument();
   });
   it('applies inline expansion limits immediately and keeps explicit reveal controls for other views', () => {
     localStorage.setItem('chefmate:ui-settings', JSON.stringify({ inline_limit: 1 }));

@@ -27,5 +27,6 @@ describe('conversation presentation boundaries', () => {
     expect(assistantProgress({ role: 'assistant', content: '', recovering: true })).toContain('恢复');
     expect(assistantProgress({ role: 'assistant', content: '' }, { sessionId: 'a', requestId: 'r', input: '', status: '查询', cancelling: true })).toContain('正在停止');
     expect(assistantProgress({ role: 'assistant', content: '', tool_calls: [{ name: 'get_cooked_meal_intake', running: true }] })).toBe('核对本餐营养…');
+    expect(assistantProgress({ role: 'assistant', content: '', tool_calls: [{ name: 'show_prep_checklist', running: true }] }, { sessionId: 'a', requestId: 'r', input: '', status: '正在理解需求…' })).toBe('整理备菜清单…');
   });
 });

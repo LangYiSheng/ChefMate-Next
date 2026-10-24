@@ -69,7 +69,15 @@ export default function App() {
       if (toastTimer.current) clearTimeout(toastTimer.current);
     };
   }, [notify]);
-  useEffect(() => { setSelection(null); setFocus(false); }, [state.currentId]);
+  useEffect(() => { setSelection(null); setFocus(false); setTab('workspace'); }, [state.currentId]);
+  useEffect(() => {
+    const request = state.kitchenDisplayRequest;
+    if (!request) return;
+    if (request.sessionId !== state.currentId || page !== 'chat') { chefStore.acknowledgeKitchenDisplay(request.action_id); return; }
+    if (request.mode === 'focus' && !canFocus) return;
+    setFocusKind(request.view_kind || ''); setFocus(request.mode === 'focus');
+    chefStore.acknowledgeKitchenDisplay(request.action_id);
+  }, [state.kitchenDisplayRequest, state.currentId, canFocus, page]);
   useEffect(() => { if (!developer && tab === 'query') setTab('workspace'); }, [developer, tab]);
   useEffect(() => {
     const media = window.matchMedia('(max-width: 760px)');
@@ -148,7 +156,7 @@ export default function App() {
         <section className="chat-page" hidden={page !== 'chat'} aria-label="对话工作区"><Conversation state={state} active={page === 'chat' && !focus} developer={developer} onRecipe={openRecipe} onAsk={ask} onFocus={openFocus} />{!focus && <Composer state={state} positions={editorPositions.current} notify={notify} />}</section>
       </main>
       <aside className="detail-panel" inert={!detail} aria-hidden={!detail} aria-label="厨房工作区"><div className="right-pane-resize" role="separator" aria-label="调整右侧栏宽度" aria-orientation="vertical" aria-valuemin={300} aria-valuemax={720} aria-valuenow={rightWidth} tabIndex={0} onPointerDown={event => { event.preventDefault(); dragging.current = 'right'; setResizing(true); }} onKeyDown={event => { if (['ArrowLeft', 'ArrowRight'].includes(event.key)) { event.preventDefault(); setRightWidth(Math.max(300, Math.min(720, rightWidth + (event.key === 'ArrowLeft' ? 8 : -8)))); } }} />
-        <div className="panel-header"><div className="panel-tabs" role="tablist" aria-label="详情内容">{([['workspace', '工作区'], ['recipe', '菜谱详情'], ...(developer ? [['query', '调试']] : [])] as ['workspace' | 'recipe' | 'query', string][]).map(([id, name]) => <button key={id} className={`panel-tab ${tab === id ? 'active' : ''}`} type="button" role="tab" aria-selected={tab === id} onClick={() => setTab(id)}>{name}</button>)}</div><button type="button" className="icon-button" aria-label="收起详情面板" onClick={() => setDetail(false)}><Icon name="x" /></button></div>
+        <div className="panel-header"><div className="panel-tabs" role="tablist" aria-label="详情内容">{([['workspace', '工作区'], ...(selection ? [['recipe', '菜谱详情']] : []), ...(developer ? [['query', '调试']] : [])] as ['workspace' | 'recipe' | 'query', string][]).map(([id, name]) => <button key={id} className={`panel-tab ${tab === id ? 'active' : ''}`} type="button" role="tab" aria-selected={tab === id} onClick={() => setTab(id)}>{name}</button>)}</div><button type="button" className="icon-button" aria-label="收起详情面板" onClick={() => setDetail(false)}><Icon name="x" /></button></div>
         <div className="panel-content" role="tabpanel">{tab === 'query' && developer ? <Diagnostics sessionId={state.currentId} status={state.status} developer /> : tab === 'recipe' ? <RecipeDetails selection={selection} onAsk={ask} /> : <WorkspacePanel sessionId={state.currentId} running={running} onContinue={text => { if (state.currentId) void chefStore.enqueueContinuation(state.currentId, text); }} onRecipe={openRecipe} onFocus={openFocus} notify={notify} />}</div>
       </aside>
     </div>

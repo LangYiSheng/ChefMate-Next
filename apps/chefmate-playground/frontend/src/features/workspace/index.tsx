@@ -7,6 +7,7 @@ import { Button, Hint, ViewCard, WorkspaceError, CompletionNotice } from './view
 import { useWorkspace } from './hooks';
 export { QuestionPanel } from './QuestionPanel';
 import { KitchenTimers } from './Timers';
+import { FocusConversation } from './FocusConversation';
 export { KitchenTimers, visibleTimers } from './Timers';
 export { useWorkspace } from './hooks';
 import './workspace.css';
@@ -17,7 +18,7 @@ export function WorkspacePanel({ sessionId, running, onContinue, onRecipe, onFoc
   const entry = useWorkspace(sessionId, running);
   if (!sessionId || !entry) return <div className="panel-empty">从一个会话开始。选菜、备菜、步骤和计时都会随当前任务保存。</div>;
   const choices = viewChoices(entry.views, entry.snapshot?.stage), active = choices.find(view => view.kind === entry.activeKind) || choices[0], hiddenDrafts = Object.entries(entry.drafts).filter(([, draft]) => draft.kind === 'recipe_choices' && !choices.some(view => view.kind === draft.kind));
-  return <div className="react-workspace"><div className="workspace-heading"><span className="workspace-stage">{stages[entry.snapshot?.stage] || '厨房任务'}</span><Button className="ui-text-button" disabled={entry.loading || entry.saving} onClick={() => workspaceStore.load(sessionId)}>{entry.loading ? '读取中…' : '刷新'}</Button></div><p className="workspace-sync" role="status">{entry.saving ? '正在保存…' : entry.running ? '助手正在处理，完成后会更新当前内容' : Object.keys(entry.drafts).some(key => !['question', 'timers'].includes(entry.drafts[key].kind)) ? '有修改待确认' : '操作会自动保存，下一条消息带上当前状态'}</p><WorkspaceError sessionId={sessionId} entry={entry} /><CompletionNotice entry={entry} />{!!hiddenDrafts.length && <div className="error-box">还有未确认的菜谱选择。可放弃这份选择继续当前餐单，或告诉助手返回选菜阶段复核。<Button className="ui-text-button" disabled={entry.saving} onClick={() => hiddenDrafts.forEach(([id]) => workspaceStore.discard(sessionId, id))}>放弃未确认的选择</Button></div>}<nav className="workspace-navigation" aria-label="工作区内容">{choices.map(view => <Button className={`workspace-nav${active?.kind === view.kind ? ' active' : ''}`} key={view.id} aria-pressed={active?.kind === view.kind} onClick={() => workspaceStore.setActive(sessionId, view.kind)}>{labels[view.kind]}</Button>)}</nav>{active ? <ViewCard key={active.id} view={active} entry={entry} sessionId={sessionId} onContinue={onContinue} onRecipe={onRecipe} onFocus={onFocus} /> : <div className="panel-empty">{entry.loading ? '正在读取任务…' : '告诉助手你的想法，合适的表单、菜品和清单会在这里打开。'}</div>}</div>;
+  return <div className="react-workspace"><div className="workspace-heading"><span className="workspace-stage">{stages[entry.snapshot?.stage] || '厨房任务'}</span><Button className="ui-text-button" disabled={entry.loading || entry.saving} onClick={() => workspaceStore.load(sessionId)}>{entry.loading ? '读取中…' : '刷新'}</Button></div>{entry.saving && <p className="workspace-sync" role="status">正在保存…</p>}<WorkspaceError sessionId={sessionId} entry={entry} /><CompletionNotice entry={entry} />{!!hiddenDrafts.length && <div className="error-box">还有未确认的菜谱选择。可放弃这份选择继续当前餐单，或告诉助手返回选菜阶段复核。<Button className="ui-text-button" disabled={entry.saving} onClick={() => hiddenDrafts.forEach(([id]) => workspaceStore.discard(sessionId, id))}>放弃未确认的选择</Button></div>}<nav className="workspace-navigation" aria-label="工作区内容">{choices.map(view => <Button className={`workspace-nav${active?.kind === view.kind ? ' active' : ''}`} key={view.id} aria-pressed={active?.kind === view.kind} onClick={() => workspaceStore.setActive(sessionId, view.kind)}>{labels[view.kind]}</Button>)}</nav>{active ? <ViewCard key={active.id} view={active} entry={entry} sessionId={sessionId} onContinue={onContinue} onRecipe={onRecipe} onFocus={onFocus} /> : <div className="panel-empty">{entry.loading ? '正在读取任务…' : '告诉助手你的想法，合适的表单、菜品和清单会在这里打开。'}</div>}</div>;
 }
 const readInlineLimit = () => { try { return JSON.parse(localStorage.getItem('chefmate:ui-settings') || '{}').inline_limit === 1 ? 1 : 2; } catch { return 2; } };
 function viewSummary(view: Json) {
@@ -49,7 +50,7 @@ export function MessageViews({ message, sessionId, running, onContinue, onRecipe
       <button className="view-receipt" type="button" aria-expanded={false} onClick={() => setExpanded(values => ({ ...values, [view.id]: true }))}><Icon name="layers" /><span><strong>{view.title || labels[view.kind]}</strong><small>{viewSummary(current || view)}{!live ? ' · 历史记录' : ''}</small></span><Icon name="chevron-down" /></button>
       {current && onFocus && <Button className="ui-text-button" aria-label={`全屏查看${view.title || labels[view.kind]}`} onClick={() => onFocus(view.kind)}><Icon name="maximize" /></Button>}
     </section>;
-    return <div className="workspace-inline-view" key={view.id}><ViewCard view={live ? current! : view} entry={entry} sessionId={sessionId} historical={!live} onContinue={onContinue} onRecipe={onRecipe} onFocus={onFocus} /><div className="workspace-inline-controls"><Button className="ui-text-button" aria-expanded onClick={() => setExpanded(values => ({ ...values, [view.id]: false }))}>收起{view.title || labels[view.kind]}</Button></div></div>;
+    return <div className="workspace-inline-view" key={view.id}><ViewCard view={live ? current! : view} entry={entry} sessionId={sessionId} historical={!live} onContinue={onContinue} onRecipe={onRecipe} onFocus={onFocus} onCollapse={() => setExpanded(values => ({ ...values, [view.id]: false }))} /></div>;
   })}</div>;
 }
 function restoreFocusEntrance(target: HTMLElement | null) {
@@ -67,6 +68,10 @@ export function CookingFocus({ sessionId, onClose, onContinue, children, initial
   useEffect(() => {
     const stage = entry?.snapshot?.stage;
     if (active && previousStage.current !== 'completed' && stage === 'completed') close.current();
+    else if (active && stage !== previousStage.current) {
+      setKind(({ idea: 'preference_form', planning: 'meal_plan', prep: 'prep_checklist', cooking: 'cooking_guide' } as Record<string, string>)[stage] || '');
+      setTalking(false);
+    }
     previousStage.current = stage;
   }, [active, entry?.snapshot?.stage]);
   useEffect(() => { if (active) { setKind(initialKind || ''); setTalking(false); } }, [active, initialKind, sessionId]);
@@ -97,7 +102,7 @@ export function CookingFocus({ sessionId, onClose, onContinue, children, initial
   }, []);
   if (!entry) return null;
   const choices = viewChoices(entry.views, entry.snapshot?.stage), selected = choices.find(view => view.kind === kind) || choices.find(view => view.kind === (entry.snapshot?.stage === 'cooking' ? 'cooking_guide' : 'prep_checklist')) || choices[0];
-  const cached = runtime.cache[sessionId], messages = cached?.messages || [], last = [...messages].reverse().find(message => message.role === 'assistant');
+  const cached = runtime.cache[sessionId], messages = cached?.messages || [], run = runtime.runs[sessionId];
   return <section ref={scene} id="kitchen-focus" className={`kitchen-focus react-cooking-focus${active ? ' is-active' : ''}`} aria-label="烹饪专注模式" aria-hidden={!active} inert={!active} tabIndex={-1} onKeyDown={event => {
     if (!active || event.defaultPrevented || event.nativeEvent.isComposing || document.querySelector('dialog[open]')) return;
     if (event.key === 'Escape') { event.preventDefault(); if (talking) setTalking(false); else onClose(); }
@@ -115,7 +120,7 @@ export function CookingFocus({ sessionId, onClose, onContinue, children, initial
   }}>
     <header className="focus-header"><div className="focus-heading"><h2>{selected?.data.recipe_name || stages[entry.snapshot?.stage] || '厨房任务'}</h2><span className="focus-header-progress">{entry.running ? '助手正在处理…' : '专注做菜'}</span></div><div className="focus-header-actions"><KitchenTimers sessionId={sessionId} active={active} /><Button id="exit-focus" className="focus-button" aria-label="退出专注模式" onClick={onClose}><Icon name="x" /></Button></div></header>
     <nav className="focus-modes" aria-label="专注模式内容">{choices.map(view => <Button key={view.id} aria-pressed={!talking && selected?.kind === view.kind} onClick={() => { setKind(view.kind); setTalking(false); }}>{labels[view.kind]}</Button>)}<Button aria-pressed={talking} onClick={() => setTalking(!talking)}>和助手聊聊</Button></nav>
-    <div className="focus-body"><div className="focus-deck"><WorkspaceError sessionId={sessionId} entry={entry} /><div className="focus-content" tabIndex={0}>{talking ? <div className="focus-message-copy">{last?.content || '随时告诉助手你的问题，当前做菜进度会保留。'}</div> : selected ? <ViewCard key={selected.id} view={selected} entry={entry} sessionId={sessionId} focused onContinue={text => { if (entry.snapshot?.stage === 'prep') onClose(); onContinue(text); }} onFocus={nextKind => { setKind(nextKind); setTalking(false); }} /> : <Hint>当前还没有可展示的任务内容。</Hint>}</div></div></div>
-    {children && <footer className="focus-footer"><div className="focus-composer-slot">{children}</div></footer>}
+    <div className="focus-body"><div className="focus-deck"><WorkspaceError sessionId={sessionId} entry={entry} /><div className="focus-content" tabIndex={0}>{talking ? <FocusConversation messages={messages} run={run} sessionId={sessionId} active={active} expanded /> : selected ? <ViewCard key={selected.id} view={selected} entry={entry} sessionId={sessionId} focused onContinue={onContinue} onFocus={nextKind => { setKind(nextKind); setTalking(false); }} /> : <Hint>当前还没有可展示的任务内容。</Hint>}</div></div></div>
+    {children && <footer className="focus-footer">{!talking && <FocusConversation messages={messages} run={run} sessionId={sessionId} active={active} />}<div className="focus-composer-slot">{children}</div></footer>}
   </section>;
 }

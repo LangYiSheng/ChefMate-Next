@@ -112,7 +112,7 @@ def test_preference_skill_catalog_and_disabled_execution_are_bound(tmp_path):
     catalog = {item["name"]: item for item in agent.tool_catalog({"stage": "idea"})}
     assert catalog["update_app_preferences"]["required_skill"] == "app-preferences"
     assert catalog["update_app_preferences"]["available"] is False
-    assert components.by_id["app-preferences"].tools == ("get_app_preferences", "update_app_preferences")
+    assert components.by_id["app-preferences"].tools == ("get_app_preferences", "update_app_preferences", "set_kitchen_display")
 
 
 def test_reply_policy_update_preserves_model_config_and_updates_future_turns(tmp_path):

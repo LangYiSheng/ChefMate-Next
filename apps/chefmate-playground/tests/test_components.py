@@ -71,15 +71,27 @@ def test_actual_disabled_components_are_hidden_and_reject_fabricated_execution(t
     agent, components = build_agent(config, Service(), memory=memory, cookbook=cookbook, journal=journal,
                                     preferences=SimpleNamespace(read=lambda: {}))
     context = TurnRuntimeContext(ui_context={"stage": "idea"})
-    hidden = {"read_long_term_memory", "create_recipe_draft", "create_food_log_draft", "get_search_options", "get_app_preferences"}
+    hidden = {"read_long_term_memory", "create_recipe_draft", "create_food_log_draft", "get_search_options", "get_app_preferences", "set_kitchen_display"}
     assert hidden.isdisjoint({tool.name for tool in agent._model_tools(context)})
     assert "ask_user" in {tool.name for tool in agent._model_tools(context)}
     for name, request in [("read_long_term_memory", {}), ("get_search_options", {}),
-                          ("advance_cooking_stage", {"stage": "cooking"}), ("get_app_preferences", {})]:
+                          ("advance_cooking_stage", {"stage": "cooking"}), ("get_app_preferences", {}),
+                          ("set_kitchen_display", {"mode": "conversation"})]:
         result = asyncio.run(agent._make_tool(name, context, [], "forged").ainvoke(request))
         assert result["status"] == "skill_disabled"
     assert components.enabled_ids == ()
     assert all(item["available"] for item in components.metadata())
+
+
+def test_real_app_agent_builds_with_registered_kitchen_display_tool(tmp_path):
+    config = PlaygroundConfig(sessions_database=tmp_path / "configured.db", api_key="test-key", model="test-model")
+    app = create_app(config, service=Service())
+    with TestClient(app) as client:
+        status = client.get("/api/status").json()
+        assert status["configured"] is True and status["error"] is None
+        catalog = client.get("/api/debug/catalog", headers={"X-ChefMate-Developer": "1"}).json()
+        display = next(tool for tool in catalog["tools"] if tool["name"] == "set_kitchen_display")
+        assert display["available"] is True and display["required_skill"] == "app-preferences"
 
 
 def test_generated_stage_targets_keep_each_transition_owners_permission():

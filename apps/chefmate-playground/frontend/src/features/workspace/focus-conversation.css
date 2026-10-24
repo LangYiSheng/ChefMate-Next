@@ -1,0 +1,11 @@
+.react-cooking-focus .focus-assistant{width:100%;max-width:900px;max-height:clamp(100px,24vh,260px);overflow:auto;overscroll-behavior:contain;padding:8px 4px 4px;scrollbar-gutter:stable}
+.react-cooking-focus .focus-assistant.is-expanded{max-height:none;height:100%;padding:8px 12px}
+.focus-exchange+.focus-exchange{margin-top:12px}
+.focus-user-message{margin:0 0 8px auto;width:fit-content;max-width:90%;padding:6px 12px;border-radius:12px;background:var(--color-surface);font:14px/1.7 var(--font-reading);white-space:pre-wrap;overflow-wrap:anywhere}
+.focus-assistant .assistant-heading{margin-bottom:5px}
+.focus-assistant .markdown{font-size:15px;line-height:1.8}
+.focus-assistant .assistant-progress{margin:5px 0}
+.react-cooking-focus .focus-footer{max-height:48%;display:flex;flex-direction:column;align-items:center;min-height:0}
+.react-cooking-focus .focus-composer-slot{flex:none;width:100%;min-height:0}
+@media(max-height:540px){.react-cooking-focus .focus-assistant{max-height:100px}.react-cooking-focus .focus-footer{max-height:48%}.focus-assistant:not(.is-expanded) .focus-exchange.user{display:none}}
+@media(max-width:600px){.focus-assistant .markdown{font-size:15px}.react-cooking-focus .focus-assistant{max-height:23vh}}

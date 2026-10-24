@@ -59,6 +59,7 @@ export class ChefStore {
   private continuationScheduled = false;
   private continuationOperations = new Map<string, object>();
   private metadata = new Map<string, { version: number; values: ApiData }>();
+  private displayActions = new Set<string>();
   private pollInterval: number;
   private submissions: Record<string, PendingSubmission>;
   private onFocus = (): void => {
@@ -132,10 +133,28 @@ export class ChefStore {
   private saveContinuations(): void { this.write(CONTINUATIONS_KEY, this.state.continuations); }
   private setCache(id: string, session: Session): void {
     if (this.deleted.has(id)) return;
+    // Initial history is a baseline. Only newly arriving actions in the visible
+    // conversation may change its display, including after stream recovery.
+    const live = Boolean(this.active.has(id) || this.state.cache[id]?.running || this.state.runs[id]);
+    for (const message of session.messages) this.receiveDisplayActions(id, message.actions, live);
     this.emit({ cache: { ...this.state.cache, [id]: session }, sessions: this.state.sessions.map(item => item.id === id
       ? { ...item, title: session.title, pinned: session.pinned, running: session.running, pending_question: session.pending_question, awaiting_user: session.awaiting_user, conversation_state: session.conversation_state }
       : item) });
   }
+  private receiveDisplayActions(id: string, actions: unknown, live = true): void {
+    if (!Array.isArray(actions)) return;
+    for (const action of actions) {
+      if (action?.kind !== 'set_kitchen_display' || typeof action.action_id !== 'string'
+        || !['focus', 'conversation'].includes(action.mode)) continue;
+      const key = `${id}:${action.action_id}`;
+      if (this.displayActions.has(key)) continue;
+      this.displayActions.add(key);
+      if (live && this.state.currentId === id) this.emit({ kitchenDisplayRequest: { ...action, sessionId: id } });
+    }
+  }
+  acknowledgeKitchenDisplay = (actionId: string): void => {
+    if (this.state.kitchenDisplayRequest?.action_id === actionId) this.emit({ kitchenDisplayRequest: null });
+  };
 
   start = (): Promise<void> => {
     if (this.started) return this.startTask || Promise.resolve();
@@ -220,7 +239,7 @@ export class ChefStore {
   newSession = (_options: { retainDraft?: boolean } = {}): void => {
     if (this.state.preparing) return;
     this.selectionEpoch++;
-    this.emit({ currentId: null, blankId: blankId(), error: null });
+    this.emit({ currentId: null, blankId: blankId(), error: null, kitchenDisplayRequest: null });
     this.saveSelection(); this.saveDrafts();
   };
 
@@ -233,12 +252,12 @@ export class ChefStore {
   resumeDraft = (key = this.recoverableDraftKey()): void => {
     if (!key || this.state.preparing) return;
     if (!key.startsWith('draft:')) { void this.openSession(key).catch(() => undefined); return; }
-    this.selectionEpoch++; this.emit({ currentId: null, blankId: key, error: null }); this.saveSelection(); this.saveDrafts();
+    this.selectionEpoch++; this.emit({ currentId: null, blankId: key, error: null, kitchenDisplayRequest: null }); this.saveSelection(); this.saveDrafts();
   };
 
   openSession = async (id: string): Promise<void> => {
     this.selectionEpoch++;
-    this.emit({ currentId: id, error: null }); this.saveSelection();
+    this.emit({ currentId: id, error: null, kitchenDisplayRequest: null }); this.saveSelection();
     if (!this.active.has(id)) await this.refreshSession(id);
   };
 
@@ -413,6 +432,7 @@ export class ChefStore {
       if (event.type === 'tool_end') {
         const call = message.tool_calls!.find(item => item.call_id === event.call_id);
         if (call) Object.assign(call, event, { running: false }); else message.tool_calls!.push({ ...event, running: false });
+        run.status = '正在整理回复…';
       }
       if (event.type === 'ui_action') { if (event.action) message.actions.push(event.action); void Promise.resolve(this.adapter?.refresh?.(run.sessionId)).catch(() => undefined); }
       if (event.type === 'skill_loaded') message.skills.push(event.skill || event);
@@ -449,6 +469,8 @@ export class ChefStore {
         }
       }
     });
+    if (event.type === 'ui_action') this.receiveDisplayActions(run.sessionId, [event.action]);
+    if (event.type === 'result') this.receiveDisplayActions(run.sessionId, (event.result || event).actions);
   }
 
   sendMessage = async (text?: string, options: SendOptions = {}): Promise<{ error?: string; accepted?: boolean }> => {

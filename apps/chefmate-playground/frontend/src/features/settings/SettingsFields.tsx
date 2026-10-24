@@ -20,7 +20,7 @@ export function Field({label, value, onChange, hint, type = 'text', options, min
 
 export function SettingsGroup({title, children}: {title: string; children: ReactNode}) {
   const tabs = useContext(GroupTabs), unique = useId(), index = tabs?.items.indexOf(title) ?? -1;
-  const grouped = Boolean(tabs && index >= 0), panelId = grouped ? `${tabs!.prefix}-panel-${index}` : `${unique}-group`;
+  const grouped = Boolean(tabs && tabs.items.length > 1 && index >= 0), panelId = grouped ? `${tabs!.prefix}-panel-${index}` : `${unique}-group`;
   return <section className="settings-group" id={panelId} data-settings-index={title} role={grouped ? 'tabpanel' : undefined} aria-labelledby={grouped ? `${tabs!.prefix}-tab-${index}` : undefined} hidden={grouped && tabs!.active !== title}>{!grouped && <h2>{title}</h2>}{children}</section>;
 }
 
@@ -40,7 +40,7 @@ export function SettingsTabs({items, label, children}: {items: readonly string[]
     if (frame.current !== null) cancelAnimationFrame(frame.current);
     frame.current = requestAnimationFrame(() => {frame.current = null; if (!input.isConnected || panel.hidden) return; const target = input.closest('.ui-select')?.querySelector<HTMLElement>('[role=combobox]') || input; target.focus({preventScroll: true}); if (target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement) target.reportValidity();});
   }}>
-    {items.length > 0 && <div role="tablist" aria-label={label} className="settings-tabs" onKeyDown={event => {
+    {items.length > 1 && <div role="tablist" aria-label={label} className="settings-tabs" onKeyDown={event => {
       if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
       const buttons = [...event.currentTarget.querySelectorAll<HTMLButtonElement>('[role=tab]')], index = buttons.indexOf(event.target as HTMLButtonElement);
       if (index < 0) return;

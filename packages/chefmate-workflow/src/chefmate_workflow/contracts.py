@@ -28,6 +28,8 @@ def _tool(name, description, stages, effect, auto_display=False, side_effects=()
 
 
 TOOL_CONTRACTS = {item.name: item for item in (
+    _tool("set_kitchen_display", "按用户要求进入厨房全屏专注模式或返回普通对话。mode为focus或conversation；focus的view_kind可指定当前已打开的卡片，省略时跟随当前阶段。只改变当前会话的展示，不推进阶段、不确认食材或步骤。",
+          ALL_STAGES, "presentation", False, ("请求切换当前会话的显示模式",), ("用户已要求切换显示模式",)),
     _tool("get_cooking_workspace", "读取最新业务版本、当前可用动作、阶段转换与具体阻塞原因；依赖上次修改的调用以最新成功回调为准。",
           ALL_STAGES, "read"),
     _tool("show_preference_form", "展示当前已保存的偏好供用户填写或核对；只展示，不修改偏好，也不提升业务版本。",
@@ -44,7 +46,7 @@ TOOL_CONTRACTS = {item.name: item for item in (
           SELECT_STAGES, "write", True, ("与select_recipes相同",), ("真实检索引用",), model_visible=False),
     _tool("show_meal_plan", "展示已选餐单、目标人数与真实来源；只展示，不提升业务版本。select_recipes已自动展示，勿重复调用。",
           PLAN_STAGES, "presentation", True, ("替换餐单视图",), ("已有餐单",)),
-    _tool("show_prep_checklist", "展示当前真实备菜状态。recipe_ids省略或null显示整餐，非空数组只可包含当前餐单ID；不改变阶段或勾选。已有清单/工具自动展示时无需重复调用。",
+    _tool("show_prep_checklist", "展示当前真实备菜状态。一次准备整餐时recipe_ids省略或null；逐道准备时传[某一道当前餐单ID]，也可传当前餐单ID子集。清单只显示指定菜的食材，用户仍可在卡片切换范围；不改变阶段或勾选。已有清单/工具自动展示时无需重复调用；用户要求改变展示范围时可调用。",
           PLAN_STAGES, "presentation", True, ("替换备菜视图",), ("已有餐单",)),
     _tool("update_prep_items", "按用户明确授权逐ID批量更新备菜状态，全部ID先验证再原子保存。item_id必须来自真实清单；不能凭名称猜ID或硬划分小料。expected_revision须匹配最新业务版本，自动展示保存结果。",
           ("planning", "prep"), "write", True, ("更新准备确认", "展示备菜清单"), ("已有餐单", "用户授权对应食材及状态")),
