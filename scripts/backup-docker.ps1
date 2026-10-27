@@ -39,6 +39,41 @@ try {
     $imageIdentity = & docker inspect --format '{{.Image}}|{{.Config.Image}}' $appContainer
     if ($LASTEXITCODE -ne 0 -or -not $imageIdentity) { throw '无法读取 App 镜像身份，未开始备份。' }
     $imageParts = $imageIdentity.Split('|', 2)
+    # Use the running/stopped container's actual configuration, rather than a
+    # possibly edited .env. Capture privately; never send environment values to
+    # the output stream, backup manifest or exception diagnostics.
+    $connectionFields = @{}
+    $hasExplicitDatabase = $false
+    $capturedEnvironment, $environmentEntries = $null, $null
+    try {
+        $capturedEnvironment = & docker inspect --format '{{json .Config.Env}}' $appContainer
+        if ($LASTEXITCODE -ne 0) { throw 'inspect failed' }
+        $environmentEntries = $capturedEnvironment | ConvertFrom-Json
+        foreach ($environmentEntry in $environmentEntries) {
+            $environmentParts = ([string]$environmentEntry).Split('=', 2)
+            if ($environmentParts.Count -ne 2) { continue }
+            if ($environmentParts[0] -in @('CHEFMATE_APP_DATABASE_URL', 'CHEFMATE_DATABASE_URL')) {
+                if (-not [string]::IsNullOrWhiteSpace($environmentParts[1])) { $hasExplicitDatabase = $true }
+            } elseif ($environmentParts[0] -cmatch '^CHEFMATE_(APP|CATALOG)_DB_(HOST|USER|NAME|PORT)$') {
+                $connectionFields[$environmentParts[0]] = $environmentParts[1]
+            }
+        }
+    } catch { throw '无法安全核对 App 实际数据库连接类型，未停止 App 或创建备份。' }
+    finally { $capturedEnvironment, $environmentEntries, $environmentEntry, $environmentParts = $null, $null, $null, $null }
+    $managedDefaults = @{
+        CHEFMATE_APP_DB_HOST = 'app-db'; CHEFMATE_APP_DB_USER = 'chefmate'; CHEFMATE_APP_DB_NAME = 'chefmate_app'
+        CHEFMATE_CATALOG_DB_HOST = 'db'; CHEFMATE_CATALOG_DB_USER = 'chefmate'; CHEFMATE_CATALOG_DB_NAME = 'chefmate'
+    }
+    $managedConnections = -not $hasExplicitDatabase
+    foreach ($field in $managedDefaults.Keys) {
+        if ($connectionFields[$field] -cne $managedDefaults[$field]) { $managedConnections = $false }
+    }
+    foreach ($portField in @('CHEFMATE_APP_DB_PORT', 'CHEFMATE_CATALOG_DB_PORT')) {
+        if ($connectionFields[$portField] -and $connectionFields[$portField] -cne '5432') { $managedConnections = $false }
+    }
+    if (-not $managedConnections) {
+        throw 'App 使用外部或自定义数据库连接。本脚本只备份默认受管双库，已在停止 App 和创建备份前拒绝；请按外部数据库备份流程成组保存实际数据库与运行文件。'
+    }
     $databaseRunning = & docker @composeArgs ps --status running -q app-db
     if ($LASTEXITCODE -ne 0 -or -not $databaseRunning) { throw '应用 PostgreSQL 未运行，未停止 App 或创建备份。' }
     & docker @composeArgs exec -T app-db pg_isready -U chefmate -d chefmate_app
