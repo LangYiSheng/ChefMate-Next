@@ -44,7 +44,13 @@ def test_migration_rejects_traversing_identity_before_copying_files(tmp_path, de
     accounts = AccountsRepository(source / "accounts.db")
     user = accounts.register("untrusted-id", "fixture-migration-password-123")
     with accounts._connect() as connection:
+        # Construct the hostile legacy input explicitly; the current schema
+        # correctly forbids this identity mutation during ordinary operation.
+        connection.execute("PRAGMA foreign_keys=OFF")
+        assert connection.execute("PRAGMA foreign_keys").fetchone()[0] == 0
         connection.execute("UPDATE accounts SET id=? WHERE id=?", ("../..", user["id"]))
+        connection.execute("UPDATE account_credit_grants SET id=?,user_id=? WHERE user_id=?",
+                           ("base-../..", "../..", user["id"]))
     # This neighbour is deliberately outside source; it must never be imported.
     (tmp_path / "images").mkdir()
     (tmp_path / "images" / "private.jpg").write_bytes(b"not part of the source runtime")

@@ -39,9 +39,11 @@ def test_http_consent_controls_actual_attached_context_and_clear_does_not_resurr
     class RecordingAgent(MeteredAgent):
         def __init__(self):
             self.contexts = []
+            self.identities = []
 
         async def run_turn(self, messages, *, on_event, **kwargs):
             self.contexts.append(kwargs.get("memory_context") or {})
+            self.identities.append(kwargs.get("user_identity") or {})
             return await super().run_turn(messages, on_event=on_event, **kwargs)
 
     agent = RecordingAgent()
@@ -55,9 +57,11 @@ def test_http_consent_controls_actual_attached_context_and_clear_does_not_resurr
             assert '"status": "completed"' in result.text
         send("初始不授权")
         assert not agent.contexts[-1].get("kitchen_profile")
+        assert agent.identities[-1]["display_name"] == PROFILE["display_name"]
         assert client.patch("/api/auth/onboarding", json={**PROFILE, "use_for_ai": True}).status_code == 200
         send("明确开启个性化")
-        assert agent.contexts[-1]["kitchen_profile"]["display_name"] == PROFILE["display_name"]
+        assert agent.contexts[-1]["kitchen_profile"]["household_size"] == PROFILE["household_size"]
+        assert agent.identities[-1]["display_name"] == PROFILE["display_name"]
         saved = client.get("/api/memory").json()
         assert client.delete("/api/memory", params={"revision": saved["revision"]}).status_code == 200
         send("清空以后")
@@ -68,7 +72,8 @@ def test_http_consent_controls_actual_attached_context_and_clear_does_not_resurr
         # The intermediate opt-out is processed in the account route; the next
         # workspace read must see the last explicitly accepted revision.
         send("重新明确开启")
-        assert agent.contexts[-1]["kitchen_profile"]["display_name"] == PROFILE["display_name"]
+        assert agent.contexts[-1]["kitchen_profile"]["household_size"] == PROFILE["household_size"]
+        assert agent.identities[-1]["display_name"] == PROFILE["display_name"]
 
 
 def test_profile_shape_is_bounded_and_cannot_set_agent_configuration(tmp_path):

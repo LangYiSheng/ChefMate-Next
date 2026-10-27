@@ -5,7 +5,7 @@ from threading import Event
 
 from fastapi.testclient import TestClient
 
-from test_tenancy import build, register
+from test_tenancy import build, PASSWORD, PROFILE
 
 
 def test_cold_workspace_does_not_block_health_or_session_authentication(tmp_path, monkeypatch):
@@ -20,7 +20,11 @@ def test_cold_workspace_does_not_block_health_or_session_authentication(tmp_path
             raise RuntimeError("Test did not release cold setup")
         return factory(*args, **kwargs)
     with TestClient(app) as client, ThreadPoolExecutor(max_workers=3) as workers:
-        register(client, "cold-workspace")
+        user = client.post("/api/auth/register", json={"username": "cold-workspace", "password": PASSWORD}).json()["user"]
+        # The HTTP welcome route now eagerly syncs preferences and warms the
+        # workspace. Mark this fixture ready directly to exercise a truly cold
+        # first business request, rather than reading that already warm cache.
+        app.state.accounts.complete_onboarding(user["id"], PROFILE)
         monkeypatch.setattr(app_module, "create_workspace_app", cold_factory)
         cold = workers.submit(client.get, "/api/sessions")
         try:

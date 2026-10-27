@@ -120,10 +120,18 @@ uv run --project apps/chefmate-playground chefmate-playground
 | `POST /api/auth/logout` | 撤销会话并清除 Cookie |
 | `PATCH /api/auth/password` | `{current_password,new_password}`，撤销旧会话并轮换当前 Cookie |
 | `PATCH /api/auth/onboarding` | `{display_name,cooking_level,household_size,preferences,theme,use_for_ai}`；经验值 `beginner/comfortable/confident`，AI 使用默认关闭 |
+| `PATCH /api/auth/profile` | `{display_name}`，仅更新称呼，不覆盖个人偏好 |
+| `GET/PATCH /api/personal-preferences` | 统一偏好与记忆开关，GET 返回 64 位 `revision`、`enabled/user_notes/summary/cooking_level/household_size/preferences/user`；PATCH 带该版本和修改字段 |
+| `DELETE /api/personal-preferences/summary?revision=...` | 仅清除助手总结，保留手写与厨房偏好 |
+| `GET /api/auth/entitlements` | 当前账号的永久来源、会员及周/5小时窗口使用情况 |
 | `GET /api/auth/quota` | 自己的金额额度、已用、暂估占用、预留、可用余额及单价；Token 仅作统计 |
 | `GET /api/admin/users` | 用户列表 |
 | `GET/PATCH /api/admin/policy` | `{revision,registration_enabled,default_cost_limit_micros}`；控制开放注册和后续注册账号的默认金额，不追改已有金额配置 |
-| `PATCH /api/admin/users/{id}` | 停用、角色、开发者许可、`cost_limit_micros` 金额额度；`null` 不限、0 停止新模型调用；拒绝 Token 上限字段 |
+| `PATCH /api/admin/users/{id}` | 停用、角色、开发者许可；兼容 `cost_limit_micros` 只调整永久基础总额，不变更充值与会员 |
+| `GET /api/admin/users/{id}/entitlements` | `{user,entitlements}`，每个资金来源的金额、使用、预留与当前窗口 |
+| `POST /api/admin/users/{id}/credit-grants` | `{amount_micros,label,request_id}`，发放永久充值额度，幂等请求 ID 防止重发 |
+| `POST /api/admin/users/{id}/memberships` | `{label,duration_days,weekly_limit_micros,five_hour_limit_micros,request_id}`，发放限时会员 |
+| `POST /api/admin/users/{id}/memberships/{membership_id}/revoke` | `{revision,reason}`，撤销会员，已有用量归属保留 |
 | `POST /api/admin/users/{id}/password` | `{new_password}`，重置并撤销该用户会话 |
 | `GET/PATCH /api/admin/pricing` | 每百万输入、缓存输入、输出 Token 的 CNY 单价，revision 防覆盖；GET 含只读 `configured`，首次必须显式保存确认，允许明确确认全零免费 |
 | `POST /api/admin/users/{id}/usage/{turn_id}/reconcile` | 管理员核对该轮最终总金额：`revision`、`final_cost_micros`、必填 `reason`；运行/预留未结束或版本冲突返回 409，原始记录不改写 |
@@ -131,11 +139,18 @@ uv run --project apps/chefmate-playground chefmate-playground
 | `GET /api/admin/usage` | `days` 为 1–366；全体、用户和每日汇总，缺失与估算单列 |
 | `GET /api/admin/users/{id}/usage` | 用户用量明细与历史价格快照 |
 | `POST /api/admin/settings/test-model` | 连接与原生工具往返测试，用量计入管理员账本 |
+| `GET/POST /api/admin/models` | 列表返回 `{revision,active_id,items}`；创建携带列表版本和连接、能力、单价配置，密钥仅接收不回显 |
+| `PATCH /api/admin/models/{id}` | `{revision,values}`，使用列表版本更新连接及其价格；空密钥保留，`clear_api_key:true` 明确清除 |
+| `POST /api/admin/models/{id}/activate` | `{revision}`，切换唯一激活模型，执行中拒绝替换配置 |
+| `DELETE /api/admin/models/{id}?revision=...` | 删除备用连接，拒绝删除激活连接 |
+| `POST /api/admin/models/{id}/test` | 可带列表 `revision`；按保存连接的价格测试原生工具调用，不改变当前启用模型 |
 | `GET /api/admin/data` | 个人数据计数、附件文件占用、存储类型与运行状态 |
 | `POST /api/admin/users/{id}/reset-data` | `{confirm_username}`；先归档 schema/文件再重建，保留身份和账本，撤销该用户会话 |
-| `GET /api/admin/audit` | 管理动作与字段，不记录密码或密钥 |
+| `GET /api/admin/audit` | `q/action/actor/target/date_from/date_to/page/page_size`；日期按北京时间含首尾，每页最多100；返回分页与筛选选项，不记录密码或密钥 |
 
-厨房档案位于 `/api/memory` 的 `kitchen_profile`。只有用户明确开启 `use_for_ai` 且长期记忆启用时进入模型上下文，不覆盖手写偏好与助手总结。清空记忆也会清除当前档案投影，普通刷新不会恢复。规则见[账号设计](../design/accounts-admin.md)。
+`user.quota.funds` 与额度接口的 `entitlements` 使用同一资金快照。`used_micros` 已含 `estimated_micros`，预估不是另加一笔；`available_micros` 已扣除使用和预留。会员当前可用取周与5小时剩余的较小值，不能把两个窗口额度相加。
+
+厨房偏好投影位于 `/api/memory` 的 `kitchen_profile`，不含称呼。称呼在托管运行时作为独立 `user_identity` 临时加入模型上下文；偏好和记忆由统一开关控制。旧记忆 API 继续兼容，但新页面使用统一偏好 API。规则见[账号设计](../design/accounts-admin.md)。
 
 ## 会话、图片与厨房 API
 

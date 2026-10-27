@@ -88,6 +88,46 @@ def test_oversized_memory_is_rejected_before_model_request():
     assert model.histories == []
 
 
+def test_identity_is_sent_without_memory_and_never_saved_in_conversation():
+    model = ScriptedModel([answer("小青，今天一起做饭吧。")])
+    agent = ChefMateAgent(Service(), AgentConfig(model="test"), model=model, request_models=REQUESTS)
+    identity = {"display_name": "小青"}
+    result = asyncio.run(agent.run_turn([{"role": "user", "content": "今天吃什么"}],
+        user_identity=identity, memory_context={}))
+    assert result.status == "completed"
+    sent = str(model.histories[0][1].content)
+    assert '"display_name":"小青"' in sent or '"display_name": "小青"' in sent
+    assert "身份数据" in sent
+    assert "user_notes" not in sent and "kitchen_profile" not in sent
+    assert result.messages[0]["content"] == "今天吃什么"
+    assert "当前用户称呼" not in json.dumps(result.messages, ensure_ascii=False)
+    assert identity == {"display_name": "小青"}
+
+
+def test_history_only_memory_tool_marks_next_request_for_consent_guard(tmp_path):
+    events = []
+    spec = InjectedToolSpec("private_history_search", "private", Empty,
+        lambda request, context: {"status": "ok", "items": [{"text": "private-history-fixture"}]},
+        required_skill="personal-memory")
+    model = ScriptedModel([tool("private_history_search", {}), answer("查到了")])
+    agent = ChefMateAgent(Service(), AgentConfig(model="test"), model=model,
+        request_models=REQUESTS, extra_tools=[spec], skills=registry(tmp_path))
+    result = asyncio.run(agent.run_turn([{"role": "user", "content": "查找历史"}], on_event=events.append))
+    assert result.status == "completed"
+    measured = [event["context_usage"] for event in events if event["type"] == "context_usage"]
+    assert [event["memory_attached"] for event in measured] == [False, True]
+
+
+@pytest.mark.parametrize("identity", [{"display_name": ""}, {"display_name": "a\nb"},
+    {"display_name": "x" * 41}, {"display_name": "正常", "preferences": "extra"}])
+def test_invalid_identity_never_reaches_provider(identity):
+    model = ScriptedModel([])
+    agent = ChefMateAgent(Service(), AgentConfig(model="test"), model=model, request_models=REQUESTS)
+    result = asyncio.run(agent.run_turn([{"role": "user", "content": "开始"}], user_identity=identity))
+    assert result.status == "error" and result.error.code == "invalid_user_identity"
+    assert model.histories == []
+
+
 def test_custom_recipe_search_snapshot_is_per_recipe_and_does_not_mix_official_sources():
     custom = {"data_version": "custom-egg:v2", "imported_at": "2026-10-21T00:00:00+00:00"}
     history = [{"role": "tool", "name": "search_custom_recipes", "content": json.dumps({

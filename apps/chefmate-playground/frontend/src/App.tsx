@@ -17,11 +17,11 @@ import type {AccountUser} from './features/account/types';
 type Page = 'chat' | 'settings' | 'recipes' | 'journal' | 'account' | 'admin';
 const loadSettings = () => import('./features/settings/Settings').then(module => ({ default: module.Settings }));
 const loadCenters = () => import('./features/centers/KitchenCenters').then(module => ({ default: module.KitchenCenters }));
-const loadAccount = () => import('./features/account/AccountPanel').then(module => ({default: module.AccountPanel}));
 const loadAdmin = () => import('./features/account/AdminPanel').then(module => ({default: module.AdminPanel}));
 const developmentBase = import.meta.env.DEV ? import.meta.env.BASE_URL.replace(/\/$/, '') : '';
-const pathFor = (page: Page) => `${developmentBase}${page === 'chat' ? '/' : `/${page}`}`;
-const pageFor = (): Page => ({ '/settings': 'settings', '/recipes': 'recipes', '/journal': 'journal', '/account': 'account', '/admin': 'admin' })[location.pathname.slice(developmentBase.length)] as Page || 'chat';
+const pathFor = (page: Page, section = 'display') => `${developmentBase}${page === 'chat' ? '/' : `/${page === 'account' ? 'settings' : page}`}${page === 'account' ? '?section=account-profile' : page === 'settings' && section !== 'display' ? '?section=' + encodeURIComponent(section) : ''}`;
+const pageFor = (): Page => ({ '/settings': 'settings', '/recipes': 'recipes', '/journal': 'journal', '/account': 'settings', '/admin': 'admin' })[location.pathname.slice(developmentBase.length)] as Page || 'chat';
+const settingsSectionFor = () => location.pathname.endsWith('/account') ? 'account-profile' : new URLSearchParams(location.search).get('section') || 'display';
 function local<T>(key: string, fallback: T): T { try { return JSON.parse(localStorage.getItem(key) || 'null') ?? fallback; } catch { return fallback; } }
 
 export default function App({account, refreshAccount = async () => {}, logout = async () => {}}: {account?: AccountUser; refreshAccount?: () => Promise<void>; logout?: () => Promise<void>} = {}) {
@@ -31,10 +31,10 @@ export default function App({account, refreshAccount = async () => {}, logout = 
     return Boolean(entry && viewChoices(entry.views, entry.snapshot?.stage).some(view => view.kind !== 'timers'));
   });
   const [page, setPage] = useState<Page>(pageFor);
+  const [settingsSection, setSettingsSection] = useState(settingsSectionFor);
   const [pageAttempt, setPageAttempt] = useState(0);
   const Settings = useMemo(() => lazy(loadSettings), [pageAttempt]);
   const KitchenCenters = useMemo(() => lazy(loadCenters), [pageAttempt]);
-  const AccountPanel = useMemo(() => lazy(loadAccount), [pageAttempt]);
   const AdminPanel = useMemo(() => lazy(loadAdmin), [pageAttempt]);
   const [collapsed, setCollapsed] = useState(() => local('chefmate:sidebar-collapsed', false));
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -93,13 +93,13 @@ export default function App({account, refreshAccount = async () => {}, logout = 
   }, []);
   useEffect(() => {
     const listener = () => {
-      const next = pageFor();
-      const resume = () => { setPage(next); setMobileOpen(false); setFocus(false); if (next !== 'chat') setDetail(false); history.replaceState({}, '', pathFor(next)); };
+      const next = pageFor(), section = settingsSectionFor();
+      const resume = () => { setPage(next); setSettingsSection(section); setMobileOpen(false); setFocus(false); if (next !== 'chat') setDetail(false); history.replaceState({}, '', pathFor(next, section)); };
       const event = new CustomEvent('chefmate:before-page-change', { cancelable: true, detail: { page: next, resume } });
-      if (window.dispatchEvent(event)) resume(); else history.pushState({}, '', pathFor(page));
+      if (window.dispatchEvent(event)) resume(); else history.pushState({}, '', pathFor(page, settingsSection));
     };
     window.addEventListener('popstate', listener); return () => window.removeEventListener('popstate', listener);
-  }, [page]);
+  }, [page, settingsSection]);
   useEffect(() => {
     const escape = (event: KeyboardEvent) => {
       if (event.key !== 'Escape' || event.defaultPrevented || document.querySelector('dialog[open]')) return;
@@ -138,16 +138,24 @@ export default function App({account, refreshAccount = async () => {}, logout = 
     event.currentTarget.setPointerCapture?.(event.pointerId);
     setResizing(side);
   }
-  function navigate(next: Page, after?: () => void) {
+  function navigate(next: Page, after?: () => void, section = 'display') {
+    if (next === 'account') {next = 'settings'; section = 'account-profile';}
     const resume = () => {
-      setPage(next); setMobileOpen(false); setFocus(false); if (next !== 'chat') setDetail(false);
-      if (location.pathname !== pathFor(next)) history.pushState({}, '', pathFor(next));
+      setPage(next); if (next === 'settings') setSettingsSection(section); setMobileOpen(false); setFocus(false); if (next !== 'chat') setDetail(false);
+      const path = pathFor(next, section);
+      if (location.pathname + location.search !== path) history.pushState({}, '', path);
       after?.();
     };
     const event = new CustomEvent('chefmate:before-page-change', { cancelable: true, detail: { page: next, resume } });
     if (!window.dispatchEvent(event)) return;
     resume();
   }
+  const openSettings = (section: string) => navigate('settings', undefined, section);
+  const requestLogout = () => {
+    const resume = () => {void logout().catch(problem => notify(problem.message));};
+    const event = new CustomEvent('chefmate:before-page-change', {cancelable: true, detail: {page: 'logout', resume}});
+    if (window.dispatchEvent(event)) resume();
+  };
   function ask(text: string, image = false) {
     navigate('chat', () => {
       chefStore.setDraft(text);
@@ -168,7 +176,7 @@ export default function App({account, refreshAccount = async () => {}, logout = 
     <div inert={focus} className={`app react-app ${focus ? 'focus-scene-active' : ''} ${resizing ? 'pane-resizing' : ''} ${collapsed ? 'sidebar-collapsed' : ''} ${mobileOpen ? 'sidebar-open' : ''} ${detail ? 'details-open' : ''} ${prefs.density === 'compact' ? 'compact-density' : ''}`}
       data-page={page} data-preferences={prefsVersion} data-resizing={resizing || undefined} style={{ '--sidebar-width': `${collapsed ? 64 : width}px`, '--detail-width': `${rightWidth}px` } as CSSProperties}>
       <aside className="sidebar" aria-label="会话导航" inert={mobile && !mobileOpen}><Sidebar state={state} page={page} collapsed={collapsed} onCollapse={value => { setCollapsed(value); try { localStorage.setItem('chefmate:sidebar-collapsed', JSON.stringify(value)); } catch { /* Keep this session's layout. */ } }}
-        onClose={() => setMobileOpen(false)} navigate={navigate} notify={notify} developer={developer} account={account} onInspect={() => { setDetail(true); setTab('query'); }} />
+        onClose={() => setMobileOpen(false)} navigate={navigate} openSettings={openSettings} onLogout={requestLogout} notify={notify} developer={developer} account={account} onInspect={() => { setDetail(true); setTab('query'); }} />
       </aside>
       {!collapsed && <div className="sidebar-resize" role="separator" aria-label="调整侧栏宽度" aria-orientation="vertical" aria-valuemin={208} aria-valuemax={360} aria-valuenow={width} tabIndex={0}
         onPointerDown={event => startResizing(event, 'left')} onLostPointerCapture={event => { if (dragging.current?.pointerId === event.pointerId) stopResizing(); }} onKeyDown={event => { if (['ArrowLeft', 'ArrowRight'].includes(event.key)) { event.preventDefault(); setWidth(Math.max(208, Math.min(360, width + (event.key === 'ArrowLeft' ? -8 : 8)))); } }} />}
@@ -180,8 +188,7 @@ export default function App({account, refreshAccount = async () => {}, logout = 
         {banner && <div className="connection-banner" role="status">{banner}{(!account || account.role === 'admin') && <button type="button" onClick={() => navigate(account ? 'admin' : 'settings')}>{account ? '管理平台' : '打开设置'}</button>}<button type="button" onClick={() => void chefStore.loadStatus().catch(error => notify(error.message))}>重新连接</button></div>}
         {state.error && <div className="error-box" role="alert">{state.error}</div>}
         <PageBoundary key={`${page}:${pageAttempt}`} onRetry={() => setPageAttempt(value => value + 1)} onBack={() => navigate('chat')}><Suspense fallback={<p className="panel-loading" role="status">正在打开页面…</p>}>
-          {page === 'settings' && <Settings onAccount={() => navigate('account')} scope={account ? 'personal' : undefined} developerAllowed={developerAllowed} onClose={() => navigate('chat')} onSaved={() => { void chefStore.loadStatus().catch(error => notify(error.message)); setPrefsVersion(value => value + 1); }} notify={notify} />}
-          {page === 'account' && account && <AccountPanel user={account} refresh={refreshAccount} logout={logout} notify={notify}/>}
+          {page === 'settings' && <Settings account={account} refreshAccount={refreshAccount} initialSection={settingsSection} onSectionChange={openSettings} scope={account ? 'personal' : undefined} developerAllowed={developerAllowed} onClose={() => navigate('chat')} onSaved={() => { void chefStore.loadStatus().catch(error => notify(error.message)); setPrefsVersion(value => value + 1); }} notify={notify} />}
           {page === 'admin' && account?.role === 'admin' && <AdminPanel user={account} refreshAccount={refreshAccount} notify={notify} onClose={() => navigate('chat')}/>}
           {(page === 'recipes' || page === 'journal') && <KitchenCenters page={page} onRecipe={openRecipe} onChat={text => navigate('chat', () => { chefStore.newSession(); chefStore.setDraft(text); })} onRecord={() => navigate('chat', () => { chefStore.newSession(); chefStore.setDraft('我想记录刚刚吃的一餐，请先整理草稿让我核对。'); })} onReturn={() => navigate('chat')} notify={notify} />}
         </Suspense></PageBoundary>

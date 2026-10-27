@@ -64,7 +64,10 @@ def _copy_database(source, target):
             raise ValueError("源库包含未知表，已停止迁移：" + ", ".join(sorted(set(source_tables) - set(target_tables))))
         # Foreign keys only exist in the identity registry; identities precede
         # sessions, reservations and usage. All copied values remain parameters.
-        ordered = sorted(source_tables, key=lambda table: (table != "accounts", table))
+        dependencies = {name: index for index, name in enumerate(("accounts", "account_credit_grants",
+            "account_memberships", "account_membership_windows", "account_budget_turns",
+            "account_budget_portions", "account_budget_allocations"))}
+        ordered = sorted(source_tables, key=lambda table: (dependencies.get(table, 100), table))
         target_columns = {table: {item["name"] for item in target.table_columns(table)} for table in source_tables}
         with psycopg.connect(target.url) as destination:
             if source_tables:
@@ -141,6 +144,9 @@ def migrate_runtime(source_dir, target_dir, url, *, schema_prefix="chefmate", le
         accounts = AccountsRepository(account_db, default_cost_limit_micros=default_cost_limit_micros)
         if (source / "accounts.db").is_file():
             counts["accounts"] = _copy_database(source / "accounts.db", account_db)
+            with accounts._connect() as db:
+                db.execute("BEGIN IMMEDIATE")
+                accounts.entitlements.migrate_existing(db)
         else:
             if not legacy_owner or not admin_username or not admin_password or legacy_owner.lower() != admin_username.lower():
                 raise ValueError("旧单用户库需显式 --legacy-owner，并配置同名管理员初始化账号与密码。")

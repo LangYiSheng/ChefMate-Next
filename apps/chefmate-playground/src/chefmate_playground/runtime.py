@@ -37,6 +37,7 @@ class ActiveTurn:
     debug_trace: list = field(default_factory=list)
     skill_events: list = field(default_factory=list)
     kitchen_profile: dict | None = None
+    memory_attached: bool = False
 
     def emit(self, event: dict) -> None:
         # A browser can detach while generation continues. Never block the agent on an absent reader.
@@ -247,6 +248,9 @@ class TurnManager:
             if turn.cancel.is_set():
                 raise asyncio.CancelledError
             arguments = {"on_event": on_event, "cancel_event": turn.cancel}
+            identity = getattr(self, "account_identity", None)
+            if identity:
+                arguments["user_identity"] = copy.deepcopy(identity)
             if self.images and any(message.get("images") for message in history):
                 arguments["image_loader"] = lambda reference: self.images.data_url(turn.session_id, reference)
             if turn.ui_context is not None:
@@ -254,6 +258,7 @@ class TurnManager:
             if self.memory is not None and self.memory_enabled():
                 context = self.memory.context()
                 if context.get("user_notes") or context.get("summary") or context.get("kitchen_profile"):
+                    turn.memory_attached = True
                     turn.kitchen_profile = copy.deepcopy(context.get("kitchen_profile") or None)
                     arguments["memory_context"] = context
             result = await self.agent.run_turn(history, **arguments)

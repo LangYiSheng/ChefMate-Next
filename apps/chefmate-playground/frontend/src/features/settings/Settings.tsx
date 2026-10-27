@@ -4,6 +4,8 @@ import {Icon} from '../../components/Icon';
 import {readUiPreferences, saveUiPreferences, type UiPreferencesSnapshot} from '../preferences/client';
 import {AppearanceSettings} from './AppearanceSettings';
 import {MemorySettings} from './MemorySettings';
+import {AccountPanel, type AccountSection} from '../account/AccountPanel';
+import type {AccountUser} from '../account/types';
 import {SettingsInsights, UsageTimeRange} from './SettingsInsights';
 import {KeyboardSettings} from './KeyboardSettings';
 import {ComponentSettings} from './ComponentSettings';
@@ -14,10 +16,13 @@ import {advanceRevisions, createDrafts, editableSections, isDirty, type Drafts, 
 import './settings-react.css';
 
 const sections = [
+  ['account-profile', '个人资料', 'user-round', '让小锅搭子用你喜欢的方式称呼你。'],
+  ['account-quota', '我的额度', 'coins', '会员先用，永久余额接续。额度和使用金额一眼看清。'],
+  ['account-security', '账号安全', 'shield-check', '管理登录密码，保护自己的厨房资料。'],
   ['display', '外观与对话', 'sun-moon', '按你的习惯使用小锅搭子。'],
   ['keyboard', '快捷键', 'corner-down-left', '把常用操作放在顺手的按键上。'],
   ['cooking', '烹饪与计时', 'timer', '让计时和步骤切换更符合你的做饭习惯。'],
-  ['memory', '长期记忆', 'book-open', '留下口味、忌口和做饭习惯，让每一次建议更懂你。'],
+  ['memory', '个人偏好', 'sliders-horizontal', '整理厨房习惯、口味和长期记忆，让每一次建议更懂你。'],
   ['model', '模型连接', 'plug', '选择模型、端点和连接方式。保存后用于接下来的对话。'],
   ['components', '系统组件', 'chef-hat', '统一管理指南、工具和交互界面。'],
   ['usage', 'Token 用量', 'layers', '查看模型服务已报告的使用量。'],
@@ -28,26 +33,31 @@ const sections = [
   ['changelog', '版本更新日志', 'list-checks', '看看小锅搭子最近多了哪些本领。'],
   ['about', '关于 ChefMate', 'info', ''],
 ];
-const navigationGroups: Record<string, string> = {display: '偏好', model: '智能体', context: '高级设置', changelog: '产品信息'};
+const navigationGroups: Record<string, string> = {'account-profile': '我的账号', display: '偏好', model: '智能体', context: '高级设置', changelog: '产品信息'};
 const sectionTabs: Record<string, readonly string[]> = {display: ['配色与字体', '对话显示', '对话建议'], keyboard: ['发送消息', '浏览与返回'], cooking: ['计时规则', '声音提醒'], model: ['连接信息', '连接方式'], components: ['组件管理'], usage: ['用量概览', '按模型统计'], context: ['信息容量'], runtime: ['等待与重试', '操作预算'], developer: ['调试信息'], changelog: ['更新记录']};
-export type SettingsProps = {onClose: () => void; onSaved?: () => void; onAccount?: () => void; notify?: (message: string) => void; scope?: 'personal' | 'admin'; initialSection?: string; apiBase?: string; developerAllowed?: boolean};
+export type SettingsProps = {onClose: () => void; onSaved?: () => void; onAccount?: () => void; notify?: (message: string) => void; scope?: 'personal' | 'admin'; initialSection?: string; onSectionChange?: (section: string) => void; apiBase?: string; developerAllowed?: boolean; account?: AccountUser; refreshAccount?: () => Promise<void>};
+const noNotify = () => {};
+const noRefresh = async () => {};
 
-export function Settings({onClose, onSaved, onAccount, scope, initialSection = 'display', apiBase = '/api/settings', developerAllowed = true}: SettingsProps) {
+export function Settings({onClose, onSaved, scope, initialSection = 'display', onSectionChange, apiBase = '/api/settings', developerAllowed = true, account, refreshAccount = noRefresh, notify = noNotify}: SettingsProps) {
   const globalSections = ['model', 'components', 'context', 'runtime', 'data'];
-  const visibleSections = sections.filter(([id]) => (!scope || (scope === 'admin' ? globalSections.includes(id) : !globalSections.includes(id))) && (id !== 'developer' || developerAllowed));
+  const visibleSections = sections.filter(([id]) => (!id.startsWith('account-') || Boolean(account)) && (!scope || (scope === 'admin' ? globalSections.includes(id) : !globalSections.includes(id))) && (id !== 'developer' || developerAllowed));
   const [sectionChoice, setCurrent] = useState(initialSection), [loaded, setLoaded] = useState<Values | null>(null), [status, setStatus] = useState<Values>({});
   const current = visibleSections.some(([id]) => id === sectionChoice) ? sectionChoice : visibleSections[0][0];
   const currentRef = useRef(current); currentRef.current = current;
+  useEffect(() => {setCurrent(initialSection);}, [initialSection]);
   const [drafts, setDrafts] = useState<Drafts>({}), [baselines, setBaselines] = useState<Drafts>({}), [revisions, setRevisions] = useState<Record<string, SettingsRevision>>({});
   const [displayRevision, setDisplayRevision] = useState('');
   const [usageDays, setUsageDays] = useState('365');
   const [busy, setBusy] = useState(false), [testing, setTesting] = useState(false), [memoryDirty, setMemoryDirty] = useState(false), [memoryBusy, setMemoryBusy] = useState(false);
+  const [accountDirty, setAccountDirty] = useState(false), [accountBusy, setAccountBusy] = useState(false);
+  const [accountDirtySections, setAccountDirtySections] = useState<Record<string, boolean>>({});
   const [notice, setNotice] = useState(''), [error, setError] = useState(false), [confirmation, setConfirmation] = useState<null | {text: string; action: () => void}>(null), [insightRefresh, setInsightRefresh] = useState(0);
   const form = useRef<HTMLFormElement>(null), content = useRef<HTMLDivElement>(null), alive = useRef(true), working = useRef(false), allowedNavigation = useRef(false), loadAbort = useRef<AbortController | null>(null), loadSequence = useRef(0), testAbort = useRef<AbortController | null>(null);
   const pendingPreferences = useRef<UiPreferencesSnapshot | null>(null), displayRevisionRef = useRef(displayRevision); displayRevisionRef.current = displayRevision;
   const draftsRef = useRef(drafts), baselineRef = useRef(baselines); draftsRef.current = drafts; baselineRef.current = baselines;
   const dirtySections = Object.keys(drafts).filter(key => isDirty(drafts[key], baselines[key]));
-  const dirty = memoryDirty || dirtySections.length > 0, locked = busy || testing || memoryBusy;
+  const dirty = accountDirty || memoryDirty || dirtySections.length > 0, locked = busy || testing || memoryBusy || accountBusy;
   const say = (text: string, failed = false) => {setNotice(text); setError(failed);};
   const adoptDisplay = useCallback((snapshot: UiPreferencesSnapshot) => {
     const accepted = {...snapshot.values};
@@ -112,7 +122,9 @@ export function Settings({onClose, onSaved, onAccount, scope, initialSection = '
   useEffect(() => {
     const navigate = (event: Event) => {
       const navigation = event as CustomEvent<{page: string; resume?: () => void}>;
-      if (allowedNavigation.current || navigation.detail?.page === 'settings' || !dirty && !locked) return;
+      if (allowedNavigation.current) return;
+      if (navigation.detail?.page === 'settings') {if (locked) {event.preventDefault(); say('正在处理设置，完成后就可以切换。', true);} return;}
+      if (!dirty && !locked) return;
       event.preventDefault();
       if (locked) say('正在处理设置，完成后就可以离开。', true);
       else if (navigation.detail?.resume) setConfirmation({text: '离开会放弃尚未保存的设置。可以先保存，或者继续离开。', action: navigation.detail.resume});
@@ -175,7 +187,7 @@ export function Settings({onClose, onSaved, onAccount, scope, initialSection = '
   const readOnly = !editableSections.includes(current);
   return <div className="settings-page react-settings" aria-label="ChefMate 设置">
     <nav className="settings-nav" aria-label="设置分类" onKeyDown={event => {if (!['ArrowRight', 'ArrowLeft', 'ArrowUp', 'ArrowDown', 'Home', 'End'].includes(event.key)) return; const buttons = Array.from(event.currentTarget.querySelectorAll<HTMLButtonElement>('[data-section]')); const index = buttons.indexOf(event.target as HTMLButtonElement); if (index < 0) return; event.preventDefault(); const next = event.key === 'Home' ? 0 : event.key === 'End' ? buttons.length - 1 : (index + (['ArrowRight', 'ArrowDown'].includes(event.key) ? 1 : -1) + buttons.length) % buttons.length; buttons[next].focus(); buttons[next].click();}}>
-      {visibleSections.map(([id, title, icon]) => <Fragment key={id}>{navigationGroups[id] && <span className="settings-nav-label">{navigationGroups[id]}</span>}<button type="button" data-section={id} aria-current={current === id ? 'page' : undefined} onClick={() => {if (!locked) setCurrent(id);}} disabled={locked}><Icon name={icon}/><span>{title}</span>{dirtySections.includes(id) || id === 'memory' && memoryDirty ? <span aria-label="有未保存修改">•</span> : null}</button></Fragment>)}
+      {visibleSections.map(([id, title, icon]) => <Fragment key={id}>{navigationGroups[id] && <span className="settings-nav-label">{navigationGroups[id]}</span>}<button type="button" data-section={id} aria-current={current === id ? 'page' : undefined} onClick={() => {if (!locked) {setCurrent(id); onSectionChange?.(id);}}} disabled={locked}><Icon name={icon}/><span>{title}</span>{dirtySections.includes(id) || id === 'memory' && memoryDirty || accountDirtySections[id.slice(8)] ? <span aria-label="有未保存修改">•</span> : null}</button></Fragment>)}
     </nav>
     <section className="settings-workspace"><header className="settings-header"><div><h1>{selected[1]}</h1><p>{selected[3]}</p></div><button type="button" className="icon-button" aria-label="返回工作台" onClick={requestClose}><Icon name="x"/></button></header><div className="settings-content" ref={content}><div className="settings-reading-layout"><div className="settings-reading-main" data-settings-document>
       {notice && <p role="status" className={error ? 'settings-error' : 'settings-success'}>{notice}</p>}
@@ -198,9 +210,10 @@ export function Settings({onClose, onSaved, onAccount, scope, initialSection = '
         </dl></SettingsGroup><SettingsGroup title="保存与隔离"><p className="settings-note">会话、厨房进度和计时器随账号保存。模型与系统组件由管理员统一设置，外观与对话偏好在当前账号内同步。</p></SettingsGroup></>}
         {['usage', 'changelog', 'about'].includes(current) && <SettingsInsights section={current} refresh={insightRefresh} usageDays={current === 'usage' ? usageDays : undefined}/>}
       </SettingsTabs></form>
-      <MemorySettings active={current === 'memory'} onDirty={setMemoryDirty} onBusy={setMemoryBusy} onAccount={onAccount}/>
+      <MemorySettings active={current === 'memory'} onDirty={setMemoryDirty} onBusy={setMemoryBusy}/>
+      {account && <AccountPanel user={account} refresh={refreshAccount} notify={notify} active={current.startsWith('account-')} embedded section={(current.startsWith('account-') ? current.slice(8) : 'profile') as AccountSection} onDirty={setAccountDirty} onBusy={setAccountBusy} onDirtySections={setAccountDirtySections}/>}
       </>}
-    </div><SettingsIndex container={content} section={current}/></div></div>{current !== 'memory' && <footer className="settings-footer"><span id="save-state" hidden={!locked && !dirtySections.includes(current) && !error} role="status" data-state={locked ? 'busy' : dirtySections.includes(current) ? 'dirty' : error ? 'error' : 'saved'}><Icon name={locked ? 'loader-circle' : dirtySections.includes(current) ? 'circle-alert' : error ? 'circle-x' : 'circle-check'}/><span>{locked ? testing ? '正在验证原生工具调用…' : '正在处理设置…' : dirtySections.includes(current) ? '当前页有未保存修改' : notice || '设置已同步'}</span></span><div><button type="button" className="text-button" disabled={locked} onClick={() => {if (['usage', 'changelog', 'about'].includes(current)) setInsightRefresh(value => value + 1); else if (dirtySections.includes(current)) setConfirmation({text: '放弃当前页未保存的修改，读取最新配置？其他分类的草稿会保留。', action: () => {void load(current);}}); else void load(current);}}>重新读取</button>{!readOnly && <button type="button" className="primary-button" disabled={!loaded || locked || !dirtySections.includes(current)} onClick={save}>保存修改</button>}</div></footer>}</section>
+    </div><SettingsIndex container={content} section={current}/></div></div>{current !== 'memory' && !current.startsWith('account-') && <footer className="settings-footer"><span id="save-state" hidden={!locked && !dirtySections.includes(current) && !error} role="status" data-state={locked ? 'busy' : dirtySections.includes(current) ? 'dirty' : error ? 'error' : 'saved'}><Icon name={locked ? 'loader-circle' : dirtySections.includes(current) ? 'circle-alert' : error ? 'circle-x' : 'circle-check'}/><span>{locked ? testing ? '正在验证原生工具调用…' : '正在处理设置…' : dirtySections.includes(current) ? '当前页有未保存修改' : notice || '设置已同步'}</span></span><div><button type="button" className="text-button" disabled={locked} onClick={() => {if (['usage', 'changelog', 'about'].includes(current)) setInsightRefresh(value => value + 1); else if (dirtySections.includes(current)) setConfirmation({text: '放弃当前页未保存的修改，读取最新配置？其他分类的草稿会保留。', action: () => {void load(current);}}); else void load(current);}}>重新读取</button>{!readOnly && <button type="button" className="primary-button" disabled={!loaded || locked || !dirtySections.includes(current)} onClick={save}>保存修改</button>}</div></footer>}</section>
     {confirmation && <div className="react-confirm-backdrop" onKeyDown={event => {if (event.key === 'Escape') setConfirmation(null); if (event.key === 'Tab') {const targets = Array.from(event.currentTarget.querySelectorAll<HTMLButtonElement>('button:not(:disabled)')); const first = targets[0], last = targets.at(-1); if (event.shiftKey && document.activeElement === first || !event.shiftKey && document.activeElement === last) {event.preventDefault(); (event.shiftKey ? last : first)?.focus();}}}}><div className="react-confirm" role="alertdialog" aria-modal="true" aria-labelledby="settings-confirm-title"><h2 id="settings-confirm-title">保留未保存的修改？</h2><p>{confirmation.text}</p><div><button autoFocus type="button" className="secondary-button" onClick={() => setConfirmation(null)}>继续编辑</button><button type="button" className="primary-button" onClick={() => {const action = confirmation.action; setConfirmation(null); action();}}>放弃修改</button></div></div></div>}
   </div>;
 }

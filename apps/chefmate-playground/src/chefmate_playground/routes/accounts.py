@@ -29,6 +29,10 @@ class PasswordReset(_Body):
     new_password: str = Field(min_length=10, max_length=128)
 
 
+class ProfileUpdate(_Body):
+    display_name: str = Field(min_length=1, max_length=40)
+
+
 class Onboarding(_Body):
     display_name: str = Field(min_length=1, max_length=40)
     cooking_level: str = "beginner"
@@ -162,9 +166,23 @@ def build_router(accounts: AccountsRepository, *, secure_cookie=False, registrat
         return {"ok": True, "user": refreshed}
 
     @router.patch("/api/auth/onboarding")
-    def onboarding(body: Onboarding, request: Request):
+    async def onboarding(body: Onboarding, request: Request):
         user = current_user(request)
-        return {"user": _call(accounts.complete_onboarding, user["id"], body.model_dump())}
+        import asyncio
+        accepted = await asyncio.to_thread(_call, accounts.complete_onboarding, user["id"], body.model_dump())
+        pool = getattr(request.app.state, "pool", None)
+        if pool is not None:
+            try:
+                accepted = await pool.sync_onboarding(accepted, body.model_dump())
+            except AccountError as error:
+                raise HTTPException(error.status_code, error.detail) from None
+        return {"user": accepted}
+
+    @router.patch("/api/auth/profile")
+    def profile(body: ProfileUpdate, request: Request):
+        from ..personal_preferences import update_display_name
+        user = current_user(request)
+        return {"user": _call(update_display_name, accounts, user["id"], body.display_name)}
 
     @router.get("/api/auth/quota")
     def quota(request: Request):
@@ -205,7 +223,9 @@ def build_router(accounts: AccountsRepository, *, secure_cookie=False, registrat
     @router.patch("/api/admin/pricing")
     def update_pricing(body: PricingUpdate, request: Request):
         actor = administrator(request)
-        return _call(accounts.update_pricing, actor["id"], body.model_dump(exclude_unset=True))
+        pool = getattr(request.app.state, "pool", None)
+        update = pool.model_profiles.update_legacy_pricing if pool and getattr(pool, "model_profiles", None) else accounts.update_pricing
+        return _call(update, actor["id"], body.model_dump(exclude_unset=True))
 
     @router.get("/api/admin/usage")
     def usage(request: Request, days: int = 30):
@@ -231,8 +251,12 @@ def build_router(accounts: AccountsRepository, *, secure_cookie=False, registrat
         return {"items": accounts.reconciliations(user_id, turn_id)}
 
     @router.get("/api/admin/audit")
-    def audit(request: Request):
+    def audit(request: Request, q: str = "", action: str = "", actor: str = "", target: str = "",
+              date_from: str = "", date_to: str = "", page: int = 1, page_size: int = 20):
+        from ..audit import audit_report
+
         administrator(request)
-        return {"items": accounts.audit_log()}
+        return _call(audit_report, accounts, q=q, action=action, actor=actor, target=target,
+                     date_from=date_from, date_to=date_to, page=page, page_size=page_size)
 
     return router

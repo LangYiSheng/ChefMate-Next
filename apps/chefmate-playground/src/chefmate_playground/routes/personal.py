@@ -24,6 +24,9 @@ def build_router(context: AppContext) -> APIRouter:
         ):
             raise HTTPException(422, "记忆设置无效。")
         try:
+            service = getattr(context, "personal_preferences", None)
+            if service is not None:
+                return await asyncio.to_thread(service.update_legacy, values["user_notes"], values["revision"], enabled=values.get("enabled"))
             return context.memory.update_user(values["user_notes"], values["revision"], enabled=values.get("enabled"))
         except MemoryConflict:
             raise HTTPException(409, "记忆已更新，你的草稿仍保留；请重新读取并核对。") from None

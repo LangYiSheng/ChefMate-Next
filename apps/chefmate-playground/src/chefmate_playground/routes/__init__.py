@@ -1,8 +1,8 @@
 """Route groups are assembled explicitly so ownership remains easy to find."""
 
-from . import conversations, diagnostics, library, personal, system, workspace
+from . import conversations, diagnostics, library, personal, personal_preferences, system, workspace
 
-ROUTE_GROUPS = (system, conversations, workspace, personal, library, diagnostics)
+ROUTE_GROUPS = (system, conversations, workspace, personal, personal_preferences, library, diagnostics)
 
 
 def mount_routes(app, context):

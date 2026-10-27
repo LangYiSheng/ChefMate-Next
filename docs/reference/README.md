@@ -8,6 +8,7 @@
 | 参考文档 | 主要内容 | 对应入口 |
 | --- | --- | --- |
 | [核心 App](workbench.md) | 启动、配置优先级、HTTP、SSE、个人资料与状态协议 | [应用 README](../../apps/chefmate-playground/README.md) |
+| [会员与金额额度](membership-billing.md) | 额度来源、首次使用窗口、预留、核对、管理 API 与升级迁移 | [账号指南](../guide/accounts.md) |
 | [Agent](agent.md) | 模型与工具注入、middleware、上下文、Skills、事件、失败边界 | [智能体包](../../packages/chefmate-agent/README.md) |
 | [Workflow](workflow.md) | 冻结菜谱、工作区、版本与动作、阶段门槛、份量、计时 | [工作流包](../../packages/chefmate-workflow/README.md) |
 | [Retrieval](retrieval.md) | 食材候选、组内 OR/组间 AND、快照、选项、证据与营养过滤 | [检索包](../../packages/chefmate-retrieval/README.md) |

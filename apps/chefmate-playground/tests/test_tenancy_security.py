@@ -69,8 +69,9 @@ def test_active_turn_stops_before_next_provider_round_when_profile_consent_chang
         provider_entries = 0
         revoke = None
 
-        async def run_turn(self, messages, *, on_event, memory_context=None, **kwargs):
-            assert memory_context["kitchen_profile"]["display_name"] == PROFILE["display_name"]
+        async def run_turn(self, messages, *, on_event, memory_context=None, user_identity=None, **kwargs):
+            assert user_identity["display_name"] == PROFILE["display_name"]
+            assert memory_context["kitchen_profile"]["household_size"] == PROFILE["household_size"]
             usage = {"attempted_calls": 1, "calls": [{"round": 1, "input_tokens": 10,
                 "output_tokens": 2, "total_tokens": 12}]}
             for round_number in (1, 2):

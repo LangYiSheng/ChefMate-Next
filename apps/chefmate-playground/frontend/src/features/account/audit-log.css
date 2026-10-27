@@ -1,0 +1,11 @@
+.audit-log{display:grid;gap:20px;min-width:0}
+.audit-filters{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px 16px;align-items:end}
+.audit-filters label,.audit-pagination>label{display:flex;flex-direction:column;gap:7px;min-width:0;font-size:13px;font-weight:600;color:var(--color-muted)}
+.audit-search{grid-column:span 2}.audit-search-input{position:relative;display:flex;align-items:center}.audit-search-input>.icon{position:absolute;left:12px;pointer-events:none;width:17px;height:17px}.audit-filters .audit-search-input input{padding-left:38px}
+.audit-filters input{width:100%;box-sizing:border-box;min-height:42px;padding:9px 12px;border:1px solid var(--color-border);border-radius:12px;background:var(--color-canvas);color:var(--color-text);font:inherit;outline-offset:3px}
+.audit-filters .ui-select{width:100%}.audit-filters .ui-select-trigger{min-height:42px}.audit-filter-actions{display:flex;align-items:center;gap:8px;min-height:42px}
+.audit-overview{display:flex;align-items:center;gap:12px;flex-wrap:wrap;font-size:12px;color:var(--color-muted)}.audit-overview p{margin:0;margin-right:auto;font-size:13px;color:var(--color-text)}.audit-overview .text-button{display:inline-flex;align-items:center;gap:5px}
+.audit-table-scroll{border-radius:14px;border:1px solid var(--color-border)}.audit-table{min-width:700px}.audit-table th,.audit-table td{vertical-align:top}.audit-table td{overflow-wrap:anywhere;max-width:240px}.audit-table td:first-child{min-width:165px;white-space:nowrap}.audit-table td:last-child{min-width:150px}
+.audit-pagination{display:flex;justify-content:space-between;align-items:center;gap:16px;flex-wrap:wrap}.audit-pagination>label{flex-direction:row;align-items:center;gap:10px}.audit-pagination .ui-select{width:94px}.audit-page-controls{display:flex;align-items:center;gap:12px}.audit-page-controls>span{white-space:nowrap;font-size:13px;color:var(--color-muted)}
+@media(max-width:850px){.audit-filters{grid-template-columns:repeat(2,minmax(0,1fr))}.audit-filter-actions{grid-column:span 2}.audit-page-controls{gap:8px}.audit-pagination{gap:12px}}
+@media(prefers-reduced-motion:no-preference){.audit-log{animation:audit-enter .18s ease-out}@keyframes audit-enter{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:translateY(0)}}}

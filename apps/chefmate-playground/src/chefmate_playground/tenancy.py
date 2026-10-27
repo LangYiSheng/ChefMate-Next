@@ -27,6 +27,7 @@ from .config import APP_ROOT
 from .database import Database
 from .frontend import mount_frontend
 from .http_errors import STORAGE_ERRORS, install_storage_handlers
+from .personal_preferences import PersonalPreferencesService
 from .routes.accounts import build_router
 from .settings import PERSONAL_PERSISTED, load_overrides, public_settings
 from .versioning import current_version
@@ -119,14 +120,28 @@ class WorkspacePool:
                         context.setup_error = None
                         app.state.config, app.state.components = config, registry
                         self.revisions[user_id] = revision
-            profile = user.get("profile") or {}
-            kitchen_profile = ({"display_name": user["display_name"], **{
-                key: profile[key] for key in ("cooking_level", "household_size", "preferences") if key in profile}}
-                if profile.get("use_for_ai") is True else {})
-            await asyncio.to_thread(app.state.memory.sync_kitchen_profile, kitchen_profile,
-                                   source_revision=profile.get("revision"))
+            if getattr(app.state.context, "personal_preferences", None) is None:
+                app.state.context.personal_preferences = PersonalPreferencesService(self.accounts, user_id, app.state.memory)
+            preferences = await asyncio.to_thread(app.state.context.personal_preferences.sync)
+            app.state.manager.account_identity = {"display_name": preferences["user"]["display_name"]}
             self.inflight[user_id] = self.inflight.get(user_id, 0) + 1
             return app
+
+    async def sync_onboarding(self, user, values):
+        app = await self.workspace(user)
+        try:
+            service = app.state.context.personal_preferences
+            snapshot = await asyncio.to_thread(service.snapshot)
+            await asyncio.to_thread(service.update, snapshot["revision"], {
+                "enabled": values.get("use_for_ai", False),
+                **{key: values[key] for key in ("cooking_level", "household_size", "preferences") if key in values}})
+            return await asyncio.to_thread(self.accounts.get_user, user["id"])
+        finally:
+            remaining = self.inflight.get(user["id"], 1) - 1
+            if remaining > 0:
+                self.inflight[user["id"]] = remaining
+            else:
+                self.inflight.pop(user["id"], None)
 
     def busy(self):
         return any(self.inflight.values()) or any(app.state.manager.active for app in self.workspaces.values())
@@ -223,19 +238,26 @@ class AccountUsage:
 
         bound = self.bounds[turn.id]
         round_number = measurement.get("round", len(bound["rounds"]) + 1)
-        if round_number in bound["rounds"]:
-            return
         user = self.accounts.get_user(self.user_id)
         if not user or user["disabled"]:
             raise _AgentFailure("account_disabled", "账号已停用，本轮已停止。")
+        memory = None
+        if measurement.get("memory_attached", getattr(turn, "memory_attached", False)):
+            memory = self.context.memory.snapshot()
+            if (user.get("profile", {}).get("use_for_ai") is not True or not memory["enabled"]):
+                raise _AgentFailure("profile_consent_changed", "个人偏好或长期记忆授权已关闭，本轮已停止；可按新设置重新发送。")
         if getattr(turn, "kitchen_profile", None):
             profile = user.get("profile") or {}
-            latest = {"display_name": user["display_name"], **{key: profile[key] for key in
-                ("cooking_level", "household_size", "preferences") if key in profile}}
-            memory = self.context.memory.snapshot()
+            latest = {key: profile[key] for key in
+                ("cooking_level", "household_size", "preferences") if key in profile}
+            if "display_name" in turn.kitchen_profile:
+                latest["display_name"] = user["display_name"]
+            memory = memory or self.context.memory.snapshot()
             if (profile.get("use_for_ai") is not True or not memory["enabled"]
                     or memory.get("kitchen_profile") != turn.kitchen_profile or latest != turn.kitchen_profile):
                 raise _AgentFailure("profile_consent_changed", "厨房档案或授权已改变，本轮已停止；可按新设置重新发送。")
+        if round_number in bound["rounds"]:
+            return
         # Byte-based conservative admission estimate includes a framing allowance;
         # provider tokenization/image billing still varies, so it is never
         # represented as measured usage or a guaranteed invoice ceiling.
@@ -249,7 +271,8 @@ class AccountUsage:
         cost, tokens = single_cost * retries, single_tokens * retries
         try:
             self.accounts.resize_usage(self.user_id, turn.id, tokens=bound["tokens"] + tokens,
-                                       cost_micros=bound["cost_micros"] + cost)
+                cost_micros=bound["cost_micros"] + cost,
+                cost_portions={**{str(key): value["cost_micros"] for key, value in bound["rounds"].items()}, str(round_number): cost})
         except AccountError as error:
             raise _AgentFailure("quota_exceeded", error.detail) from None
         bound["tokens"] += tokens
@@ -295,7 +318,8 @@ class AccountUsage:
         bound["cost_micros"] = sum(item["cost_micros"] for item in bound["rounds"].values())
         try:
             self.accounts.resize_usage(self.user_id, turn.id, tokens=max(1, bound["tokens"]),
-                cost_micros=bound["cost_micros"], observed=True)
+                cost_micros=bound["cost_micros"], observed=True,
+                cost_portions={str(key): value["cost_micros"] for key, value in bound["rounds"].items()})
         except AccountError:
             # Disabling an account or changing a cap cannot discard a response
             # that was already billed. Final settlement remains authoritative.
@@ -418,6 +442,8 @@ class TenantBoundary:
                     leased_user = user["id"]
                 except HTTPException as error:
                     return await reject(error.status_code, error.detail)
+                except AccountError as error:
+                    return await reject(error.status_code, error.detail)
                 except STORAGE_ERRORS:
                     return await reject(503, "应用数据服务暂时不可用，请稍后重试。")
 
@@ -453,6 +479,10 @@ def create_account_app(config, *, service=None, agent=None):
     install_storage_handlers(app)
     app.state.accounts, app.state.pool = pool.accounts, pool
     app.include_router(build_router(pool.accounts, secure_cookie=config.cookie_secure))
+    from .routes.entitlements import build_router as entitlements_router
+    from .routes.model_profiles import build_router as model_profiles_router
+    app.include_router(entitlements_router(pool.accounts))
+    app.include_router(model_profiles_router(pool))
 
     @app.exception_handler(RequestValidationError)
     async def invalid_request(request, error):
@@ -477,6 +507,25 @@ def create_account_app(config, *, service=None, agent=None):
 
     @app.api_route("/api/admin/settings", methods=["GET", "PATCH"])
     async def admin_settings(request: Request):
+        receive = request.receive
+        if request.method == "PATCH":
+            try:
+                body = await request.json()
+            except ValueError:
+                raise HTTPException(422, "请求无效，请检查输入内容。") from None
+            if not isinstance(body, dict):
+                raise HTTPException(422, "设置请求需为对象。")
+            if body.get("section") == "model":
+                if set(body) != {"section", "values", "revision"} or not isinstance(body["values"], dict):
+                    raise HTTPException(422, "模型设置格式无效。")
+                try:
+                    return await pool.model_profiles.update_legacy_active(
+                        request.state.user["id"], body.get("values"), body.get("revision"))
+                except AccountError as error:
+                    raise HTTPException(error.status_code, error.detail) from None
+            raw_body = await request.body()
+            async def receive():
+                return {"type": "http.request", "body": raw_body, "more_body": False}
         scope = dict(request.scope)
         scope["path"] = request.url.path.replace("/api/admin/settings", "/api/settings", 1)
         scope["raw_path"] = scope["path"].encode()
@@ -486,12 +535,12 @@ def create_account_app(config, *, service=None, agent=None):
         async def collect(message):
             messages.append(message)
         if request.method == "GET":
-            await pool.control(scope, request.receive, collect)
+            await pool.control(scope, receive, collect)
         else:
             async with pool.lock:
                 if pool.busy():
                     raise HTTPException(409, "还有用户的请求正在运行，请等待结束后再更新模型与运行配置。")
-                await pool.control(scope, request.receive, collect)
+                await pool.control(scope, receive, collect)
         from starlette.responses import Response
         start = next(message for message in messages if message["type"] == "http.response.start")
         response = Response(b"".join(message.get("body", b"") for message in messages if message["type"] == "http.response.body"),

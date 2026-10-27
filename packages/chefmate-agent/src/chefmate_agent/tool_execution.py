@@ -167,6 +167,10 @@ class AgentTools(RetrievalEvidence):
                 if not isinstance(plain, dict):
                     raise ValueError("Tool result must be a mapping")
                 if plain.get("status") == "ok":
+                    if spec.required_skill == "personal-memory":
+                        # Historical search results also enter ToolMessages even
+                        # when they do not replace the compact memory context.
+                        context.memory_accessed = True
                     if spec.required_skill == "personal-memory" and isinstance(plain.get("memory"), dict):
                         memory = plain["memory"]
                         refreshed = {key: memory[key] for key in

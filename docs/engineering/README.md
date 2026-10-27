@@ -6,7 +6,7 @@
 历史验收只覆盖记录中的版本、环境与场景，不能当作今天重新测试的结果。
 历史计划里的未勾选任务不自动成为当前待办，已勾选项目也不替代现行代码和最新验收。本文按记录日期整理；跨日期补充会单独说明。
 
-最近一轮与当前版本：[0.2.2 界面细节与发布整理](records/2026-10-27-release-0.2.2.md)。前轮见[剩余设置页与专注底栏统一](records/2026-10-27-settings-completion-focus.md)、[浏览器批注：控件与设置布局](records/2026-10-27-ui-feedback.md)、[微明度层次与界面动效](records/2026-10-27-tonal-motion.md)、[近期对话问题与真实模型迭代](records/2026-10-24-conversation-quality.md)、[三档字号、步骤与专注回复验收](records/2026-10-24-readable-cooking-ui.md)、[厨房卡片与专注对话交互验收](records/2026-10-24-kitchen-interaction-feedback.md)。上次发布见[0.2.1 工作台与对话内操作验收](records/2026-10-24-release-0.2.1.md)；早期结构整理见[代码与文档整理验收](records/2026-10-22-code-organization.md)，首次版本日志页面见[0.2.0 发布记录](records/2026-10-22-release-0.2.0.md)。
+最新功能迭代：[会员额度、多模型与账号设置](records/2026-10-27-membership-models-preferences.md)。当前已发布版本记录：[0.2.2 界面细节与发布整理](records/2026-10-27-release-0.2.2.md)。前轮见[剩余设置页与专注底栏统一](records/2026-10-27-settings-completion-focus.md)、[浏览器批注：控件与设置布局](records/2026-10-27-ui-feedback.md)、[微明度层次与界面动效](records/2026-10-27-tonal-motion.md)、[近期对话问题与真实模型迭代](records/2026-10-24-conversation-quality.md)、[三档字号、步骤与专注回复验收](records/2026-10-24-readable-cooking-ui.md)、[厨房卡片与专注对话交互验收](records/2026-10-24-kitchen-interaction-feedback.md)。上次发布见[0.2.1 工作台与对话内操作验收](records/2026-10-24-release-0.2.1.md)；早期结构整理见[代码与文档整理验收](records/2026-10-22-code-organization.md)，首次版本日志页面见[0.2.0 发布记录](records/2026-10-22-release-0.2.0.md)。
 
 ## 验收与实现记录
 
@@ -14,6 +14,7 @@
 
 | 记录 | 关注点 |
 | --- | --- |
+| [会员额度、多模型与账号设置](records/2026-10-27-membership-models-preferences.md) | 固定窗口会员、永久资金来源、模型独立计价、审计筛选与统一偏好 |
 | [账号、金额额度与 PostgreSQL 改造](records/2026-10-27-accounts-admin-postgresql.md) | 登录与欢迎引导、用户隔离、长期记忆授权、管理员和金额计价 |
 | [Docker、备份与恢复验收](records/2026-10-27-docker-acceptance.md) | 应用 PostgreSQL、非 root 镜像、备份完整性、真实恢复和代理边界 |
 | [72 账号持续运行检查](records/2026-10-27-multiuser-soak.md) | 两阶段隔离读写、缓存换出、重启持久化及资源口径 |

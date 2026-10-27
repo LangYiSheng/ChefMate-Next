@@ -18,6 +18,7 @@ from decimal import Decimal, InvalidOperation, ROUND_CEILING
 from pathlib import Path
 
 from .database import Database
+from .entitlements import EntitlementsLedger
 
 
 COOKIE_NAME = "chefmate_session"
@@ -126,6 +127,7 @@ class AccountsRepository:
         # never an admission limit. Budgets are denominated in currency only.
         self.default_cost_limit_micros = _limit(default_cost_limit_micros)
         self._dummy_password = hash_password(secrets.token_urlsafe(32))
+        self.entitlements = EntitlementsLedger(self)
         with self._connect() as db:
             db.executescript("""
                 CREATE TABLE IF NOT EXISTS accounts (
@@ -172,7 +174,13 @@ class AccountsRepository:
                 CREATE TABLE IF NOT EXISTS account_audit (
                     id INTEGER PRIMARY KEY, actor_id TEXT, target_id TEXT,
                     action TEXT NOT NULL, fields TEXT NOT NULL, created_at TEXT NOT NULL);
+                CREATE INDEX IF NOT EXISTS account_audit_recent ON account_audit(created_at DESC,id DESC);
+                CREATE INDEX IF NOT EXISTS account_audit_actor ON account_audit(actor_id,created_at DESC,id DESC);
+                CREATE INDEX IF NOT EXISTS account_audit_target ON account_audit(target_id,created_at DESC,id DESC);
             """.replace("id INTEGER PRIMARY KEY, actor_id", f"id {self.database.identity_primary_key}, actor_id"))
+            self.entitlements.create_tables(db)
+            if "revocation_reason" not in {column["name"] for column in self.database.table_columns("account_memberships", connection=db)}:
+                db.execute("ALTER TABLE account_memberships ADD COLUMN revocation_reason TEXT")
             columns = {column["name"] for column in self.database.table_columns("account_usage", connection=db)}
             for column in ("estimated_tokens", "estimated_cost_micros"):
                 if column not in columns:
@@ -208,6 +216,7 @@ class AccountsRepository:
                 policy["revision"] += 1
                 db.execute("UPDATE account_settings SET body=? WHERE name='policy'", (json.dumps(policy),))
                 self._audit(db, None, None, "migrate_monetary_budgets", ["cost_limit_micros", "legacy_token_budget"], self._time())
+            self.entitlements.migrate_existing(db)
 
     def _connect(self):
         return self.database.connect(row_factory=sqlite3.Row, timeout=15)
@@ -238,9 +247,10 @@ class AccountsRepository:
         # admitted provider cost. Recovery converts these bounds into estimates.
         pending = db.execute("SELECT COALESCE(SUM(tokens),0) tokens,COALESCE(SUM(cost_micros),0) cost "
                              "FROM account_reservations WHERE user_id=?", (row["id"],)).fetchone()
-        consumed = totals["cost"] + totals["estimated_cost"] + pending["cost"]
-        balance = None if row["cost_limit_micros"] is None else max(0, row["cost_limit_micros"] - consumed)
-        return {"token_limit": None, "cost_limit_micros": row["cost_limit_micros"], "currency": "CNY",
+        funds = self.entitlements.snapshot(db, row)
+        balance = funds["available_micros"]
+        return {"token_limit": None, "cost_limit_micros": funds["permanent"]["total_micros"], "currency": "CNY",
+                "funds": funds,
                 "balance_micros": balance, "remaining_cost_micros": balance,
                 "used_tokens": totals["tokens"], "used_cost_micros": totals["cost"],
                 "reported_cost_micros": totals["reported_cost"], "reconciled_turns": totals["reconciled_turns"],
@@ -294,6 +304,7 @@ class AccountsRepository:
                     None if admin else policy["default_cost_limit_micros"], instant, instant))
             except sqlite3.IntegrityError:
                 raise AccountError(409, "这个账号已被注册，请换一个账号或登录。") from None
+            self.entitlements.ensure_account(db, db.execute("SELECT * FROM accounts WHERE id=?", (user_id,)).fetchone())
             self._audit(db, user_id, user_id, "bootstrap_admin" if admin else "register", [], instant)
         return self.get_user(user_id)
 
@@ -467,6 +478,9 @@ class AccountsRepository:
             columns = list(changes)
             db.execute("UPDATE accounts SET " + ",".join(f"{key}=?" for key in columns) + ",updated_at=? WHERE id=?",
                        (*[changes[key] for key in columns], self._time(), user_id))
+            if "cost_limit_micros" in changes:
+                db.execute("UPDATE account_credit_grants SET amount_micros=? WHERE id=?",
+                           (changes["cost_limit_micros"], "base-" + user_id))
             if changes.get("disabled") or changes.get("role", row["role"]) != row["role"]:
                 db.execute("UPDATE accounts SET auth_revision=auth_revision+1 WHERE id=?", (user_id,))
                 db.execute("DELETE FROM account_sessions WHERE user_id=?", (user_id,))
@@ -492,6 +506,46 @@ class AccountsRepository:
     def pricing(self):
         with self._connect() as db:
             return json.loads(db.execute("SELECT body FROM account_settings WHERE name='pricing'").fetchone()[0])
+
+    @staticmethod
+    def _pricing_override(values):
+        """Validate an internal model-profile quote; no HTTP accepts this object."""
+        allowed = {"currency", "input_per_million", "output_per_million", "cached_input_per_million",
+                   "configured", "revision", "model_profile_id", "model_profile_label"}
+        fields = ("input_per_million", "output_per_million", "cached_input_per_million")
+        if (not isinstance(values, dict) or set(values) - allowed or values.get("currency") != "CNY"
+                or type(values.get("configured")) is not bool or any(key not in values for key in fields)):
+            raise AccountError(422, "模型计价快照无效。")
+        result = {"currency": "CNY", "configured": values["configured"], **{key: _price(values[key]) for key in fields}}
+        if "revision" in values:
+            if type(values["revision"]) is not int or values["revision"] < 1:
+                raise AccountError(422, "模型计价版本无效。")
+            result["revision"] = values["revision"]
+        if "model_profile_id" in values:
+            if not isinstance(values["model_profile_id"], str) or not _USER_ID.fullmatch(values["model_profile_id"]):
+                raise AccountError(422, "模型档案标识无效。")
+            result["model_profile_id"] = values["model_profile_id"]
+        if "model_profile_label" in values:
+            label = values["model_profile_label"]
+            if not isinstance(label, str) or not 1 <= len(label.strip()) <= 80 or "\x00" in label:
+                raise AccountError(422, "模型档案名称无效。")
+            result["model_profile_label"] = label.strip()
+        return result
+
+    def get_entitlements(self, user_id):
+        user = self.get_user(user_id)
+        if not user:
+            raise AccountError(404, "用户不存在。")
+        return {"user": user, "entitlements": user["quota"]["funds"]}
+
+    def grant_credit(self, actor_id, user_id, **values):
+        return self.entitlements.grant_credit(actor_id, user_id, **values)
+
+    def grant_membership(self, actor_id, user_id, **values):
+        return self.entitlements.grant_membership(actor_id, user_id, **values)
+
+    def revoke_membership(self, actor_id, user_id, membership_id, **values):
+        return self.entitlements.revoke_membership(actor_id, user_id, membership_id, **values)
 
     def policy(self, *, connection=None):
         if connection is None:
@@ -542,7 +596,7 @@ class AccountsRepository:
             self._audit(db, actor_id, None, "update_pricing", prices, self._time())
         return current
 
-    def reserve_usage(self, user_id, reservation_id, *, tokens=1, cost_micros=0, ttl_seconds=900):
+    def reserve_usage(self, user_id, reservation_id, *, tokens=1, cost_micros=0, ttl_seconds=900, pricing_override=None):
         """Reserve an explicit upper bound, retaining prices until settlement."""
         if not isinstance(reservation_id, str) or not 1 <= len(reservation_id) <= 200:
             raise AccountError(422, "用量请求标识无效。")
@@ -565,20 +619,20 @@ class AccountsRepository:
             if recorded:
                 raise AccountError(409, "这次请求的用量已结算。")
             quota = self._quota(db, row)
-            pricing = json.loads(db.execute("SELECT body FROM account_settings WHERE name='pricing'").fetchone()[0])
+            pricing = (self._pricing_override(pricing_override) if pricing_override is not None else
+                       json.loads(db.execute("SELECT body FROM account_settings WHERE name='pricing'").fetchone()[0]))
             if quota["cost_limit_micros"] is not None and not pricing.get("configured", False):
                 raise AccountError(503, "管理员尚未配置模型计价，请联系管理员。")
-            if quota["cost_limit_micros"] is not None and (
-                    quota["quota_used_cost_micros"] + quota["reserved_cost_micros"] + cost_micros > quota["cost_limit_micros"]
-                    or quota["quota_used_cost_micros"] >= quota["cost_limit_micros"]):
+            if quota["balance_micros"] is not None and quota["balance_micros"] == 0:
                 raise QuotaExceeded()
+            self.entitlements.resize(db, row, reservation_id, cost_micros)
             expires = _timestamp(instant + timedelta(seconds=max(60, min(3600, ttl_seconds))))
             db.execute("INSERT INTO account_reservations VALUES(?,?,?,?,?,?,?)", (
                 reservation_id, user_id, tokens, cost_micros, json.dumps(pricing), _timestamp(instant), expires))
         return {"id": reservation_id, "user_id": user_id, "tokens": tokens, "cost_micros": cost_micros,
                 "pricing": pricing, "expires_at": expires}
 
-    def resize_usage(self, user_id, reservation_id, *, tokens, cost_micros, observed=False):
+    def resize_usage(self, user_id, reservation_id, *, tokens, cost_micros, observed=False, cost_portions=None):
         """Atomically replace this turn's reservation before a model call.
 
         The bound is cumulative for the entire turn. Its old reservation is
@@ -599,13 +653,9 @@ class AccountsRepository:
             if not current:
                 raise AccountError(409, "用量预留已过期，请重新发送。")
             quota = self._quota(db, row)
-            pending_cost = quota["reserved_cost_micros"] - current["cost_micros"]
             if not observed and quota["cost_limit_micros"] is not None and not json.loads(current["pricing"]).get("configured", False):
                 raise AccountError(503, "管理员尚未配置模型计价，请联系管理员。")
-            if not observed and quota["cost_limit_micros"] is not None and (
-                    quota["quota_used_cost_micros"] + pending_cost + cost_micros > quota["cost_limit_micros"]
-                    or quota["quota_used_cost_micros"] >= quota["cost_limit_micros"]):
-                raise QuotaExceeded()
+            self.entitlements.resize(db, row, reservation_id, cost_micros, portions=cost_portions, observed=observed)
             db.execute("UPDATE account_reservations SET tokens=?,cost_micros=? WHERE id=? AND user_id=?",
                        (tokens, cost_micros, reservation_id, user_id))
             return {**dict(current), "tokens": tokens, "cost_micros": cost_micros,
@@ -613,6 +663,8 @@ class AccountsRepository:
 
     def release_usage(self, user_id, reservation_id):
         with self._connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            self.entitlements.release(db, user_id, reservation_id)
             db.execute("DELETE FROM account_reservations WHERE id=? AND user_id=?", (reservation_id, user_id))
 
     def reservation_pricing(self, user_id, reservation_id):
@@ -702,6 +754,7 @@ class AccountsRepository:
                 return None
             if attempts == 0 and not calls and not existing:
                 if status != "running":
+                    self.entitlements.release(db, user_id, turn_id)
                     db.execute("DELETE FROM account_reservations WHERE id=? AND user_id=?", (turn_id, user_id))
                 return {**values, "cost_micros": 0, "incomplete": False, "estimated_tokens": 0,
                         "estimated_cost_micros": 0, "pricing": json.loads(reservation["pricing"]) if reservation else None}
@@ -743,6 +796,11 @@ class AccountsRepository:
                            values["output_tokens"], values["cached_input_tokens"], values["total_tokens"], cost,
                            int(incomplete), json.dumps(pricing), created_at, estimated_tokens, estimated_cost))
             if status != "running":
+                row = db.execute("SELECT * FROM accounts WHERE id=?", (user_id,)).fetchone()
+                reconciliation = db.execute("SELECT final_cost_micros FROM account_usage_reconciliations "
+                    "WHERE user_id=? AND turn_id=? ORDER BY revision DESC LIMIT 1", (user_id, turn_id)).fetchone()
+                self.entitlements.settle(db, row, turn_id,
+                    reconciliation[0] if reconciliation else cost + estimated_cost, 0 if reconciliation else estimated_cost)
                 db.execute("DELETE FROM account_reservations WHERE id=? AND user_id=?", (turn_id, user_id))
         return {**values, "cost_micros": cost, "incomplete": incomplete, "pricing": pricing,
                 "estimated_tokens": estimated_tokens, "estimated_cost_micros": estimated_cost}
@@ -808,6 +866,7 @@ class AccountsRepository:
                 raise AccountError(409, "这条金额已被另一位管理员核对，请保留草稿并重新读取。")
             db.execute("INSERT INTO account_usage_reconciliations VALUES(?,?,?,?,?,?,?)", (
                 user_id, turn_id, revision + 1, final_cost_micros, reason.strip(), actor_id, self._time()))
+            self.entitlements._replace_used(db, user_id, turn_id, final_cost_micros)
             self._audit(db, actor_id, user_id, "reconcile_usage", ["final_cost_micros", "usage_reconciliation"], self._time())
             return {"ok": True, "user": self._public(db, target),
                     "entry": self._usage_rows(db, "u.user_id=? AND u.turn_id=?", (user_id, turn_id), limit=1)[0]}

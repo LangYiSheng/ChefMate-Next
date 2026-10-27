@@ -25,13 +25,13 @@ describe('Account boundary', () => {
   it('reads the latest wallet on entering the account page after earlier usage', async () => {
     let reads = 0; const updated = user({quota: {...user().quota, used_cost_micros: 500000}});
     request.mockImplementation(() => Promise.resolve({user: ++reads === 1 ? user() : updated}));
-    render(<AccountGate>{(account, refresh, logout) => <AccountPanel user={account} refresh={refresh} logout={logout} notify={vi.fn()}/>}</AccountGate>);
-    expect(await screen.findByText('剩余额度 ¥4.50')).toBeVisible(); expect(reads).toBe(2);
+    render(<AccountGate>{(account, refresh, logout) => <AccountPanel section="quota" user={account} refresh={refresh} logout={logout} notify={vi.fn()}/>}</AccountGate>);
+    expect(await screen.findByRole('heading', {name: '¥4.50'})).toBeVisible(); expect(reads).toBe(2);
   });
   it('reports a real manual wallet refresh failure without claiming success', async () => {
     let reads = 0; const notify = vi.fn(); request.mockImplementation(() => ++reads <= 2 ? Promise.resolve({user: user()}) : Promise.reject(new Error('金额信息暂时无法读取')));
-    render(<AccountGate>{(account, refresh, logout) => <AccountPanel user={account} refresh={refresh} logout={logout} notify={notify}/>}</AccountGate>);
-    await screen.findByText('剩余额度 ¥4.99'); await waitFor(() => expect(reads).toBe(2)); fireEvent.click(screen.getByRole('button', {name: '刷新'}));
+    render(<AccountGate>{(account, refresh, logout) => <AccountPanel section="quota" user={account} refresh={refresh} logout={logout} notify={notify}/>}</AccountGate>);
+    await screen.findByRole('heading', {name: '¥4.99'}); await waitFor(() => expect(reads).toBe(2)); fireEvent.click(screen.getByRole('button', {name: '读取最新'}));
     expect(await screen.findByRole('alert')).toHaveTextContent('金额信息暂时无法读取'); expect(screen.queryByText('账号信息已更新。')).not.toBeInTheDocument(); expect(notify).not.toHaveBeenCalled();
   });
   it('ignores an older wallet response after a newer refresh has completed', async () => {
@@ -121,8 +121,8 @@ describe('Account boundary', () => {
   it('keeps profile sharing off by default and only includes consent after explicit selection', async () => {
     request.mockImplementation((path: string) => Promise.resolve({user: user({onboarding_completed: path !== '/api/auth/me'})}));
     render(<AccountGate>{authenticated}</AccountGate>); await screen.findByRole('heading', {name: '欢迎来到你的厨房'}); fireEvent.click(screen.getByRole('button', {name: '一起开始吧'}));
-    const consent = screen.getByRole('switch', {name: '将厨房档案用于对话建议'}); expect(consent).not.toBeChecked();
-    expect(screen.getByText('开启后会发送给当前模型服务商，可在账号页关闭。')).toBeInTheDocument(); fireEvent.click(consent); fireEvent.click(screen.getByRole('button', {name: '下一步'})); fireEvent.click(screen.getByRole('button', {name: '进入我的厨房'}));
+    const consent = screen.getByRole('switch', {name: '在对话中使用个人偏好与长期记忆'}); expect(consent).not.toBeChecked();
+    expect(screen.getByText('开启后，厨房习惯、口味与长期记忆会发送给所配置的模型，可在个人偏好中统一关闭。称呼始终用于 ChefMate 对你的称呼。')).toBeInTheDocument(); fireEvent.click(consent); fireEvent.click(screen.getByRole('button', {name: '下一步'})); fireEvent.click(screen.getByRole('button', {name: '进入我的厨房'}));
     await screen.findByRole('region', {name: '私人厨房'});
     expect(JSON.parse(request.mock.calls.find(([path]) => path === '/api/auth/onboarding')![1].body).use_for_ai).toBe(true);
   });
@@ -181,20 +181,20 @@ describe('Account and administrator controls', () => {
   it('protects a profile draft on account refresh and reads once after an explicit discard', async () => {
     const refresh = vi.fn().mockResolvedValue(undefined);
     render(<AccountPanel user={user()} refresh={refresh} logout={vi.fn()} notify={vi.fn()}/>); await waitFor(() => expect(refresh).toHaveBeenCalledOnce()); refresh.mockClear(); fireEvent.change(screen.getByLabelText('称呼'), {target: {value: '未保存的小厨'}});
-    fireEvent.click(screen.getByRole('button', {name: '刷新'})); fireEvent.click(screen.getByRole('button', {name: '继续编辑'})); expect(refresh).not.toHaveBeenCalled(); expect(screen.getByLabelText('称呼')).toHaveValue('未保存的小厨');
-    fireEvent.click(screen.getByRole('button', {name: '刷新'})); fireEvent.click(screen.getByRole('button', {name: '放弃修改'})); await waitFor(() => expect(refresh).toHaveBeenCalledOnce()); expect(screen.getByLabelText('称呼')).toHaveValue('小晚');
+    fireEvent.click(screen.getByRole('button', {name: '读取最新'})); fireEvent.click(screen.getByRole('button', {name: '继续编辑'})); expect(refresh).not.toHaveBeenCalled(); expect(screen.getByLabelText('称呼')).toHaveValue('未保存的小厨');
+    fireEvent.click(screen.getByRole('button', {name: '读取最新'})); fireEvent.click(screen.getByRole('button', {name: '放弃并读取'})); await waitFor(() => expect(refresh).toHaveBeenCalledOnce()); expect(screen.getByLabelText('称呼')).toHaveValue('小晚');
   });
   it('keeps a local profile draft while a new wallet and remote profile arrive', () => {
     const refresh = vi.fn().mockResolvedValue(undefined), view = render(<AccountPanel user={user()} refresh={refresh} logout={vi.fn()} notify={vi.fn()}/>);
     fireEvent.change(screen.getByLabelText('称呼'), {target: {value: '未保存的小厨'}});
     view.rerender(<AccountPanel user={user({display_name: '服务器新称呼', quota: {...user().quota, used_cost_micros: 500000}})} refresh={refresh} logout={vi.fn()} notify={vi.fn()}/>);
-    expect(screen.getByLabelText('称呼')).toHaveValue('未保存的小厨'); expect(screen.getByText('剩余额度 ¥4.50')).toBeVisible();
+    expect(screen.getByLabelText('称呼')).toHaveValue('未保存的小厨'); expect(screen.getByRole('button', {name: '保存资料'})).toBeEnabled();
   });
   it('incorporates remote consent revocation while preserving an unrelated nickname draft', () => {
     const first = user({profile: {...user().profile, use_for_ai: true}}), refresh = vi.fn().mockResolvedValue(undefined);
     const view = render(<AccountPanel user={first} refresh={refresh} logout={vi.fn()} notify={vi.fn()}/>); fireEvent.change(screen.getByLabelText('称呼'), {target: {value: '未保存的小厨'}});
     view.rerender(<AccountPanel user={{...first, profile: {...first.profile, use_for_ai: false}}} refresh={refresh} logout={vi.fn()} notify={vi.fn()}/>);
-    expect(screen.getByLabelText('称呼')).toHaveValue('未保存的小厨'); expect(screen.getByRole('switch', {name: '将厨房档案用于对话建议'})).not.toBeChecked();
+    expect(screen.getByLabelText('称呼')).toHaveValue('未保存的小厨'); expect(screen.queryByRole('switch')).not.toBeInTheDocument();
   });
   it('marks an existing draft clean when a refreshed server profile has the same values', () => {
     const refresh = vi.fn().mockResolvedValue(undefined), view = render(<AccountPanel user={user()} refresh={refresh} logout={vi.fn()} notify={vi.fn()}/>);
@@ -203,78 +203,43 @@ describe('Account and administrator controls', () => {
     let accepted = false; act(() => {accepted = window.dispatchEvent(new CustomEvent('chefmate:before-page-change', {cancelable: true, detail: {page: 'chat', resume: vi.fn()}}));});
     expect(accepted).toBe(true); expect(screen.queryByRole('dialog', {name: '保留未保存的修改？'})).not.toBeInTheDocument();
   });
-  it('lets the account owner turn profile sharing off without losing the saved kitchen profile', async () => {
+  it('saves the nickname independently without rewriting kitchen preferences or their shared consent', async () => {
     request.mockResolvedValue({user: user()}); const account = user(); account.profile = {...account.profile, use_for_ai: true, preferences: ['喜欢家常菜']};
     render(<AccountPanel user={account} refresh={vi.fn()} logout={vi.fn()} notify={vi.fn()}/>);
-    const consent = screen.getByRole('switch', {name: '将厨房档案用于对话建议'}); expect(consent).toBeChecked(); fireEvent.click(consent); fireEvent.click(screen.getByRole('button', {name: '保存资料'}));
-    await waitFor(() => expect(request).toHaveBeenCalledWith('/api/auth/onboarding', expect.objectContaining({method: 'PATCH'})));
-    const profile = JSON.parse(request.mock.calls[0][1].body); expect(profile.use_for_ai).toBe(false); expect(profile.preferences).toEqual(['喜欢家常菜']); expect(profile.cooking_level).toBe('beginner');
+    expect(screen.queryByRole('switch')).not.toBeInTheDocument(); expect(screen.queryByRole('combobox')).not.toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText('称呼'), {target: {value: '新的称呼'}}); fireEvent.click(screen.getByRole('button', {name: '保存资料'}));
+    await waitFor(() => expect(request).toHaveBeenCalledWith('/api/auth/profile', {method: 'PATCH', body: JSON.stringify({display_name: '新的称呼'})}));
+    expect(screen.getByText(/不受个人偏好开关影响/)).toBeVisible();
   });
   it('deducts reported, unreported and reserved money from the remaining allowance', () => {
     const account = user(); account.quota = {...account.quota, cost_limit_micros: 10_000_000, used_cost_micros: 1_000_000, reserved_cost_micros: 1_000_000, estimated_tokens: 2000, estimated_cost_micros: 2_000_000, quota_used_cost_micros: 3_000_000};
-    render(<AccountPanel user={account} refresh={vi.fn()} logout={vi.fn()} notify={vi.fn()}/>);
-    expect(screen.getByRole('progressbar', {name: '金额额度使用比例'})).toHaveAttribute('value', '4000000'); expect(screen.getByText('剩余额度 ¥6.00')).toBeInTheDocument(); expect(screen.getByText(/模型未完整报告/)).toBeInTheDocument();
-    expect(screen.queryByRole('progressbar', {name: /Token/})).not.toBeInTheDocument(); expect(screen.getByText(/3,000 Token，仅作使用统计/)).toBeInTheDocument();
+    render(<AccountPanel section="quota" user={account} refresh={vi.fn()} logout={vi.fn()} notify={vi.fn()}/>);
+    expect(screen.getByRole('heading', {name: '¥6.00'})).toBeVisible(); expect(screen.getAllByText('¥3.00')[0]).toBeVisible(); expect(screen.getByText('¥1.00')).toBeVisible();
+    expect(screen.queryByRole('progressbar', {name: /Token/})).not.toBeInTheDocument(); expect(screen.getByText(/Token 仅作统计/)).toBeInTheDocument();
   });
-  it('edits a user quota and developer permission with server-owned payloads', async () => {
+  it('edits user permissions separately from the dedicated monetary entitlement editor', async () => {
     const maximumQuotaUser = user({quota: {...user().quota, cost_limit_micros: 1_000_000_000_000_000}});
     request.mockImplementation((path: string, options?: RequestInit) => Promise.resolve(path === '/api/admin/users' ? {items: [maximumQuotaUser]} : options?.method === 'PATCH' ? {user: user({developer_allowed: true})} : {summary: {turns: 0}, users: [], daily: [], pricing: {currency: 'CNY'}}));
     render(<AdminPanel user={user({role: 'admin'})} refreshAccount={vi.fn()} notify={vi.fn()} onClose={vi.fn()}/>); fireEvent.click(screen.getByRole('button', {name: '用户与额度'})); await screen.findByRole('button', {name: '管理 supper'});
     fireEvent.click(screen.getByRole('button', {name: '管理 supper'})); const dialog = screen.getByRole('dialog', {name: '管理 @supper'});
-    expect(within(dialog).getByLabelText('累计金额额度（元）')).toBeValid();
+    expect(within(dialog).queryByLabelText('累计金额额度（元）')).not.toBeInTheDocument(); expect(screen.getByRole('button', {name: '管理 supper 的额度'})).toBeInTheDocument();
     expect(within(dialog).queryByLabelText(/Token/)).not.toBeInTheDocument();
-    fireEvent.click(within(dialog).getByRole('switch', {name: /允许开发者模式/})); fireEvent.change(within(dialog).getByLabelText('累计金额额度（元）'), {target: {value: '1.25'}}); fireEvent.click(within(dialog).getByRole('button', {name: '保存用户设置'}));
-    await waitFor(() => expect(request).toHaveBeenCalledWith('/api/admin/users/user-a', expect.objectContaining({method: 'PATCH', body: JSON.stringify({disabled: false, developer_allowed: true, role: 'user', cost_limit_micros: 1250000})})));
+    fireEvent.click(within(dialog).getByRole('switch', {name: /允许开发者模式/})); fireEvent.click(within(dialog).getByRole('button', {name: '保存用户设置'}));
+    await waitFor(() => expect(request).toHaveBeenCalledWith('/api/admin/users/user-a', expect.objectContaining({method: 'PATCH', body: JSON.stringify({disabled: false, developer_allowed: true, role: 'user'})})));
   });
   it('requires the exact username before backing up and resetting personal data', async () => {
     request.mockImplementation((path: string) => Promise.resolve(path === '/api/admin/users' ? {items: [user()]} : path === '/api/admin/data' ? {items: [{user_id: 'user-a', username: 'supper', counts: {sessions: 2, recipes: 3, journal: 1, memory: 1}, bytes: 2048, active: false}], notice: '资料已隔离', legacy_data_present: false} : {summary: {turns: 0}, users: [], daily: [], pricing: {currency: 'CNY'}}));
-    render(<AdminPanel user={user({id: 'admin-a', role: 'admin'})} refreshAccount={vi.fn()} notify={vi.fn()} onClose={vi.fn()}/>); fireEvent.click(screen.getByRole('button', {name: '数据管理'})); fireEvent.click(await screen.findByRole('button', {name: '备份并重置 supper 的数据'}));
+    render(<AdminPanel user={user({id: 'admin-a', role: 'admin'})} refreshAccount={vi.fn()} notify={vi.fn()} onClose={vi.fn()}/>); fireEvent.click(screen.getByRole('button', {name: '数据与状态'})); fireEvent.click(await screen.findByRole('button', {name: '备份并重置 supper 的数据'}));
     const dialog = screen.getByRole('dialog', {name: '备份并重置 @supper 的数据'}), submit = within(dialog).getByRole('button', {name: '备份并重置数据'});
     expect(submit).toBeDisabled(); fireEvent.change(within(dialog).getByLabelText('输入账号 supper 确认'), {target: {value: 'wrong'}}); expect(submit).toBeDisabled(); fireEvent.change(within(dialog).getByLabelText('输入账号 supper 确认'), {target: {value: 'supper'}}); expect(submit).toBeEnabled(); fireEvent.click(submit);
     await waitFor(() => expect(request).toHaveBeenCalledWith('/api/admin/users/user-a/reset-data', expect.objectContaining({method: 'POST', body: JSON.stringify({confirm_username: 'supper'})})));
   });
-  it('persists decimal price strings without recomputing historical costs in the browser', async () => {
-    const pricing = {currency: 'CNY', input_per_million: '2', output_per_million: '3', cached_input_per_million: '0.2'};
-    request.mockImplementation((path: string, options?: RequestInit) => Promise.resolve(path === '/api/admin/pricing' ? options?.method === 'PATCH' ? JSON.parse(options.body as string) : pricing : {summary: {turns: 0}, users: [], daily: [], pricing}));
-    render(<AdminPanel user={user({role: 'admin'})} refreshAccount={vi.fn()} notify={vi.fn()} onClose={vi.fn()}/>); fireEvent.click(screen.getByRole('button', {name: '模型计价'}));
-    fireEvent.change(await screen.findByLabelText('输入单价'), {target: {value: '0.123456'}}); fireEvent.click(screen.getByRole('button', {name: '保存单价'}));
-    await waitFor(() => expect(request).toHaveBeenCalledWith('/api/admin/pricing', expect.objectContaining({method: 'PATCH', body: JSON.stringify({...pricing, input_per_million: '0.123456'})})));
-  });
-  it('requires explicit initial pricing confirmation and sends only writable price fields', async () => {
-    const pricing = {revision: 1, configured: false, currency: 'CNY', input_per_million: '0', output_per_million: '0', cached_input_per_million: '0'};
-    request.mockImplementation((path: string, options?: RequestInit) => Promise.resolve(path === '/api/admin/pricing' ? options?.method === 'PATCH' ? {...pricing, configured: true, revision: 2} : pricing : {summary: {turns: 0}, users: [], daily: [], pricing}));
-    render(<AdminPanel user={user({role: 'admin'})} refreshAccount={vi.fn()} notify={vi.fn()} onClose={vi.fn()}/>); fireEvent.click(screen.getByRole('button', {name: '模型计价'}));
-    const confirm = await screen.findByRole('button', {name: '确认并启用计价'}); expect(confirm).toBeEnabled(); expect(screen.getByText(/后续模型请求按零金额计算/)).toBeVisible(); fireEvent.click(confirm);
-    await waitFor(() => expect(request).toHaveBeenCalledWith('/api/admin/pricing', {method: 'PATCH', body: JSON.stringify({revision: 1, currency: 'CNY', input_per_million: '0', output_per_million: '0', cached_input_per_million: '0'})}));
-    expect(await screen.findByRole('button', {name: '保存单价'})).toBeDisabled();
-  });
   it('shows exhausted and unlimited money allowances without introducing Token limits', () => {
     const account = user(); account.quota = {...account.quota, cost_limit_micros: 1_000_000, used_cost_micros: 2_000_000};
-    const view = render(<AccountPanel user={account} refresh={vi.fn()} logout={vi.fn()} notify={vi.fn()}/>);
-    expect(screen.getByText('剩余额度 ¥0.00')).toBeVisible(); expect(screen.getByRole('progressbar', {name: '金额额度使用比例'})).toHaveAttribute('value', '1000000');
-    view.rerender(<AccountPanel user={{...account, quota: {...account.quota, cost_limit_micros: null}}} refresh={vi.fn()} logout={vi.fn()} notify={vi.fn()}/>);
+    const view = render(<AccountPanel section="quota" user={account} refresh={vi.fn()} logout={vi.fn()} notify={vi.fn()}/>);
+    expect(screen.getByRole('heading', {name: '¥0.00'})).toBeVisible();
+    view.rerender(<AccountPanel section="quota" user={{...account, quota: {...account.quota, cost_limit_micros: null}}} refresh={vi.fn()} logout={vi.fn()} notify={vi.fn()}/>);
     expect(screen.queryByRole('progressbar')).not.toBeInTheDocument(); expect(screen.queryByText(/Token 额度/)).not.toBeInTheDocument();
-  });
-  it('protects an unsaved model price when switching administrator categories', async () => {
-    const pricing = {currency: 'CNY', input_per_million: '2', output_per_million: '3', cached_input_per_million: '0.2'};
-    request.mockImplementation((path: string) => Promise.resolve(path === '/api/admin/pricing' ? pricing : path === '/api/admin/users' ? {items: [user()]} : {summary: {turns: 0}, users: [], daily: [], pricing}));
-    render(<AdminPanel user={user({role: 'admin'})} refreshAccount={vi.fn()} notify={vi.fn()} onClose={vi.fn()}/>); fireEvent.click(screen.getByRole('button', {name: '模型计价'})); fireEvent.change(await screen.findByLabelText('输入单价'), {target: {value: '0.5'}}); fireEvent.click(screen.getByRole('button', {name: '用户与额度'}));
-    expect(screen.getByRole('dialog', {name: '保留未保存的修改？'})).toBeVisible(); fireEvent.click(screen.getByRole('button', {name: '继续编辑'})); expect(screen.getByLabelText('输入单价')).toHaveValue(0.5);
-    fireEvent.click(screen.getByRole('button', {name: '用户与额度'})); fireEvent.click(screen.getByRole('button', {name: '放弃修改'})); expect(await screen.findByRole('heading', {name: '用户与额度'})).toBeVisible(); expect(screen.queryByLabelText('输入单价')).not.toBeInTheDocument();
-  });
-  it('keeps a conflicting price draft until explicitly reloaded and saves using the fresh revision', async () => {
-    const initial = {revision: 1, currency: 'CNY', input_per_million: '2', output_per_million: '3', cached_input_per_million: '0.2'}, latest = {...initial, revision: 2, input_per_million: '4'};
-    let reads = 0, writes = 0;
-    request.mockImplementation((path: string, options?: RequestInit) => {
-      if (path === '/api/admin/pricing' && options?.method === 'PATCH') return ++writes === 1 ? Promise.reject(Object.assign(new Error('计价设置已变化，请刷新后重试。'), {status: 409})) : Promise.resolve({...JSON.parse(options.body as string), revision: 3});
-      return Promise.resolve(path === '/api/admin/pricing' ? ++reads === 1 ? initial : latest : {summary: {turns: 0}, users: [], daily: [], pricing: initial});
-    });
-    render(<AdminPanel user={user({role: 'admin'})} refreshAccount={vi.fn()} notify={vi.fn()} onClose={vi.fn()}/>); fireEvent.click(screen.getByRole('button', {name: '模型计价'})); fireEvent.change(await screen.findByLabelText('输入单价'), {target: {value: '1.25'}}); fireEvent.click(screen.getByRole('button', {name: '保存单价'}));
-    expect(await screen.findByRole('alert')).toHaveTextContent('当前单价草稿已保留'); expect(screen.getByLabelText('输入单价')).toHaveValue(1.25); expect(screen.getByRole('button', {name: '保存单价'})).toBeDisabled();
-    fireEvent.click(screen.getByRole('button', {name: '重新读取单价'})); fireEvent.click(screen.getByRole('button', {name: '保留草稿'})); expect(screen.getByLabelText('输入单价')).toHaveValue(1.25);
-    fireEvent.click(screen.getByRole('button', {name: '重新读取单价'})); fireEvent.click(screen.getByRole('button', {name: '放弃并读取'})); await waitFor(() => expect(screen.getByLabelText('输入单价')).toHaveValue(4));
-    fireEvent.change(screen.getByLabelText('输入单价'), {target: {value: '4.5'}}); fireEvent.click(screen.getByRole('button', {name: '保存单价'})); await waitFor(() => expect(writes).toBe(2));
-    const payloads = request.mock.calls.filter(([path, options]) => path === '/api/admin/pricing' && options?.method === 'PATCH').map(([, options]) => JSON.parse(options.body)); expect(payloads.map(item => item.revision)).toEqual([1, 2]);
   });
   it('keeps provider observations and unreported-usage estimates visible as separate quantities', async () => {
     const pricing = {revision: 1, currency: 'CNY', input_per_million: '1', output_per_million: '2', cached_input_per_million: '0.1'}, summary = {turns: 2, total_tokens: 333, input_tokens: 300, output_tokens: 33, cost_micros: 1000, incomplete_turns: 1, estimated_tokens: 2000, estimated_cost_micros: 3000};
