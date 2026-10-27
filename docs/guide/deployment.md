@@ -32,6 +32,12 @@ Windows 也可使用：
 
 脚本第一次会创建空白 `.env` 并提示填写必需项；以后会构建、启动并等待健康检查。`-NoBuild` 复用已构建镜像。修改源码或升级后应重新构建。
 
+运维脚本已验证 Windows 自带的 PowerShell 5.1 与 PowerShell 7。含中文的 `.ps1` 有意保存为 UTF-8 BOM，编辑时保留该格式；Windows PowerShell 5.1 会把无 BOM 的非 ASCII 源码按旧代码页解读，见 [PowerShell 官方编码说明](https://github.com/MicrosoftDocs/PowerShell-Docs/blob/main/reference/7.7/Microsoft.PowerShell.Core/About/about_Character_Encoding.md)。需要单次运行当前仓库脚本时，也可使用：
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\start-docker.ps1
+```
+
 三个运维脚本都支持 `-EnvFile`、`-ProjectName` 与 `-ComposeOverride`，分别用于其他环境文件、隔离项目和额外 Compose 文件。路径可包含空格或中文，调用时加引号；启动、停止和备份使用相同项目及文件组合。`CHEFMATE_IMAGE` 可覆盖默认本地镜像名，便于隔离验收。
 
 启动脚本构建时，仅在 Git 工作区干净且没有显式构建标记时，将当前完整提交 SHA 写入镜像的 `CHEFMATE_BUILD_COMMIT` 与 OCI revision；结束后恢复调用进程环境。源码有未提交修改、没有 Git 或直接使用源码压缩包时，保持提交身份未知。CI 或手动构建可显式提供合法 SHA；`docker compose up --build` 不会自行执行 Git 命令，需先设置该构建环境变量。版本号和发布日志不会因此改变。

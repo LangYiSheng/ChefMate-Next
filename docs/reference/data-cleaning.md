@@ -120,7 +120,7 @@ USDA_DB_PATH=database/usda.db
 
 **数据与设置 → 导入 Markdown** 仅保存原文，hash 相同跳过，变更新增原文版本。支持 HowToCook 根目录、dishes 或自定义菜谱目录，不执行上游脚本。
 
-**导出菜谱 JSON** 默认只包含当前原文版本且审阅通过的记录。输出到 `data/exported/<批次>/recipes.json`，附带 manifest 与 SHA256。允许导出已审阅但营养不完整的 JSON，其 `ready_for_recommendation=false`；主项目使用前按该字段筛选。取消审核过滤只用于诊断。
+**导出菜谱 JSON** 默认只包含当前原文版本且审阅通过的记录。输出到 `data/exported/<批次>/recipes.json`，附带 manifest 与 SHA256。允许导出已审阅但营养不完整的 JSON，其 `ready_for_recommendation=false`；完整推荐按该字段筛选，普通查菜可保留原标记作为待核对候选。取消审核过滤只用于诊断或明确标注的基础候选包，不会提高原记录的审核状态。
 
 ```powershell
 .\.venv\Scripts\python.exe scripts/cli.py init

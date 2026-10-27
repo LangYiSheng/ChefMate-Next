@@ -53,7 +53,7 @@ chefmate-storage --schema chefmate metadata
 
 整库替换会移除当前 schema 中旧菜谱的业务数据，并写入完整新数据集：新导出缺席的菜谱会删除，同 ID 菜谱会采用新导出的内容。空导出默认拒绝，避免误清空库；只有显式 `--allow-empty` 才允许空快照。`--replace` 和 `--allow-empty` 是两个独立开关。
 
-默认要求 `manifest.approved_only = true`，同时检查每道菜的 `provenance.status = "approved"`。诊断导出须显式 `--allow-unapproved`；未审核菜谱却标为可推荐的导出仍会拒绝，不会自动提高推荐资格。非推荐菜谱仍会入库，默认搜索只返回 `ready_for_recommendation = true` 的菜谱。
+默认要求 `manifest.approved_only = true`，同时检查每道菜的 `provenance.status = "approved"`。诊断导出须显式 `--allow-unapproved`；未审核菜谱却标为可推荐的导出仍会拒绝，不会自动提高推荐资格。非推荐菜谱仍会入库，底层存储与 CLI 默认搜索只返回 `ready_for_recommendation = true` 的菜谱；[检索工具](retrieval.md#菜谱条件)的普通查菜默认不限资格，但保留原标记与核对提示。
 
 全部业务表替换与 `dataset_metadata` 更新在同一事务中完成。校验失败或数据库写入失败时，原有数据和版本保持不变。包内导入之间使用锁串行执行；包内详情与筛选查询使用 `REPEATABLE READ` 只读事务，读取一致的数据集。自行写 SQL 的调用方需要在多条查询间使用同一 `REPEATABLE READ` 事务，或遵守应用发布约定；仅使用默认 `READ COMMITTED` 事务不能保证多条查询读取同一版本。锁等待上限为 30 秒。
 
