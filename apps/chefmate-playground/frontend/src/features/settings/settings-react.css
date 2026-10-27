@@ -135,3 +135,64 @@
 .react-settings .settings-status-tag[data-state=ready]{background:color-mix(in srgb,var(--color-success) 8%,var(--color-canvas));color:var(--color-success)}
 @container settings-content (max-width:570px){.react-settings .settings-status-grid>div{grid-template-columns:minmax(100px,.8fr) minmax(0,1.2fr);gap:10px 16px;padding:13px 0}}
 .react-settings .memory-kitchen-profile{padding:20px;margin:12px 0 24px;border-radius:12px;background:var(--surface-inset)}.react-settings .memory-kitchen-profile>div{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}.react-settings .memory-kitchen-profile h2{display:flex;align-items:center;gap:8px;margin:0;font-family:var(--font-ui);font-size:.9375rem;font-weight:600}.react-settings .memory-kitchen-profile h2>.icon{width:18px;height:18px}.react-settings .memory-kitchen-profile a{display:inline-flex;align-items:center;gap:3px;font-size:.75rem;text-decoration:none}.react-settings .memory-kitchen-profile a>.icon{width:13px;height:13px}.react-settings .memory-kitchen-profile>p{font-size:.75rem;color:var(--color-muted);line-height:1.9;margin:12px 0 16px}.react-settings .memory-kitchen-profile dl{display:grid;gap:10px;margin:0}.react-settings .memory-kitchen-profile dl>div{display:grid;grid-template-columns:75px minmax(0,1fr);gap:14px;font-size:.8125rem;line-height:1.8}.react-settings .memory-kitchen-profile dt{color:var(--color-muted)}.react-settings .memory-kitchen-profile dd{margin:0;overflow-wrap:anywhere}@media(max-width:560px){.react-settings .memory-kitchen-profile{padding:16px}.react-settings .memory-kitchen-profile dl>div{grid-template-columns:65px minmax(0,1fr);gap:10px}}
+
+/* Reading width follows the task: forms stay comfortable while visual libraries can grow. */
+.settings-page.react-settings{--settings-document-width:1120px;--settings-gutter:clamp(24px,3vw,48px)}
+.settings-page.react-settings[data-settings-section=display]{--settings-document-width:1360px}
+.settings-page.react-settings[data-settings-section=account-quota]{--settings-document-width:1280px}
+.settings-page.react-settings:is([data-settings-section=components],[data-settings-section=usage]){--settings-document-width:1600px}
+.settings-page.react-settings:is([data-settings-section=keyboard],[data-settings-section=cooking],[data-settings-section=developer],[data-settings-section=changelog]){--settings-document-width:1040px}
+.settings-page.react-settings .settings-header{width:100%;max-width:calc(var(--settings-document-width) + 2 * var(--settings-gutter));margin-inline:auto;padding:32px var(--settings-gutter) 24px}
+.settings-page.react-settings .settings-header p{max-width:760px}
+.settings-page.react-settings .settings-content{padding:0 var(--settings-gutter) 36px}
+.settings-page.react-settings .settings-reading-layout{width:100%;max-width:var(--settings-document-width);margin-inline:auto}
+.settings-page.react-settings #settings-form,.settings-page.react-settings #settings-form.has-appearance,.settings-page.react-settings #settings-form.has-components,.settings-page.react-settings .memory-settings{max-width:none;width:100%}
+.settings-page.react-settings .settings-footer{padding-inline:max(var(--settings-gutter),calc((100% - var(--settings-document-width))/2))}
+.settings-page.react-settings .settings-reading-main>.account-settings-panel{margin:0}
+.settings-page.react-settings .setting-field{grid-template-columns:minmax(170px,.42fr) minmax(0,1fr);gap:12px 32px;padding-block:18px}
+.settings-page.react-settings .setting-switch-field{grid-template-columns:minmax(0,1fr) auto;gap:28px}
+.settings-page.react-settings .setting-switch-field .setting-control{align-items:flex-end}
+.settings-page.react-settings .setting-label>small{max-width:780px}
+.settings-page.react-settings .settings-group{margin-bottom:32px}
+.settings-page.react-settings .settings-tabs{margin-bottom:24px}
+.settings-page.react-settings .keyboard-shortcut-list{grid-template-columns:repeat(auto-fit,minmax(min(100%,400px),1fr));gap:14px}
+.settings-page.react-settings .keyboard-shortcut-row{align-items:flex-start;padding:18px 20px}
+.settings-page.react-settings .keyboard-keys{padding-top:2px}
+.settings-page.react-settings .personal-preferences-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:28px}
+.settings-page.react-settings .personal-preferences-grid .setting-field{grid-template-columns:minmax(0,1fr);gap:9px;padding:10px 0}
+.settings-page.react-settings .personal-preferences-grid .setting-label{padding-top:0}
+.settings-page.react-settings .personal-preferences-kitchen{margin:24px 0 32px}
+.settings-page.react-settings .personal-preferences-settings .account-profile-preferences{padding:0;border:0;margin-top:24px}
+.settings-page.react-settings .personal-preferences-settings .account-profile-preferences button{border:0;background:var(--surface-inset)}
+.settings-page.react-settings .personal-preferences-settings .account-profile-preferences button[aria-pressed=true]{background:var(--color-accent-soft);color:var(--color-accent)}
+.settings-page.react-settings .memory-actions{align-items:center;gap:24px;margin-top:24px;padding:18px 0 0}
+.settings-page.react-settings .memory-actions>.setting-help{margin:0}
+.react-settings .settings-component-grid{grid-template-columns:repeat(auto-fill,minmax(min(100%,320px),1fr));align-items:start;gap:20px}
+.react-settings .settings-component-grid>.settings-component{padding:22px;border:0;background:var(--surface-inset)}
+.settings-page.react-settings .component-card-heading .setting-field{grid-template-columns:minmax(0,1fr) auto;gap:14px;padding:0}
+.react-settings .component-capabilities{grid-template-columns:repeat(auto-fit,minmax(min(100%,132px),1fr));gap:8px}
+.react-settings .component-capability{padding:9px 10px;font-size:.8125rem;background:var(--surface-raised)}
+.react-settings .component-more-capabilities{margin-top:12px}.react-settings .component-more-capabilities>summary{display:flex;align-items:center;justify-content:space-between;gap:12px;min-height:32px;list-style:none;cursor:pointer;color:var(--color-muted);font:.75rem/1.8 var(--font-ui)}.react-settings .component-more-capabilities>summary::-webkit-details-marker{display:none}.react-settings .component-more-capabilities>summary::after{content:'＋';margin-left:auto}.react-settings .component-more-capabilities[open]>summary::after{content:'−'}.react-settings .component-more-capabilities .component-capabilities{margin-top:9px}.react-settings .component-more-capabilities>summary:focus-visible{outline:2px solid var(--color-accent);outline-offset:3px;border-radius:4px}
+@media(prefers-reduced-motion:no-preference){.react-settings .component-more-capabilities[open]>.component-capabilities{animation:settings-surface-enter var(--motion-normal) var(--ease-settle)}}
+@container settings-content (min-width:1100px){
+  .settings-page.react-settings .settings-reading-layout:has(.settings-index){max-width:var(--settings-document-width);grid-template-columns:minmax(0,1fr) 160px;gap:32px}
+  .settings-page.react-settings .appearance-layout{grid-template-columns:minmax(0,1fr) minmax(300px,.45fr);gap:36px}
+  .settings-page.react-settings .appearance-preview{max-width:none}
+  .settings-page.react-settings .font-pairing-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+}
+@container settings-content (max-width:760px){
+  .settings-page.react-settings .setting-field{grid-template-columns:155px minmax(0,1fr);gap:12px 22px}
+  .settings-page.react-settings .setting-switch-field{grid-template-columns:minmax(0,1fr) auto}
+  .settings-page.react-settings .personal-preferences-grid{gap:22px}
+  .settings-page.react-settings .personal-preferences-grid .setting-field{grid-template-columns:minmax(0,1fr)}
+}
+@container settings-content (max-width:570px){
+  .settings-page.react-settings .setting-field{grid-template-columns:minmax(0,1fr);gap:8px;padding-block:14px}
+  .settings-page.react-settings .setting-label{padding-top:0}
+  .settings-page.react-settings .setting-switch-field{grid-template-columns:minmax(0,1fr) auto;gap:18px}
+  .settings-page.react-settings .personal-preferences-grid{grid-template-columns:minmax(0,1fr);gap:10px}
+  .settings-page.react-settings .keyboard-shortcut-row{padding:16px;flex-direction:column;gap:12px}
+}
+@media(max-width:900px){.settings-page.react-settings{--settings-gutter:24px}.settings-page.react-settings .settings-header{padding-top:24px}}
+@media(max-width:560px){.settings-page.react-settings{--settings-gutter:20px}.settings-page.react-settings .settings-header{padding-top:22px;padding-bottom:20px}.settings-page.react-settings .settings-footer{padding-inline:16px}.settings-page.react-settings .memory-actions{flex-wrap:wrap;gap:14px}.react-settings .settings-component-grid>.settings-component{padding:18px}}
+@media(max-height:600px){.settings-page.react-settings .settings-header{padding-top:8px;padding-bottom:8px}.settings-page.react-settings .settings-content{padding-top:4px;padding-bottom:16px}.settings-page.react-settings .settings-tabs{margin-bottom:8px}.settings-page.react-settings .setting-field{padding-block:10px}.settings-page.react-settings .setting-switch-field{padding-block:12px}.settings-page.react-settings .settings-footer{padding-block:6px}}

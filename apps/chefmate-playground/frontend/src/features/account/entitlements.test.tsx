@@ -12,7 +12,7 @@ const funds: FundsOverview = {currency: 'CNY', window_mode: 'first_use', availab
 const user: AccountUser = {id: 'user-1', username: 'supper', display_name: '小晚', role: 'user', developer_allowed: false, disabled: false, onboarding_completed: true, created_at: '2026-10-27T00:00:00Z', profile: {}, quota: {funds, cost_limit_micros: 5_000_000, used_cost_micros: 0, reserved_cost_micros: 0, used_tokens: 0, reserved_tokens: 0}};
 const report = (value = funds) => ({user: {...user, quota: {...user.quota, funds: value}}, entitlements: value});
 beforeEach(() => {
-  request.mockReset(); request.mockResolvedValue(report());
+  request.mockReset(); request.mockImplementation((path: string) => Promise.resolve(path === '/api/admin/membership-templates' ? {revision: 1, items: []} : report()));
   Object.defineProperty(HTMLDialogElement.prototype, 'showModal', {configurable: true, value() {this.setAttribute('open', '');}});
   Object.defineProperty(HTMLDialogElement.prototype, 'close', {configurable: true, value() {this.removeAttribute('open');}});
 });
@@ -21,11 +21,11 @@ describe('Financial administration', () => {
   it('shows membership availability after both caps and keeps expired windows historical', () => {
     const limited = {...membership, available_micros: 0, week: {...membership.week, remaining_micros: 0}};
     const quota = {...user.quota, funds: {...funds, memberships: [limited]}};
-    const view = render(<QuotaOverview quota={quota} compact/>);
+    const view = render(<QuotaOverview quota={quota} presentation="amount" compact/>);
     expect(screen.getByText('本窗口可用 ¥0.00')).toBeVisible();
     expect(screen.getByRole('progressbar', {name: '会员本窗口额度占用'})).toHaveValue(2_000_000);
     const historical = {...limited, status: 'expired' as const, five_hour: {...window, resets_at: '2026-10-27T05:00:00Z'}};
-    view.rerender(<QuotaOverview quota={{...quota, funds: {...funds, memberships: [historical]}}}/>);
+    view.rerender(<QuotaOverview quota={{...quota, funds: {...funds, memberships: [historical]}}} presentation="amount"/>);
     expect(screen.getByText(/历史窗口截至/)).toBeVisible();
     expect(screen.queryByText(/重置/)).not.toBeInTheDocument();
   });

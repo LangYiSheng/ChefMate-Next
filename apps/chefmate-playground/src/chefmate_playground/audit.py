@@ -17,6 +17,8 @@ ACTION_LABELS = {
     "model_profiles.create": "新增模型连接", "model_profiles.update": "修改模型连接",
     "model_profiles.activate": "切换使用模型", "model_profiles.delete": "删除模型连接",
     "model_profiles.test": "测试模型连接",
+    "membership_templates.create": "新增会员模板", "membership_templates.update": "修改会员模板",
+    "membership_templates.delete": "删除会员模板",
 }
 FIELD_LABELS = {
     "disabled": "账号状态", "developer_allowed": "开发者权限", "role": "用户角色",
@@ -26,7 +28,7 @@ FIELD_LABELS = {
     "final_cost_micros": "核对金额", "usage_reconciliation": "金额核对记录", "personal_data": "厨房资料",
     "amount_micros": "增加金额", "credit_grant": "额度来源", "duration_days": "会员时长",
     "weekly_limit_micros": "每周额度", "five_hour_limit_micros": "每五小时额度", "membership": "会员状态",
-    "reason": "备注", "name": "连接名称", "provider": "服务商", "model": "模型名称",
+    "reason": "备注", "name": "配置名称", "label": "会员名称", "provider": "服务商", "model": "模型名称",
     "base_url": "服务地址", "api_key": "连接密钥", "clear_api_key": "清除密钥", "api_format": "调用协议",
     "supports_images": "图片支持", "max_images": "图片上限", "stream_tool_calls": "流式工具调用",
     "pricing": "模型计价", "model_profile_id": "模型连接",

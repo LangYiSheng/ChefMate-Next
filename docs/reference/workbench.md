@@ -131,6 +131,9 @@ uv run --project apps/chefmate-playground chefmate-playground
 | `GET /api/admin/users/{id}/entitlements` | `{user,entitlements}`，每个资金来源的金额、使用、预留与当前窗口 |
 | `POST /api/admin/users/{id}/credit-grants` | `{amount_micros,label,request_id}`，发放永久充值额度，幂等请求 ID 防止重发 |
 | `POST /api/admin/users/{id}/memberships` | `{label,duration_days,weekly_limit_micros,five_hour_limit_micros,request_id}`，发放限时会员 |
+| `GET/POST /api/admin/membership-templates` | 读取 `{revision,items}` 或携列表版本创建会员模板；名称、会员名称、有效天数及周/5小时金额上限均保存到账号库 |
+| `PATCH /api/admin/membership-templates/{id}` | `{revision,values}` 修改模板，冲突返回409；不修改已发放会员 |
+| `DELETE /api/admin/membership-templates/{id}?revision=...` | 删除模板；仅管理员、同源、版本检查，现有会员保留 |
 | `POST /api/admin/users/{id}/memberships/{membership_id}/revoke` | `{revision,reason}`，撤销会员，已有用量归属保留 |
 | `POST /api/admin/users/{id}/password` | `{new_password}`，重置并撤销该用户会话 |
 | `GET/PATCH /api/admin/pricing` | 每百万输入、缓存输入、输出 Token 的 CNY 单价，revision 防覆盖；GET 含只读 `configured`，首次必须显式保存确认，允许明确确认全零免费 |

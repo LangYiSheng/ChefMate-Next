@@ -481,8 +481,10 @@ def create_account_app(config, *, service=None, agent=None):
     app.include_router(build_router(pool.accounts, secure_cookie=config.cookie_secure))
     from .routes.entitlements import build_router as entitlements_router
     from .routes.model_profiles import build_router as model_profiles_router
+    from .routes.membership_templates import build_router as membership_templates_router
     app.include_router(entitlements_router(pool.accounts))
     app.include_router(model_profiles_router(pool))
+    app.include_router(membership_templates_router(pool.accounts))
 
     @app.exception_handler(RequestValidationError)
     async def invalid_request(request, error):

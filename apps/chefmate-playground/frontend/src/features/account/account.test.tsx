@@ -26,12 +26,12 @@ describe('Account boundary', () => {
     let reads = 0; const updated = user({quota: {...user().quota, used_cost_micros: 500000}});
     request.mockImplementation(() => Promise.resolve({user: ++reads === 1 ? user() : updated}));
     render(<AccountGate>{(account, refresh, logout) => <AccountPanel section="quota" user={account} refresh={refresh} logout={logout} notify={vi.fn()}/>}</AccountGate>);
-    expect(await screen.findByRole('heading', {name: '¥4.50'})).toBeVisible(); expect(reads).toBe(2);
+    expect(await screen.findByRole('heading', {name: '90%'})).toBeVisible(); expect(reads).toBe(2);
   });
   it('reports a real manual wallet refresh failure without claiming success', async () => {
     let reads = 0; const notify = vi.fn(); request.mockImplementation(() => ++reads <= 2 ? Promise.resolve({user: user()}) : Promise.reject(new Error('金额信息暂时无法读取')));
     render(<AccountGate>{(account, refresh, logout) => <AccountPanel section="quota" user={account} refresh={refresh} logout={logout} notify={notify}/>}</AccountGate>);
-    await screen.findByRole('heading', {name: '¥4.99'}); await waitFor(() => expect(reads).toBe(2)); fireEvent.click(screen.getByRole('button', {name: '读取最新'}));
+    await screen.findByRole('heading', {name: '99.8%'}); await waitFor(() => expect(reads).toBe(2)); fireEvent.click(screen.getByRole('button', {name: '读取最新'}));
     expect(await screen.findByRole('alert')).toHaveTextContent('金额信息暂时无法读取'); expect(screen.queryByText('账号信息已更新。')).not.toBeInTheDocument(); expect(notify).not.toHaveBeenCalled();
   });
   it('ignores an older wallet response after a newer refresh has completed', async () => {
@@ -211,11 +211,18 @@ describe('Account and administrator controls', () => {
     await waitFor(() => expect(request).toHaveBeenCalledWith('/api/auth/profile', {method: 'PATCH', body: JSON.stringify({display_name: '新的称呼'})}));
     expect(screen.getByText(/不受个人偏好开关影响/)).toBeVisible();
   });
+  it('keeps password confirmation and server refresh intact with the shared settings fields', async () => {
+    request.mockResolvedValue({ok: true}); const refresh = vi.fn().mockResolvedValue(undefined); render(<AccountPanel section="security" user={user()} refresh={refresh} notify={vi.fn()}/>);
+    fireEvent.change(screen.getByLabelText('当前密码'), {target: {value: 'current-test-password'}}); fireEvent.change(screen.getByLabelText('新密码'), {target: {value: 'next-test-password'}}); fireEvent.change(screen.getByLabelText('确认新密码'), {target: {value: 'different-test-password'}});
+    expect(screen.getByLabelText('新密码')).toHaveAttribute('minlength', '10'); fireEvent.submit(screen.getByRole('form', {name: '更新密码'})); expect(screen.getByRole('alert')).toHaveTextContent('两次新密码不一致'); expect(request).not.toHaveBeenCalled();
+    fireEvent.change(screen.getByLabelText('确认新密码'), {target: {value: 'next-test-password'}}); fireEvent.submit(screen.getByRole('form', {name: '更新密码'})); await screen.findByText('密码已更新。'); expect(request).toHaveBeenCalledWith('/api/auth/password', {method: 'PATCH', body: JSON.stringify({current_password: 'current-test-password', new_password: 'next-test-password'})});
+    for (const label of ['当前密码', '新密码', '确认新密码']) expect(screen.getByLabelText(label)).toHaveValue('');
+  });
   it('deducts reported, unreported and reserved money from the remaining allowance', () => {
     const account = user(); account.quota = {...account.quota, cost_limit_micros: 10_000_000, used_cost_micros: 1_000_000, reserved_cost_micros: 1_000_000, estimated_tokens: 2000, estimated_cost_micros: 2_000_000, quota_used_cost_micros: 3_000_000};
     render(<AccountPanel section="quota" user={account} refresh={vi.fn()} logout={vi.fn()} notify={vi.fn()}/>);
-    expect(screen.getByRole('heading', {name: '¥6.00'})).toBeVisible(); expect(screen.getAllByText('¥3.00')[0]).toBeVisible(); expect(screen.getByText('¥1.00')).toBeVisible();
-    expect(screen.queryByRole('progressbar', {name: /Token/})).not.toBeInTheDocument(); expect(screen.getByText(/Token 仅作统计/)).toBeInTheDocument();
+    expect(screen.getByRole('heading', {name: '60%'})).toBeVisible(); expect(screen.getByRole('progressbar', {name: '基础额度可用比例'})).toHaveAttribute('value', '60'); expect(screen.queryByText(/¥/)).not.toBeInTheDocument();
+    expect(screen.queryByRole('progressbar', {name: /Token/})).not.toBeInTheDocument(); expect(screen.getByText(/待核对用量暂计入使用/)).toBeInTheDocument();
   });
   it('edits user permissions separately from the dedicated monetary entitlement editor', async () => {
     const maximumQuotaUser = user({quota: {...user().quota, cost_limit_micros: 1_000_000_000_000_000}});
@@ -237,9 +244,9 @@ describe('Account and administrator controls', () => {
   it('shows exhausted and unlimited money allowances without introducing Token limits', () => {
     const account = user(); account.quota = {...account.quota, cost_limit_micros: 1_000_000, used_cost_micros: 2_000_000};
     const view = render(<AccountPanel section="quota" user={account} refresh={vi.fn()} logout={vi.fn()} notify={vi.fn()}/>);
-    expect(screen.getByRole('heading', {name: '¥0.00'})).toBeVisible();
+    expect(screen.getByRole('heading', {name: '0%'})).toBeVisible();
     view.rerender(<AccountPanel section="quota" user={{...account, quota: {...account.quota, cost_limit_micros: null}}} refresh={vi.fn()} logout={vi.fn()} notify={vi.fn()}/>);
-    expect(screen.queryByRole('progressbar')).not.toBeInTheDocument(); expect(screen.queryByText(/Token 额度/)).not.toBeInTheDocument();
+    expect(screen.getByRole('heading', {name: '∞'})).toBeVisible(); expect(screen.queryByRole('progressbar')).not.toBeInTheDocument(); expect(screen.queryByText(/Token 额度|¥/)).not.toBeInTheDocument();
   });
   it('keeps provider observations and unreported-usage estimates visible as separate quantities', async () => {
     const pricing = {revision: 1, currency: 'CNY', input_per_million: '1', output_per_million: '2', cached_input_per_million: '0.1'}, summary = {turns: 2, total_tokens: 333, input_tokens: 300, output_tokens: 33, cost_micros: 1000, incomplete_turns: 1, estimated_tokens: 2000, estimated_cost_micros: 3000};

@@ -1,0 +1,77 @@
+/* The console uses the same reading axis and layered surfaces as Settings. */
+.admin-page.admin-console{grid-template-columns:190px minmax(0,1fr);background:var(--surface-base)}
+.admin-console .admin-nav{padding:24px 12px;background:var(--surface-inset);gap:5px}
+.admin-console .admin-nav-title{font-size:.75rem;padding:0 13px 18px}
+.admin-console .admin-nav>button{min-height:44px;padding:11px 13px;border:0;border-radius:10px;font-size:.875rem;transition:background-color var(--motion-normal) var(--ease-settle),color var(--motion-normal) var(--ease-settle)}
+.admin-console .admin-nav>button[aria-current=page]{background:var(--color-hover);color:var(--color-text)}
+.admin-console .admin-nav>button>.icon{width:18px;height:18px}
+.admin-page.admin-console .admin-workspace{display:flex;flex-direction:column;overflow:hidden;padding:0;scrollbar-gutter:auto;background:var(--surface-base)}
+.admin-console .admin-header.account-page-heading{display:block;flex:none;margin:0;padding:0;background:var(--surface-base)}
+.admin-console .admin-heading-inner{display:flex;align-items:center;justify-content:space-between;gap:24px;width:100%;max-width:1536px;margin-inline:auto;padding:30px 48px 26px}
+.admin-console .admin-header h1{font:var(--font-title-weight) clamp(1.5rem,1.75vw,1.875rem)/1.5 var(--font-title);margin:0 0 8px}
+.admin-console .admin-header .account-eyebrow{display:none}
+.admin-console .admin-header.account-page-heading>div>div>p:last-child{display:block;font-size:.875rem;line-height:1.8;margin:0;color:var(--color-muted);max-width:760px}
+.admin-console .admin-heading-inner>.secondary-button{flex:none;font-size:.8125rem;min-height:36px}
+.admin-console .admin-content{flex:1;min-height:0;min-width:0;overflow:auto;scrollbar-gutter:stable;container-type:inline-size;container-name:admin-content}
+.admin-console .admin-reading{width:100%;max-width:1536px;padding:10px 48px 48px;margin-inline:auto;min-width:0}
+.admin-console .admin-reading> :first-child{margin-top:0}
+.admin-console .admin-reading>.admin-section{margin:28px 0 0}
+.admin-console .admin-section h2,.admin-console .admin-data-overview h2{font:600 1rem/1.6 var(--font-ui);margin:0 0 18px}
+.admin-console .admin-summary{border:0;padding:0;gap:18px;margin:0 0 26px}
+.admin-console .account-metrics>div{padding:24px;border-radius:var(--radius-panel);background:var(--surface-inset)}
+.admin-console .account-metrics dt{font-size:.8125rem;margin-bottom:12px}
+.admin-console .account-metrics dd{font-size:clamp(1.375rem,2vw,1.875rem);font-weight:550;margin-bottom:8px}
+.admin-console .account-metrics small{font-size:.75rem;line-height:1.8}
+.admin-console .admin-section:has(.admin-daily-chart){padding:24px;border-radius:var(--radius-panel);background:var(--surface-inset)}
+.admin-console .admin-daily-chart{max-width:960px;gap:18px;min-height:180px;margin:0;padding:8px 0 0}
+.admin-console .admin-daily-chart>div{flex:0 0 clamp(64px,6vw,100px);min-width:60px}
+.admin-console .admin-daily-track{background:var(--surface-raised);max-width:40px}
+.admin-console .admin-daily-number,.admin-console .admin-daily-chart small{font-size:.6875rem}
+.admin-console .admin-table-scroll{border:0;border-radius:0;max-width:100%}
+.admin-console .admin-table{border-collapse:separate;border-spacing:0 5px;font-size:.8125rem}
+.admin-console .admin-table :is(th,td){border:0;padding:16px 18px;line-height:1.8}
+.admin-console .admin-table thead th{background:transparent;color:var(--color-muted);font-size:.75rem;padding-block:10px}
+.admin-console .admin-table tbody :is(th,td){background:var(--surface-inset)}
+.admin-console .admin-table tbody tr:nth-child(even)>*{background:var(--surface-raised)}
+.admin-console .admin-table tbody tr>:first-child{border-radius:10px 0 0 10px}
+.admin-console .admin-table tbody tr>:last-child{border-radius:0 10px 10px 0}
+.admin-console .admin-table tbody tr{transition:opacity var(--motion-fast) var(--ease-settle)}
+.admin-console .admin-table-scroll:focus-visible{outline:2px solid var(--color-accent);outline-offset:4px;border-radius:10px}
+.admin-console .admin-registration-policy{padding:24px 28px;border-radius:var(--radius-panel);background:var(--surface-inset);margin:0 0 28px}
+.admin-console .admin-registration-policy>p{margin:0 0 22px;max-width:800px}
+.admin-console .admin-registration-policy form{max-width:1020px}
+.admin-console .admin-registration-policy .admin-check{padding:8px 0;max-width:680px}
+.admin-console .admin-registration-policy .account-field{display:grid;grid-template-columns:minmax(190px,1fr) minmax(200px,300px);align-items:center;gap:8px 32px;max-width:680px}
+.admin-console .admin-registration-policy .account-field>small{grid-column:1/-1}
+.admin-console .admin-registration-policy input:not([type=checkbox]){background:var(--surface-raised)}
+.admin-console .admin-registration-policy .account-form-actions{justify-content:flex-start;gap:12px;margin-top:24px}
+.admin-console .admin-data-overview{padding:24px 28px;margin:24px 0 16px;background:var(--surface-inset);border-radius:var(--radius-panel)}
+.admin-console .admin-data-overview p{margin:8px 0 0}
+.admin-console .account-notice{background:var(--surface-inset);border:0;padding:14px 18px;display:flex;align-items:flex-start;gap:9px;line-height:1.8}
+.admin-console .account-notice .icon{flex:none;width:17px;height:17px;margin-top:3px}
+.admin-console .admin-user-actions{display:flex;align-items:center;flex-wrap:wrap;gap:5px 10px}
+.admin-console .admin-search{max-width:460px;margin:0 0 20px}
+.admin-console .admin-config-section>form{max-width:none;width:100%}
+.admin-console .admin-config-section:not(:has(.settings-component-grid))>form{max-width:1120px}
+.admin-console .admin-config-section .settings-group{background:var(--surface-inset);border-radius:var(--radius-panel);padding:24px 28px;margin:0 0 22px}
+.admin-console .admin-config-section .setting-field{grid-template-columns:minmax(220px,1fr) minmax(180px,340px);gap:20px 40px;max-width:1020px}
+.admin-console .admin-config-section .setting-control :is(input,.ui-select-trigger){background:var(--surface-raised)}
+.admin-console .admin-config-section .settings-footer{padding:18px 0 0;margin:0;max-width:1120px}
+.admin-console .admin-config-section .settings-component-grid{grid-template-columns:repeat(auto-fill,minmax(min(100%,320px),1fr));width:100%;max-width:none;gap:20px}
+.admin-console .admin-config-section .component-flow{width:100%;max-width:1200px}
+.admin-console .admin-config-section .component-card-heading .setting-field{grid-template-columns:minmax(0,1fr) auto;gap:12px;padding:0}
+.admin-console .audit-filters{padding:24px;border-radius:var(--radius-panel);background:var(--surface-inset);gap:18px}
+.admin-console .audit-filters input{border:0;border-radius:var(--radius-control);background:var(--surface-raised);font-weight:400}
+.admin-console .audit-filters .ui-select-trigger{background:var(--surface-raised)}
+.admin-console .audit-pagination{margin-top:4px}
+.admin-console .admin-password-reset{border:0;background:var(--surface-inset);padding:18px;border-radius:12px}
+.admin-console .admin-user-editor{max-width:none}.admin-console .admin-user-editor .admin-check{padding:12px 0}.admin-console .admin-user-editor>.account-fineprint{margin-bottom:22px}
+@container admin-content (min-width:1240px){.admin-console .audit-filters{grid-template-columns:repeat(6,minmax(0,1fr))}.admin-console .audit-filter-actions{grid-column:span 2}.admin-console .admin-config-section[data-section=runtime]>form{max-width:1120px}}
+@media(min-width:1800px){.admin-console .admin-heading-inner,.admin-console .admin-reading{padding-inline:56px}.admin-console .admin-reading{padding-bottom:60px}}
+@media(max-width:1200px){.admin-page.admin-console{grid-template-columns:174px minmax(0,1fr)}.admin-console .admin-heading-inner{padding:28px 30px 24px}.admin-console .admin-reading{padding:8px 30px 36px}.admin-console .admin-summary{gap:12px}.admin-console .account-metrics>div{padding:20px}.admin-console .admin-config-section .setting-field{gap:18px 24px;grid-template-columns:minmax(180px,1fr) minmax(160px,280px)}}
+@media(max-width:900px){.admin-page.admin-console{display:flex;flex-direction:column}.admin-console .admin-nav{flex-direction:row;gap:6px;padding:10px 18px}.admin-console .admin-nav-title{display:none}.admin-console .admin-nav>button{min-height:38px;padding:9px 12px;font-size:.8125rem}.admin-console .admin-heading-inner{padding:24px 24px 22px}.admin-console .admin-reading{padding:4px 24px 32px}}
+@media(max-width:600px){.admin-console .admin-heading-inner{align-items:flex-start;gap:14px;padding:22px 20px}.admin-console .admin-header h1{font-size:1.5rem}.admin-console .admin-header.account-page-heading>div>div>p:last-child{font-size:.8125rem}.admin-console .admin-reading{padding:0 20px 32px}.admin-console .admin-summary{grid-template-columns:1fr;gap:10px}.admin-console .admin-summary>div:last-child{grid-column:auto}.admin-console .account-metrics>div{padding:20px}.admin-console .admin-config-section .settings-group{padding:20px}.admin-console .admin-config-section .setting-field{grid-template-columns:1fr;gap:8px}.admin-console .admin-registration-policy{padding:20px}.admin-console .admin-registration-policy .account-field{display:flex;gap:8px}.admin-console .admin-registration-policy .account-form-actions{flex-wrap:wrap}.admin-console .admin-data-overview{padding:20px}.admin-console .audit-filters{padding:18px;gap:14px}.admin-console .admin-section:has(.admin-daily-chart){padding:20px}.admin-console .admin-table :is(th,td){padding:13px 14px}}
+@media(prefers-reduced-motion:no-preference){.admin-console{animation:admin-page-arrive var(--motion-slow) var(--ease-settle) both}.admin-console .admin-heading-inner{animation:admin-content-arrive var(--motion-slow) var(--ease-settle) both}.admin-console .admin-reading{animation:admin-content-arrive var(--motion-slow) var(--ease-settle) both}.admin-console .admin-reading>.admin-section,.admin-console .admin-summary>div{animation:admin-content-arrive var(--motion-slow) var(--ease-settle) both}.admin-console .admin-summary>div:nth-child(2){animation-delay:35ms}.admin-console .admin-summary>div:nth-child(3){animation-delay:70ms}.admin-console .admin-nav>button:active>.icon{transform:scale(.9)}.admin-console .admin-nav>button>.icon{transition:transform var(--motion-fast) var(--ease-spring)}}
+@keyframes admin-page-arrive{from{opacity:0;transform:translateY(5px)}to{opacity:1;transform:translateY(0)}}
+@keyframes admin-content-arrive{from{opacity:0;transform:translateY(7px)}to{opacity:1;transform:translateY(0)}}
+@media(prefers-reduced-motion:reduce){.admin-console,.admin-console *,.admin-console *::before,.admin-console *::after{animation:none!important;transition:none!important;scroll-behavior:auto!important}}

@@ -4,11 +4,20 @@ import {describe, expect, it, vi} from 'vitest';
 import {Field, SettingsGroup, SettingsTabs} from './SettingsFields';
 import {SettingsIndex} from './SettingsIndex';
 import {SettingsInsights} from './SettingsInsights';
+import {ComponentSettings} from './ComponentSettings';
 
 const {request} = vi.hoisted(() => ({request: vi.fn()}));
 vi.mock('../../runtime/http', () => ({api: request}));
 
 describe('settings grouped navigation', () => {
+  it('keeps long tool lists compact while making every capability and source detail available', () => {
+    const change = vi.fn(), tools = ['create_food_log_draft', 'search_food_logs', 'get_food_log', 'revise_food_log_draft', 'confirm_food_log', 'get_cooked_meal_intake', 'record_cooked_meal_intake'];
+    render(<ComponentSettings components={[{id: 'food-journal', name: '饮食记录', description: '记下这一餐', tools}]} values={{'food-journal': true}} change={change} disabled={false}/>);
+    expect(screen.getByText('整理饮食记录')).toBeVisible(); expect(screen.getByText('登记本餐食用份额')).not.toBeVisible();
+    fireEvent.click(screen.getByText('查看其余 1 项能力')); expect(screen.getByText('登记本餐食用份额')).toBeVisible();
+    fireEvent.click(screen.getByRole('switch', {name: '饮食记录'})); expect(change).toHaveBeenCalledWith('food-journal', false);
+    fireEvent.click(screen.getByText(/技术信息/)); expect(screen.getByText('record_cooked_meal_intake')).toBeVisible();
+  });
   it('shows a single group directly without a redundant tab', () => {
     render(<SettingsTabs items={['更新记录']} label="更新日志内容"><SettingsGroup title="更新记录"><p>本次更新</p></SettingsGroup></SettingsTabs>);
     expect(screen.queryByRole('tablist')).not.toBeInTheDocument();

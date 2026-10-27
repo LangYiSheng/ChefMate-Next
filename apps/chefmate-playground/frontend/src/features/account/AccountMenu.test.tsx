@@ -13,6 +13,7 @@ describe('account shortcut card', () => {
     fireEvent.keyDown(trigger, {key: 'ArrowDown'}); const dialog = screen.getByRole('dialog', {name: '账号快捷菜单'});
     expect(trigger).toHaveAttribute('aria-expanded', 'true'); expect(within(dialog).getByRole('button', {name: '查看我的额度'})).toHaveFocus();
     await waitFor(() => expect(request).toHaveBeenCalledWith('/api/auth/quota', expect.objectContaining({signal: expect.any(AbortSignal)})));
+    expect(within(dialog).getByText('90%')).toBeVisible(); expect(dialog).not.toHaveTextContent(/¥|元/);
     fireEvent.keyDown(dialog, {key: 'End'}); expect(within(dialog).getByRole('button', {name: '退出账户'})).toHaveFocus();
     fireEvent.keyDown(dialog, {key: 'Escape'}); expect(screen.queryByRole('dialog')).not.toBeInTheDocument(); expect(trigger).toHaveFocus();
   });

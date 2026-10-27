@@ -41,7 +41,7 @@ function ConfigEditor({section, notify}: {section: ConfigSection; notify: (messa
     finally {working.current = false; if (alive.current) setBusy(false);}
   }
   const field = (label: string, key: string, options: {min: number; max: number; hint?: string}) => <Field key={key} label={label} type="number" value={draft[key]} onChange={value => {setDraft(current => ({...current, [key]: value})); setMessage('');}} disabled={busy} {...options}/>;
-  return <section className="admin-config-section react-settings" aria-label={{runtime: '执行设置', context: '上下文预算', components: '系统组件'}[section]}>
+  return <section className="admin-config-section react-settings" data-section={section} aria-label={{runtime: '执行设置', context: '上下文预算', components: '系统组件'}[section]}>
     {error && <p className="settings-error" role="alert">{error}</p>}{message && <p className="settings-success" role="status">{message}</p>}
     {!record ? <div className="settings-load-state"><p role="status">{busy ? '正在读取运行配置…' : '暂时无法读取运行配置。'}</p>{!busy && <button type="button" className="secondary-button" onClick={() => void read()}>重新读取</button>}</div> : <form ref={form} onSubmit={event => {event.preventDefault(); void save();}}>
       {section === 'runtime' && <><SettingsGroup title="等待与重试">{field('单轮任务时限', 'turn_timeout_s', {min: 10, max: 300, hint: '秒，10–300'})}{field('单次模型等待', 'model_timeout_s', {min: 10, max: 300, hint: '秒，10–300'})}{field('模型请求重试', 'model_max_retries', {min: 0, max: 2})}</SettingsGroup><SettingsGroup title="操作预算">{field('模型调用上限', 'max_model_rounds', {min: 2, max: 30})}{field('工具调用上限', 'max_tool_calls', {min: 2, max: 50})}</SettingsGroup></>}

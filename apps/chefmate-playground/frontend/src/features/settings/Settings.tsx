@@ -17,7 +17,7 @@ import './settings-react.css';
 
 const sections = [
   ['account-profile', '个人资料', 'user-round', '让小锅搭子用你喜欢的方式称呼你。'],
-  ['account-quota', '我的额度', 'coins', '会员先用，永久余额接续。额度和使用金额一眼看清。'],
+  ['account-quota', '我的额度', 'coins', '查看当前可用比例，以及会员窗口的恢复时间。'],
   ['account-security', '账号安全', 'shield-check', '管理登录密码，保护自己的厨房资料。'],
   ['display', '外观与对话', 'sun-moon', '按你的习惯使用小锅搭子。'],
   ['keyboard', '快捷键', 'corner-down-left', '把常用操作放在顺手的按键上。'],
@@ -185,7 +185,7 @@ export function Settings({onClose, onSaved, scope, initialSection = 'display', o
   const values = drafts[current] || {}, selected = sections.find(section => section[0] === current)!;
   const field = (label: string, key: string, props: any = {}) => <Field key={key} label={label} value={values[key]} onChange={value => change(key, value)} disabled={locked} {...props}/>;
   const readOnly = !editableSections.includes(current);
-  return <div className="settings-page react-settings" aria-label="ChefMate 设置">
+  return <div className="settings-page react-settings" data-settings-section={current} aria-label="ChefMate 设置">
     <nav className="settings-nav" aria-label="设置分类" onKeyDown={event => {if (!['ArrowRight', 'ArrowLeft', 'ArrowUp', 'ArrowDown', 'Home', 'End'].includes(event.key)) return; const buttons = Array.from(event.currentTarget.querySelectorAll<HTMLButtonElement>('[data-section]')); const index = buttons.indexOf(event.target as HTMLButtonElement); if (index < 0) return; event.preventDefault(); const next = event.key === 'Home' ? 0 : event.key === 'End' ? buttons.length - 1 : (index + (['ArrowRight', 'ArrowDown'].includes(event.key) ? 1 : -1) + buttons.length) % buttons.length; buttons[next].focus(); buttons[next].click();}}>
       {visibleSections.map(([id, title, icon]) => <Fragment key={id}>{navigationGroups[id] && <span className="settings-nav-label">{navigationGroups[id]}</span>}<button type="button" data-section={id} aria-current={current === id ? 'page' : undefined} onClick={() => {if (!locked) {setCurrent(id); onSectionChange?.(id);}}} disabled={locked}><Icon name={icon}/><span>{title}</span>{dirtySections.includes(id) || id === 'memory' && memoryDirty || accountDirtySections[id.slice(8)] ? <span aria-label="有未保存修改">•</span> : null}</button></Fragment>)}
     </nav>

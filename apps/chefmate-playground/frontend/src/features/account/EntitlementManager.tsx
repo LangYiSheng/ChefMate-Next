@@ -4,6 +4,7 @@ import {Icon} from '../../components/Icon';
 import {api} from '../../runtime/http';
 import {AccountLeavePrompt, useAccountLeaveGuard} from './leave-guard';
 import {QuotaOverview} from './QuotaOverview';
+import {MembershipTemplates, type MembershipTemplate} from './MembershipTemplates';
 import {money, type AccountUser, type FundsOverview, type MembershipFund} from './types';
 import './entitlement-manager.css';
 
@@ -24,13 +25,14 @@ export function EntitlementManager({user, onClose, onChanged}: {user: AccountUse
   const [report, setReport] = useState<Report | null>(null), [loading, setLoading] = useState(true), [busy, setBusy] = useState(false);
   const [mode, setMode] = useState<Mode>(null), [draft, setDraft] = useState<Draft>({...defaults}), [revoking, setRevoking] = useState<MembershipFund | null>(null);
   const [error, setError] = useState(''), [message, setMessage] = useState(''), [uncertain, setUncertain] = useState(false), [conflict, setConflict] = useState(false);
+  const [templateBusy, setTemplateBusy] = useState(false), [templateDirty, setTemplateDirty] = useState(false);
   const alive = useRef(true), working = useRef(false), pending = useRef<Pending | null>(null), requestId = useRef(crypto.randomUUID()), readVersion = useRef(0);
   const firstInput = useRef<HTMLInputElement | HTMLTextAreaElement | null>(null);
   const base = `/api/admin/users/${encodeURIComponent(user.id)}`;
-  const dirty = uncertain || mode === 'credit' && (draft.label !== defaults.label || draft.amount !== defaults.amount)
+  const dirty = templateDirty || uncertain || mode === 'credit' && (draft.label !== defaults.label || draft.amount !== defaults.amount)
     || mode === 'membership' && (draft.memberLabel !== defaults.memberLabel || draft.days !== defaults.days || draft.weekly !== defaults.weekly || draft.hourly !== defaults.hourly)
     || mode === 'revoke' && Boolean(draft.reason);
-  const {pendingLeave, setPendingLeave} = useAccountLeaveGuard(Boolean(dirty), busy || loading, setError);
+  const {pendingLeave, setPendingLeave} = useAccountLeaveGuard(Boolean(dirty), busy || loading || templateBusy, setError);
   const load = useCallback(async (signal?: AbortSignal) => {
     const version = ++readVersion.current;
     const value = await api<Report>(`${base}/entitlements`, {signal});
@@ -46,7 +48,7 @@ export function EntitlementManager({user, onClose, onChanged}: {user: AccountUse
   }, [load]);
   useEffect(() => {if (mode) firstInput.current?.focus();}, [mode, revoking?.id]);
   const leave = (action: () => void) => {
-    if (working.current || busy) setError('正在保存额度，请稍候。');
+    if (working.current || busy || templateBusy) setError('正在保存额度或模板，请稍候。');
     else if (dirty) setPendingLeave(() => action);
     else action();
   };
@@ -55,8 +57,13 @@ export function EntitlementManager({user, onClose, onChanged}: {user: AccountUse
     setRevoking(member || null); setError(''); setMessage(''); setUncertain(false); setConflict(false);
   });
   const patch = (key: keyof Draft, value: string) => {setDraft(previous => ({...previous, [key]: value})); setMessage('');};
+  const applyTemplate = (template: MembershipTemplate) => {
+    setDraft(previous => ({...previous, memberLabel: template.label, days: String(template.duration_days),
+      weekly: String(template.weekly_limit_micros / 1_000_000), hourly: String(template.five_hour_limit_micros / 1_000_000)}));
+    setMessage(`已套用“${template.name}”，确认开通前还可以调整本次参数。`);
+  };
   async function refresh() {
-    if (working.current) return;
+    if (working.current || templateBusy) return;
     working.current = true; setLoading(true); setError('');
     try {
       const value = await load(), operation = pending.current;
@@ -76,7 +83,7 @@ export function EntitlementManager({user, onClose, onChanged}: {user: AccountUse
     finally {working.current = false; if (alive.current) setLoading(false);}
   }
   async function save() {
-    if (working.current || !mode || conflict) return;
+    if (working.current || templateBusy || !mode || conflict) return;
     let operation: Pending;
     try {
       if (uncertain && pending.current) operation = pending.current;
@@ -122,6 +129,7 @@ export function EntitlementManager({user, onClose, onChanged}: {user: AccountUse
     {loading && <p role="status">正在读取额度…</p>}
     {report && <>
       <div className="entitlement-actions"><button type="button" disabled={busy || loading} onClick={() => choose('credit')} aria-pressed={mode === 'credit'}><Icon name="coins"/><span><strong>增加永久额度</strong><small>使用基础额度后继续扣减</small></span><Icon name="plus"/></button><button type="button" disabled={busy || loading} onClick={() => choose('membership')} aria-pressed={mode === 'membership'}><Icon name="sparkles"/><span><strong>开通限时会员</strong><small>设置有效期、周与 5 小时额度</small></span><Icon name="plus"/></button></div>
+      {mode === 'membership' && <MembershipTemplates disabled={locked} onApply={applyTemplate} onBusyChange={setTemplateBusy} onDirtyChange={setTemplateDirty}/>}
       {mode && <form className="entitlement-form" aria-label={mode === 'credit' ? '增加永久充值额度' : mode === 'membership' ? '开通会员' : '撤销会员'} onSubmit={event => {event.preventDefault(); void save();}}>
         <h3>{mode === 'credit' ? '增加永久充值额度' : mode === 'membership' ? '开通 ChefMate 会员' : `撤销 ${revoking?.label}`}</h3>
         {mode === 'credit' ? <div className="entitlement-form-grid"><label className="account-field"><span>额度名称</span><input ref={element => {firstInput.current = element;}} required maxLength={80} value={draft.label} disabled={locked} onChange={event => patch('label', event.target.value)}/></label><label className="account-field"><span>充值金额（元）</span><input type="number" required min="0.000001" max="1000000000" step="0.000001" value={draft.amount} disabled={locked} onChange={event => patch('amount', event.target.value)}/></label></div>
@@ -131,7 +139,7 @@ export function EntitlementManager({user, onClose, onChanged}: {user: AccountUse
         {uncertain && <p className="account-notice">上次请求的结果尚未确认。表单已保留；重试会核对同一项操作，避免重复增加额度。</p>}
         <div className="account-form-actions"><button type="button" className="text-button" disabled={busy} onClick={() => choose(null)}>取消</button><button type="submit" className="primary-button" disabled={busy || loading || conflict || !validDraft}>{busy ? '正在保存…' : uncertain ? '重试同一操作' : mode === 'credit' ? '确认增加额度' : mode === 'membership' ? '确认开通会员' : '确认撤销会员'}</button></div>
       </form>}
-      <QuotaOverview quota={report.user.quota} onRefresh={load}/>
+      <QuotaOverview quota={report.user.quota} presentation="amount" onRefresh={load}/>
       {report.entitlements.memberships.some(item => item.status === 'active') && <section className="entitlement-member-actions" aria-label="会员管理"><h3>管理现有会员</h3>{report.entitlements.memberships.filter(item => item.status === 'active').map(item => <div key={item.id}><span><strong>{item.label}</strong><small>到期 {new Date(item.expires_at).toLocaleDateString('zh-CN')} · 当前可用 {money(item.available_micros)}</small></span><button type="button" className="text-button" disabled={busy || loading} onClick={() => choose('revoke', item)}>撤销会员</button></div>)}</section>}
     </>}
     <AccountLeavePrompt action={pendingLeave} onCancel={() => setPendingLeave(null)}/>

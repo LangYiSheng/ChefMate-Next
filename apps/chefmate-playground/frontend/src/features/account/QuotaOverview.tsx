@@ -2,13 +2,19 @@ import {useEffect, useState} from 'react';
 import {Icon} from '../../components/Icon';
 import {money, quotaAmounts, type AccountQuota, type FundWindow} from './types';
 import './quota.css';
+import {PersonalQuotaOverview} from './PersonalQuotaOverview';
+
+type QuotaProps = {quota: AccountQuota; compact?: boolean; onRefresh?: () => Promise<unknown>; presentation?: 'percentage' | 'amount'};
+export function QuotaOverview({presentation = 'percentage', ...props}: QuotaProps) {
+  return presentation === 'amount' ? <MonetaryQuotaOverview {...props}/> : <PersonalQuotaOverview {...props}/>;
+}
 
 const dateText = (value: string) => new Date(value).toLocaleString('zh-CN', {month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit'});
 function WindowMeter({label, window, active}: {label: string; window: FundWindow; active: boolean}) {
   return <div className="quota-window"><div><strong>{label}</strong><span>{active ? '剩余' : '窗口未用'} {money(window.remaining_micros)}</span></div><progress aria-label={`${label}用量`} value={Math.min(window.limit_micros, window.used_micros + window.reserved_micros)} max={Math.max(1, window.limit_micros)}/><div className="quota-window-detail"><span>已用 {money(window.used_micros)} / {money(window.limit_micros)}{window.reserved_micros > 0 && ` · 预留 ${money(window.reserved_micros)}`}</span><small>{window.resets_at ? active ? `${dateText(window.resets_at)} 重置` : `历史窗口截至 ${dateText(window.resets_at)}` : active ? '首次使用时开始计时' : '此窗口尚未启用'}</small></div>{window.estimated_micros > 0 && <small>其中 {money(window.estimated_micros)} 为待核对预估</small>}</div>;
 }
 
-export function QuotaOverview({quota, compact = false, onRefresh}: {quota: AccountQuota; compact?: boolean; onRefresh?: () => Promise<unknown>}) {
+function MonetaryQuotaOverview({quota, compact = false, onRefresh}: Omit<QuotaProps, 'presentation'>) {
   const [refreshError, setRefreshError] = useState('');
   const funds = quota.funds, amounts = quotaAmounts(quota);
   const active = funds?.memberships.filter(member => member.status === 'active') || [];
