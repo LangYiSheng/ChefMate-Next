@@ -46,7 +46,7 @@
 
 ## 版本与发布
 
-版本号只在用户明确要求时升级。日常更新保持当前版本，有用户可见变化时才在 [releases.json](../../apps/chefmate-playground/releases.json) 累计日志，同一版本可以有多条记录。用户要求发版时，再汇总更新说明，并保留原始提交来源及历史档案供追溯。确定升级版本后，同步修改 App 的 `pyproject.toml`、`uv.lock` 和前端 `package.json`、`package-lock.json` 中的项目版本。
+版本号和版本更新日志都只在用户明确要求时修改。日常功能、界面与文档更新保持当前版本，不自动改动 [releases.json](../../apps/chefmate-playground/releases.json)；自动提交与推送不包含修改日志的授权。用户要求发版或整理日志时，再汇总指定范围的更新说明，并保留原始提交来源及历史档案供追溯。确定升级版本后，同步修改 App 的 `pyproject.toml`、`uv.lock` 和前端 `package.json`、`package-lock.json` 中的项目版本。
 
 每条更新记录都包含 `source: {branch, commit}`：`branch` 保存当时的 Git 分支名，`commit` 保存被记录的已存在代码快照的完整 SHA，界面展示短提交 ID。来源固定保存在记录中，不在读取时动态取 `HEAD`，也不要求填写承载日志记录的提交自身哈希。
 

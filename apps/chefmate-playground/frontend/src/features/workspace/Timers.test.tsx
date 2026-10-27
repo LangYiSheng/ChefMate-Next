@@ -30,6 +30,32 @@ beforeEach(() => {
 afterEach(() => { ids.forEach(id => workspaceStore.remove(id)); ids.length = 0; });
 
 describe('timer hosts retained across scene changes', () => {
+  it('still scrolls to an inspected timer when the target is marked without a background panel', () => {
+    const id = seed(), timers: Timer[] = [{id: 'first', label: '汤', seconds: 300, remaining_seconds: 300, status: 'running'}, {id: 'later', label: '米饭', seconds: 600, remaining_seconds: 600, status: 'running'}];
+    workspaceStore.receive(id, {workspace: {revision: 2, stage: 'cooking'}, views: [{id: 'timers', kind: 'timers', revision: 2, editable: true, data: {timers}}]});
+    vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
+      const top = this.dataset.timerRow === 'later' ? 260 : this.classList.contains('timer-popup-body') ? 100 : 0;
+      return {x: 0, y: top, top, left: 0, right: 300, bottom: top + 80, width: 300, height: 80, toJSON: () => ({})};
+    });
+    render(<KitchenTimers sessionId={id}/>); act(() => workspaceStore.openTimers(id, 'later'));
+    const popup = screen.getByRole('dialog', {name: '厨房计时'}), row = popup.querySelector('[data-timer-row="later"]')!;
+    expect(row.closest('.timer-highlight')).not.toBeNull(); expect(popup.querySelector('.timer-popup-body')!.scrollTop).toBe(160);
+    expect(within(popup).getByRole('button', {name: '暂停米饭'})).toBeEnabled(); expect(within(popup).getByRole('button', {name: '结束米饭'})).toBeEnabled();
+  });
+
+  it('keeps other-session expired reminders readable and actionable on the shared surface', () => {
+    const id = seed(), other = seed(), onOpen = vi.fn(); let now = Date.parse('2026-10-23T12:00:00Z');
+    receiveTimer(other, 2, {id: 'other-soup', label: '另一锅汤', seconds: 5, deadline_at: '2026-10-23T12:00:05Z', status: 'running'}); workspaceStore.entry(other).clock = () => now;
+    render(<KitchenTimers sessionId={id} onOpenSession={onOpen}/>); act(() => {now += 6000; workspaceStore.tick();});
+    fireEvent.click(screen.getByRole('button', {name: '查看其他会话的到时提醒'}));
+    let popup = screen.getByRole('dialog', {name: '厨房计时'});
+    expect(within(popup).getByText('另一锅汤')).toBeVisible(); expect(within(popup).getByText('时间到')).toBeVisible();
+    fireEvent.click(within(popup).getByRole('button', {name: '查看会话'})); expect(onOpen).toHaveBeenCalledWith(other);
+    fireEvent.click(screen.getByRole('button', {name: '查看其他会话的到时提醒'})); popup = screen.getByRole('dialog', {name: '厨房计时'});
+    fireEvent.click(within(popup).getByRole('button', {name: '知道了'})); expect(workspaceStore.entry(other).acknowledged).toContain('other-soup');
+    expect(within(popup).queryByText('另一锅汤')).not.toBeInTheDocument();
+  });
+
   it('opens new timers only in the active host, closes the old popup, and accepts the next event after switching', () => {
     const id = seed(), rendered = render(<Hosts sessionId={id} focus={false} />);
     const main = screen.getByTestId('main-host'), focus = screen.getByTestId('focus-host');

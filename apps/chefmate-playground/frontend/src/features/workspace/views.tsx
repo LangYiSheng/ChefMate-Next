@@ -3,6 +3,7 @@ import { Icon } from '../../components/Icon';
 import { type Json, type View, type Timer, labels, stages, safeReference, durationText, manualTimerSeconds, timerPresentation, timerCapacity, completionText } from './protocol';
 import { workspaceStore, type Entry } from './store';
 import { ReadingPages } from './ReadingPages';
+import './cooking-actions.css';
 
 type Context = { sessionId: string; entry: Entry; historical?: boolean; focused?: boolean; onFocus?: (kind: string) => void; onRecipe?: (id: string) => void; onContinue?: (message: string) => void; onCollapse?: () => void };
 export function Button({ children, onClick, disabled, className = 'ui-button', ...rest }: { children: ReactNode; onClick?: () => unknown; disabled?: boolean; className?: string; [key: string]: any }) {
@@ -145,13 +146,16 @@ function PrepChecklist({ view, ctx }: { view: View; ctx: Context }) {
     {!ctx.historical && ctx.entry.snapshot?.stage === 'prep' && complete && <div className="preparation-finish">{mealReady ? <Button className="ui-button cooking-primary" disabled={ctx.entry.running || ctx.entry.saving} onClick={() => ctx.onContinue?.('食材已经全部备齐了，开始做菜吧。')}>食材备齐，继续做菜</Button> : <Hint>这道菜已准备好，可切换到其他菜品继续备菜。</Hint>}</div>}
   </div>;
 }
-export function CompleteMeal({ ctx }: { ctx: Context }) {
-  const [confirming, setConfirming] = useState(false);
+function mealCompletionAllowed(ctx: Context) {
   const progress = ctx.entry.views.find(view => view.kind === 'task_progress')?.data;
   const allowed = ctx.entry.snapshot?.allowed_transitions?.includes('completed') || Number(progress?.steps_total) > 0 && Number(progress?.steps_done) >= Number(progress?.steps_total);
-  if (ctx.historical || ctx.entry.snapshot?.stage !== 'cooking' || !allowed) return null;
+  return !ctx.historical && ctx.entry.snapshot?.stage === 'cooking' && Boolean(allowed);
+}
+export function CompleteMeal({ ctx }: { ctx: Context }) {
+  const [confirming, setConfirming] = useState(false);
+  if (!mealCompletionAllowed(ctx)) return null;
   const busy = ctx.entry.saving || ctx.entry.running || ctx.entry.loading || !!ctx.entry.failed || !!ctx.entry.conflict;
-  return <div className="complete-meal-control">{confirming ? <div className="complete-meal-confirm"><p>确认这餐烹饪已经完成？完成后会保存烹饪记录。</p><Button className="ui-button cooking-primary" disabled={busy} onClick={async () => { await workspaceStore.dispatch(ctx.sessionId, 'complete_meal', {}, undefined, { continuation: '这顿饭所有菜都做好啦，我已点击完成本次菜肴。请查看本次营养登记状态；如果是多人用餐或人数不明确，先问我自己吃了哪些、吃了多少，再登记个人营养。' }); setConfirming(false); }}>确认完成本餐</Button><Button className="ui-text-button" onClick={() => setConfirming(false)}>继续烹饪</Button></div> : <Button className="ui-button cooking-primary complete-meal-button" disabled={busy} onClick={() => setConfirming(true)}>完成本餐</Button>}</div>;
+  return <div className={`complete-meal-control${confirming ? ' is-confirming' : ''}`}>{confirming ? <div className="complete-meal-confirm" role="group" aria-label="确认完成本餐"><p>确认这餐烹饪已经完成？完成后会保存烹饪记录。</p><div className="complete-meal-actions"><Button className="ui-button cooking-primary" disabled={busy} onClick={async () => { await workspaceStore.dispatch(ctx.sessionId, 'complete_meal', {}, undefined, { continuation: '这顿饭所有菜都做好啦，我已点击完成本次菜肴。请查看本次营养登记状态；如果是多人用餐或人数不明确，先问我自己吃了哪些、吃了多少，再登记个人营养。' }); setConfirming(false); }}>确认完成本餐</Button><Button className="ui-text-button" onClick={() => setConfirming(false)}>继续烹饪</Button></div></div> : <Button className="ui-button cooking-primary complete-meal-button" disabled={busy} onClick={() => setConfirming(true)}><Icon name="circle-check" />完成本餐</Button>}</div>;
 }
 function CookingGuide({ view, ctx }: { view: View; ctx: Context }) {
   const data = view.data, steps: Json[] = data.steps || [];
@@ -166,6 +170,7 @@ function CookingGuide({ view, ctx }: { view: View; ctx: Context }) {
   const index = browseIndex >= 0 ? browseIndex : activeIndex, selected = steps[index];
   const recipes: Json[] = ctx.entry.views.find(item => item.kind === 'meal_plan')?.data.recipes || [];
   const disabled = locked(view, ctx) || ctx.entry.snapshot?.stage !== 'cooking';
+  const mealReady = mealCompletionAllowed(ctx);
   const jump = (next: number) => setBrowsing({ recipeId: data.recipe_id, stepId: steps[next].id, activeStepId: data.active_step_id, navigationId });
   const completed = steps.filter(step => step.status === 'done').length;
   const stepState = (step: Json) => step.status === 'done' ? 'done' : step.id === data.active_step_id ? 'current' : 'pending';
@@ -173,7 +178,7 @@ function CookingGuide({ view, ctx }: { view: View; ctx: Context }) {
     await action(view, ctx, 'complete_step', { recipe_id: data.recipe_id, step_id: step.id, completed: step.status !== 'done' });
     setBrowsing(null);
   };
-  const completionButton = (step: Json) => <Button className={`ui-button step-completion ${step.status === 'done' ? 'cooking-secondary' : 'cooking-primary'}`} disabled={disabled} onClick={() => finishStep(step)}><Icon name={step.status === 'done' ? 'undo-2' : 'check'} />{step.status === 'done' ? '取消完成' : '完成这一步'}</Button>;
+  const completionButton = (step: Json, review = false) => <Button className={`ui-button step-completion ${step.status === 'done' ? 'cooking-secondary' : 'cooking-primary'}${review ? ' cooking-step-review' : ''}`} disabled={disabled} onClick={() => finishStep(step)}><Icon name={step.status === 'done' ? 'undo-2' : 'check'} />{step.status === 'done' ? '取消完成' : '完成这一步'}</Button>;
   const stepTimer = (step: Json) => {
     const matches = (data.timers || []).filter((timer: Timer) => timer.recipe_id === data.recipe_id && timer.step_id === step.id);
     const timer = matches.find((timer: Timer) => ['running', 'paused'].includes(timer.status)) || matches.at(-1);
@@ -184,7 +189,7 @@ function CookingGuide({ view, ctx }: { view: View; ctx: Context }) {
     return step.timer_seconds > 0 && !step.adapted_instruction && step.status !== 'done' ? <Button className="ui-button cooking-secondary timer-start-button" disabled={disabled} onClick={() => action(view, ctx, 'start_timer', { recipe_id: data.recipe_id, step_id: step.id, seconds: step.timer_seconds, label: `${data.recipe_name} · 第 ${Number(step.ordinal) + 1} 步` })}><Icon name="timer" />开始 {durationText(step.timer_seconds)}计时</Button> : null;
   };
   const detail = selected && <article className={`ui-cooking-step ${stepState(selected)}`} data-step-id={selected.id}>
-    <div className="ui-step-heading"><span className="cooking-step-number">第 {Number(selected.ordinal) + 1} / {steps.length} 步</span><span className={`cooking-step-status ${stepState(selected)}`}>{selected.status === 'done' ? '已完成' : selected.id === data.active_step_id ? '正在做' : '浏览中'}</span></div>
+    <div className="ui-step-heading"><span className="cooking-step-number">第 {Number(selected.ordinal) + 1} / {steps.length} 步</span><span className={`cooking-step-status ${stepState(selected)}`}>{selected.status === 'done' ? '已完成' : selected.id === data.active_step_id ? '正在做' : '浏览中'}</span>{mealReady && completionButton(selected, true)}</div>
     <div className="cooking-step-main">
       {ctx.focused ? <ReadingPages key={`${data.recipe_id}:${selected.id}`} text={selected.adapted_instruction || selected.instruction || ''} label="步骤说明" /> : <p className="ui-step-instruction">{selected.adapted_instruction || selected.instruction}</p>}
       {selected.adapted_instruction && <div className="step-adaptation"><Hint>按你的条件调整：{selected.adaptation_reason || ''}</Hint><details className="workspace-disclosure"><summary>查看原菜谱步骤</summary><p>{selected.instruction}</p></details></div>}
@@ -201,12 +206,14 @@ function CookingGuide({ view, ctx }: { view: View; ctx: Context }) {
     </div>
     {!steps.length ? <Hint>这道菜暂时没有可用步骤。</Hint> : mode === 'detail' ? <>
       <div className={ctx.focused ? 'focus-cooking-layout' : 'inline-cooking-layout'}>{outline}<div className="focus-step-reading">{detail}</div></div>
-      <nav className="step-navigator cooking-step-nav" aria-label="浏览烹饪步骤"><Button className="page-button" disabled={index === 0} onClick={() => jump(index - 1)}><Icon name="chevron-left" /><span>上一步</span></Button>{completionButton(selected)}<Button className="page-button" disabled={index >= steps.length - 1} onClick={() => jump(index + 1)}><span>下一步</span><Icon name="chevron-right" /></Button></nav>
     </> : <ol className="cooking-compact-list" aria-label="完整烹饪步骤">{steps.map((step, itemIndex) => {
       const state = stepState(step), isSelected = itemIndex === index;
       return <li key={step.id} data-step-id={step.id} className={`cooking-list-row ${state}${isSelected ? ' selected' : ''}`}><button type="button" className="cooking-list-copy" aria-label={`查看第 ${itemIndex + 1} 步：${step.adapted_instruction || step.instruction}`} aria-current={step.id === data.active_step_id ? 'step' : undefined} aria-expanded={isSelected} onClick={() => jump(itemIndex)}><span className="workflow-step-index">{String(itemIndex + 1).padStart(2, '0')}</span><span className="cooking-list-instruction">{step.adapted_instruction || step.instruction}</span><span className={`cooking-list-status ${state}`}>{state === 'done' ? '已完成' : state === 'current' ? '正在做' : ''}</span></button>{isSelected && <div className="cooking-list-actions">{completionButton(step)}{stepTimer(step)}</div>}</li>;
     })}</ol>}
-    <CompleteMeal ctx={ctx} />
+    <div className={`cooking-action-area${mealReady ? ' meal-ready' : ''}`} role="group" aria-label="烹饪操作">
+      {!!steps.length && mode === 'detail' && <nav className="step-navigator cooking-step-nav" aria-label="浏览烹饪步骤"><Button className="page-button cooking-previous-step" disabled={index === 0} onClick={() => jump(index - 1)}><Icon name="chevron-left" /><span>上一步</span></Button>{!mealReady && completionButton(selected)}<Button className="page-button cooking-next-step" disabled={index >= steps.length - 1} onClick={() => jump(index + 1)}><span>下一步</span><Icon name="chevron-right" /></Button></nav>}
+      <CompleteMeal ctx={ctx} />
+    </div>
   </div>;
 }
 export function TimerRow({ timer, ctx, view }: { timer: Timer; ctx: Context; view: View }) {

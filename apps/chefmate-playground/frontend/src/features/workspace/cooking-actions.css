@@ -1,0 +1,48 @@
+/* The central action grows from a single completed step into a completed meal. */
+:is(.react-workspace,.react-cooking-focus) .ui-cooking-guide .cooking-action-area{
+  display:grid;align-items:center;flex:none;min-width:0;margin-top:12px;
+}
+:is(.react-workspace,.react-cooking-focus) .cooking-action-area:empty{display:none}
+:is(.react-workspace,.react-cooking-focus) .cooking-action-area>.cooking-step-nav{
+  grid-area:1/1;min-width:0;width:100%;margin:0;padding:0;
+}
+:is(.react-workspace,.react-cooking-focus) .cooking-step-nav>.cooking-previous-step{grid-column:1}
+:is(.react-workspace,.react-cooking-focus) .cooking-step-nav>.cooking-next-step{grid-column:3}
+:is(.react-workspace,.react-cooking-focus) .cooking-action-area>.complete-meal-control{
+  grid-area:1/1;justify-self:center;display:flex;justify-content:center;min-width:0;
+  width:calc(100% / 3.4 * 1.4);max-width:220px;margin:0;
+}
+:is(.react-workspace,.react-cooking-focus) .cooking-action-area .complete-meal-button{
+  width:100%;min-height:42px;padding:10px 12px;
+}
+:is(.react-workspace,.react-cooking-focus) .cooking-action-area>.complete-meal-control.is-confirming{
+  position:relative;z-index:1;width:100%;max-width:520px;
+}
+:is(.react-workspace,.react-cooking-focus) .cooking-action-area:has(>.is-confirming)>.cooking-step-nav{visibility:hidden}
+:is(.react-workspace,.react-cooking-focus) .complete-meal-confirm{text-align:center}
+:is(.react-workspace,.react-cooking-focus) .complete-meal-actions{display:flex;align-items:center;justify-content:center;gap:8px;flex-wrap:wrap}
+:is(.react-workspace,.react-cooking-focus) .complete-meal-actions>button{min-width:112px}
+:is(.react-workspace,.react-cooking-focus) .ui-step-heading>.cooking-step-review{
+  margin-left:auto;min-height:30px;padding:4px 7px;background:transparent;color:var(--color-muted);
+  font-size:.875rem;white-space:nowrap;
+}
+:is(.react-workspace,.react-cooking-focus) .ui-step-heading>.cooking-step-review:hover:not(:disabled){background:var(--surface-inset);color:var(--color-text)}
+:is(.react-workspace,.react-cooking-focus) .cooking-step-review>.icon{width:15px;height:15px}
+.react-cooking-focus .cooking-mode-list .cooking-action-area>.complete-meal-control:not(.is-confirming),
+.react-workspace .cooking-mode-list .cooking-action-area>.complete-meal-control:not(.is-confirming){width:100%;max-width:220px}
+@media(min-width:1000px){
+  .react-cooking-focus .cooking-mode-detail .cooking-action-area{margin-left:246px}
+}
+@media(max-width:600px){
+  :is(.react-workspace,.react-cooking-focus) .cooking-action-area>.complete-meal-control{width:calc(100% / 3.3 * 1.3)}
+  :is(.react-workspace,.react-cooking-focus) .cooking-action-area .complete-meal-button{gap:5px;padding-inline:6px}
+  :is(.react-workspace,.react-cooking-focus) .ui-step-heading{gap:8px}
+  :is(.react-workspace,.react-cooking-focus) .ui-step-heading>.cooking-step-review{padding-inline:5px}
+}
+@media(max-height:500px) and (min-width:700px){
+  .react-cooking-focus .cooking-mode-detail .cooking-action-area{margin-top:5px;margin-left:178px}
+  .react-cooking-focus .cooking-action-area .complete-meal-button{min-height:34px;padding:6px 10px}
+  .react-cooking-focus .cooking-action-area .complete-meal-confirm{padding:8px 12px}
+  .react-cooking-focus .complete-meal-confirm>p{margin-bottom:6px;font-size:.875rem}
+  .react-cooking-focus .complete-meal-actions>button{min-height:34px;padding-block:6px}
+}

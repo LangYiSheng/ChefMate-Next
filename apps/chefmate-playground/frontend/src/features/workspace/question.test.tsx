@@ -41,9 +41,13 @@ describe('question answer layout and draft ownership', () => {
     expect(screen.queryByRole('navigation', { name: '问题与选项分页' })).not.toBeInTheDocument();
     const custom = screen.getByRole('checkbox', { name: '其他答案或补充说明' });
     expect(custom.closest('.question-option')).toHaveClass('question-custom');
+    expect(custom).toHaveAttribute('data-choice-shape', 'radio');
     fireEvent.click(screen.getByRole('radio', { name: '少油' }));
     fireEvent.click(custom);
     const input = screen.getByRole('textbox', { name: '其他答案或补充说明' });
+    expect(input).toHaveAttribute('placeholder', '其他答案或补充说明');
+    expect(input.parentElement).toBe(custom.parentElement);
+    expect(screen.queryByText('其他答案或补充说明')).not.toBeInTheDocument();
     expect(input).toHaveFocus();
     fireEvent.change(input, { target: { value: '不要葱' } });
     expect(custom).toBeChecked();
@@ -59,6 +63,7 @@ describe('question answer layout and draft ownership', () => {
     const id = seed(question());
     render(<div className="react-cooking-focus"><footer className="focus-footer"><div className="focus-composer-slot"><QuestionPanel sessionId={id} running={false} /></div></footer></div>);
     expect(screen.getAllByRole('checkbox')).toHaveLength(4);
+    expect(screen.getByRole('checkbox', {name: '其他答案或补充说明'})).toHaveAttribute('data-choice-shape', 'checkbox');
     expect(screen.getByRole('textbox', { name: '其他答案或补充说明' })).toBeEnabled();
     expect(screen.queryByRole('navigation', { name: '问题与选项分页' })).not.toBeInTheDocument();
     expect(document.querySelector('.question-body')).toHaveAttribute('tabindex', '0');

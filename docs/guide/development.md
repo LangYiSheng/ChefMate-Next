@@ -135,7 +135,7 @@ uvicorn.run(create_app(config), host="127.0.0.1", port=18766)
 
 ## 检查命令
 
-日常更新保持当前版本，有用户可见变化时才在 [releases.json](../../apps/chefmate-playground/releases.json) 中累计日志，同一版本允许多条记录；用户要求发版时再汇总更新说明，保留原始提交来源和工程档案供追溯。只有用户明确要求升级版本号时，才修改 App 的 `pyproject.toml`、`uv.lock`、前端 `package.json` 和 `package-lock.json` 中的项目版本。各可复用包的版本独立管理。
+版本号和 [releases.json](../../apps/chefmate-playground/releases.json) 仅在用户明确要求时修改。日常功能、界面或文档更新不自动追加日志；提交与推送的授权不包含日志修改。用户要求发版或整理日志时，再汇总指定范围，保留原始提交来源和工程档案供追溯。升级版本号时同步 App 的 `pyproject.toml`、`uv.lock`、前端 `package.json` 和 `package-lock.json`，各可复用包的版本独立管理。
 
 每条记录包含 `source: {branch, commit}`，保存被记录的已存在代码快照的分支名和完整提交 SHA；页面显示分支名和短提交 ID。该来源随记录保存，不动态读取当前 `HEAD`，也不用填写日志提交自身的哈希。设置里的“版本更新日志”读取这一份内容；“关于”和 OpenAPI 从同一项目版本读取。
 

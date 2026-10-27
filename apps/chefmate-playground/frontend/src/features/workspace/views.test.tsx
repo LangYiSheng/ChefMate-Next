@@ -128,6 +128,39 @@ describe('React workspace behavior', () => {
     fireEvent.click(screen.getByRole('button', { name: '完成本餐' })); expect(dispatch).not.toHaveBeenCalled(); fireEvent.click(screen.getByRole('button', { name: '确认完成本餐' }));
     await waitFor(() => expect(dispatch).toHaveBeenCalledWith(id, 'complete_meal', {}, undefined, expect.objectContaining({ continuation: expect.any(String) })));
   });
+  it('promotes meal completion in the shared action area while keeping step review and undo available', () => {
+    const guide: View = { id: 'finished-guide', kind: 'cooking_guide', revision: 1, editable: true, data: { recipe_id: 'soup', recipe_name: '汤', active_step_id: 'boil', steps: [
+      { id: 'wash', ordinal: 0, instruction: '洗净食材。', status: 'done' }, { id: 'boil', ordinal: 1, instruction: '加水煮开。', status: 'done' },
+    ] } };
+    const id = seed([guide], 'cooking', { allowed_transitions: ['completed'] });
+    const dispatch = vi.spyOn(workspaceStore, 'dispatch').mockResolvedValue({ status: 'ok' });
+    const rendered = render(<CookingFocus sessionId={id} onClose={() => {}} onContinue={() => {}} />);
+    const actions = screen.getByRole('group', { name: '烹饪操作' });
+    expect(within(actions).getByRole('button', { name: '完成本餐' })).toBeEnabled();
+    expect(within(actions).queryByRole('button', { name: '取消完成' })).not.toBeInTheDocument();
+    expect(rendered.container.querySelector('.ui-step-heading')).toContainElement(screen.getByRole('button', { name: '取消完成' }));
+    fireEvent.click(screen.getByRole('button', { name: '上一步' }));
+    expect(rendered.container.querySelector('.focus-step-reading')).toHaveTextContent('洗净食材。');
+    expect(dispatch).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: '取消完成' }));
+    expect(dispatch).toHaveBeenCalledWith(id, 'complete_step', { recipe_id: 'soup', step_id: 'wash', completed: false }, guide);
+  });
+  it('cancels meal confirmation without saving and keeps completion available in the full step overview', () => {
+    const guide: View = { id: 'confirm-guide', kind: 'cooking_guide', revision: 1, editable: true, data: { recipe_id: 'soup', recipe_name: '汤', active_step_id: 'wash', steps: [{ id: 'wash', ordinal: 0, instruction: '洗净食材。', status: 'done' }] } };
+    const id = seed([guide], 'cooking', { allowed_transitions: ['completed'] });
+    const dispatch = vi.spyOn(workspaceStore, 'dispatch').mockResolvedValue({ status: 'ok' });
+    render(<CookingFocus sessionId={id} onClose={() => {}} onContinue={() => {}} />);
+    fireEvent.click(screen.getByRole('button', { name: '完成本餐' }));
+    expect(screen.getByRole('group', { name: '确认完成本餐' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '继续烹饪' }));
+    expect(dispatch).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('tab', { name: '完整步骤' }));
+    expect(screen.getAllByRole('button', { name: '完成本餐' })).toHaveLength(1);
+    expect(within(screen.getByRole('list', { name: '完整烹饪步骤' })).getByRole('button', { name: '取消完成' })).toBeEnabled();
+    fireEvent.click(screen.getByRole('button', { name: '完成本餐' }));
+    expect(screen.getByRole('button', { name: '确认完成本餐' })).toBeInTheDocument();
+    expect(dispatch).not.toHaveBeenCalled();
+  });
   it('renders server deadline countdown and timer commands through the shared store', () => {
     const id = seed([{ id: 'timers', kind: 'timers', revision: 1, editable: true, data: { timers: [{ id: 'soup', label: '汤', seconds: 90, status: 'paused', remaining_seconds: 45 }] } }], 'cooking');
     const dispatch = vi.spyOn(workspaceStore, 'dispatch').mockResolvedValue({ status: 'ok' }); render(<KitchenTimers sessionId={id} />);
