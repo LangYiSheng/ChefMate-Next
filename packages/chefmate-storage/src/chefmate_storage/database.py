@@ -27,6 +27,10 @@ def _estimated_fields(row: dict, prefix: str) -> list[str]:
     return sorted(name for name in NUTRIENTS if row[prefix + name])
 
 
+class SeedConflictError(ValueError):
+    """Automatic initialization never replaces an existing, different dataset."""
+
+
 class RecipeStore:
     """Each method opens its own connection; no hidden service, pool, or deployment."""
 
@@ -115,25 +119,71 @@ class RecipeStore:
             connection.execute("DELETE FROM recipes")
             connection.execute("DELETE FROM ingredients")
             for table in TABLE_ORDER:
-                rows = snapshot.tables[table]
-                if not rows:
-                    continue
-                columns = tuple(rows[0])
-                if any(tuple(row) != columns for row in rows):
-                    raise ValueError(f"Inconsistent normalized columns in {table}")
-                statement = sql.SQL("INSERT INTO {} ({}) VALUES ({})").format(
-                    sql.Identifier(table), sql.SQL(",").join(map(sql.Identifier, columns)),
-                    sql.SQL(",").join(sql.Placeholder() for _ in columns))
-                with connection.cursor() as cursor:
-                    cursor.executemany(statement, [tuple(row[column] for column in columns) for row in rows])
-            connection.execute("""INSERT INTO dataset_metadata
-                (id,data_version,export_schema_version,exported_at) VALUES(1,%s,%s,%s)
-                ON CONFLICT(id) DO UPDATE SET data_version=excluded.data_version,
-                export_schema_version=excluded.export_schema_version,exported_at=excluded.exported_at,
-                imported_at=CURRENT_TIMESTAMP""",
-                (snapshot.data_version, snapshot.export_schema_version, snapshot.exported_at))
+                self._insert_rows(connection, table, snapshot.tables[table])
+            self._write_metadata(connection, snapshot)
             result = self._metadata(connection)
         return result
+
+    @staticmethod
+    def _insert_rows(connection, table, rows):
+        if not rows:
+            return
+        columns = tuple(rows[0])
+        if any(tuple(row) != columns for row in rows):
+            raise ValueError(f"Inconsistent normalized columns in {table}")
+        statement = sql.SQL("INSERT INTO {} ({}) VALUES ({})").format(
+            sql.Identifier(table), sql.SQL(",").join(map(sql.Identifier, columns)),
+            sql.SQL(",").join(sql.Placeholder() for _ in columns))
+        with connection.cursor() as cursor:
+            cursor.executemany(statement, [tuple(row[column] for column in columns) for row in rows])
+
+    @staticmethod
+    def _write_metadata(connection, snapshot):
+        connection.execute("""INSERT INTO dataset_metadata
+            (id,data_version,export_schema_version,exported_at) VALUES(1,%s,%s,%s)
+            ON CONFLICT(id) DO UPDATE SET data_version=excluded.data_version,
+            export_schema_version=excluded.export_schema_version,exported_at=excluded.exported_at,
+            imported_at=CURRENT_TIMESTAMP""",
+            (snapshot.data_version, snapshot.export_schema_version, snapshot.exported_at))
+
+    def seed_from_export(self, directory, *, data_version: str, allow_unapproved: bool = False) -> dict:
+        """Seed empty tables or verify the identical dataset; never replace data.
+
+        Admission and row verification use the same exclusive advisory lock as
+        explicit imports. Temporary typed tables let PostgreSQL compare values
+        after its normal numeric conversion, including nullable columns.
+        """
+        snapshot = load_export(directory, data_version=data_version, allow_unapproved=allow_unapproved)
+        with self._connection() as connection:
+            self._require_migrated(connection)
+            existing = self._metadata(connection)
+            if existing and (existing["data_version"] != snapshot.data_version
+                             or existing["export_schema_version"] != snapshot.export_schema_version
+                             or existing["exported_at"] != snapshot.exported_at):
+                raise SeedConflictError("Existing dataset differs; automatic seed preserves it without replacement")
+            counts = {table: connection.execute(sql.SQL("SELECT count(*) AS count FROM {}").format(
+                sql.Identifier(table))).fetchone()["count"] for table in TABLE_ORDER}
+            if not existing:
+                if any(counts.values()):
+                    raise SeedConflictError("Existing rows have no dataset identity; automatic seed preserves them")
+                for table in TABLE_ORDER:
+                    self._insert_rows(connection, table, snapshot.tables[table])
+                self._write_metadata(connection, snapshot)
+            for table in TABLE_ORDER:
+                temporary = "seed_check_" + table
+                connection.execute(sql.SQL("CREATE TEMP TABLE {} (LIKE {}) ON COMMIT DROP").format(
+                    sql.Identifier(temporary), sql.Identifier(table)))
+                self._insert_rows(connection, temporary, snapshot.tables[table])
+                different = connection.execute(sql.SQL("""SELECT EXISTS (
+                    (SELECT * FROM {actual} EXCEPT ALL SELECT * FROM {expected}) UNION ALL
+                    (SELECT * FROM {expected} EXCEPT ALL SELECT * FROM {actual})
+                    ) AS different""").format(actual=sql.Identifier(table),
+                                              expected=sql.Identifier(temporary))).fetchone()["different"]
+                if different:
+                    raise SeedConflictError("Existing dataset contents differ; automatic seed preserves all rows")
+            return {**self._metadata(connection), "status": "verified" if existing else "seeded",
+                    "recipe_count": snapshot.recipe_count,
+                    "table_counts": {table: len(snapshot.tables[table]) for table in TABLE_ORDER}}
 
     def search(self, filters: RecipeFilter | None = None, *, limit: int = 20, offset: int = 0) -> dict:
         if type(limit) is not int or not 1 <= limit <= 200 or type(offset) is not int or offset < 0:

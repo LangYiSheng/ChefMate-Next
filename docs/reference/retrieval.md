@@ -73,6 +73,8 @@ result = tools.search_recipes({
 
 支持名称、总耗时上下限、三种难度、`taste_tags_all` / `taste_tags_any` / `exclude_taste_tags`、`cooking_methods_any`、`nutrition_tags_all`、`exclude_allergens` 和推荐资格。所有不同条件同时满足。口味、方法、厨具等代码从 `get_search_options` 获取，未识别的选项返回明确错误，而不是删除条件。
 
+检索工具的 `ready_for_recommendation` 默认为 `null`，普通查菜可以返回尚待审阅或营养不完整的做法候选，结果保留原资格标记并给出核对提示。显式 `true` 仅查达到完整推荐条件的菜谱，`false` 仅查未达到条件的菜谱；营养范围仍不匹配未知值。底层存储 `RecipeFilter` 和存储 CLI 的默认严格筛选保持不变，导入也不会提高原数据的审核状态。
+
 食材选择器优先直接使用 `find_ingredients.items[].selector`，不要从原文猜 ID。“家里有 A、B，尽量利用”属于库存或搭配偏好，可将任一可用食材放同一 OR 组，不默认把每个库存拆成 AND 条件；只有明确要求同一道菜必须同时含 A、B 才分组。`taste_tags_all` 和 `taste_tags_any` 都是硬过滤，不能把普通历史口味当作推荐排序参数；未明确要求的口味和过敏排除不自动添加。
 
 口味、方法、厨具、营养标签和过敏原优先传当前选项的 `code`。精确且唯一的显示 `label`（例如“炒锅”对应 `wok`）可在同一读取事务中规范为代码，返回 `normalized_options` 的 `{field,value,code,reason:"exact_label"}`，`normalized_query` 保存实际查询值；相同代码去重，不删除任何条件。未知名称、模糊别名、大小写变体或对应多个代码的显示名称拒绝，不猜测、不自动放宽。固定难度仍仅接受 `beginner/normal/advanced`。

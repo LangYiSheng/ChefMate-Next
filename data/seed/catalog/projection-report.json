@@ -1,0 +1,31 @@
+{
+  "data_version": "chefmate-bundled-20261005",
+  "recipe_count": 358,
+  "source_bytes": 204920387,
+  "bundled_bytes": 4300185,
+  "tables": {
+    "recipes": 358,
+    "recipe_steps": 3314,
+    "recipe_labels": 2492,
+    "recipe_notes": 2207,
+    "recipe_references": 61,
+    "ingredients": 725,
+    "recipe_ingredients": 3396,
+    "ingredient_aliases": 690,
+    "ingredient_allergens": 743,
+    "recipe_nutrition": 358,
+    "recipe_ingredient_nutrition": 3396
+  },
+  "source_prefixes": {
+    "HowToCook": 358
+  },
+  "ready_for_recommendation": 0,
+  "approval_statuses": {
+    "approved": 2,
+    "pending_review": 356
+  },
+  "all_online_tables_identical": true,
+  "sha256": {
+    "recipes.json": "534cf9e71d0977b4b23d57ab23a46444bf06510f75fab87f642cee105009e04e"
+  }
+}

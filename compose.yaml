@@ -1,0 +1,122 @@
+name: chefmate-next
+
+services:
+  app:
+    image: "${CHEFMATE_IMAGE:-chefmate-next:local}"
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        CHEFMATE_BUILD_COMMIT: "${CHEFMATE_BUILD_COMMIT:-}"
+    init: true
+    restart: unless-stopped
+    ports:
+      - "${CHEFMATE_BIND_ADDRESS:-127.0.0.1}:${CHEFMATE_HTTP_PORT:-18765}:18765"
+    environment:
+      CHEFMATE_PLAYGROUND_HOST: 0.0.0.0
+      CHEFMATE_PLAYGROUND_PORT: "18765"
+      CHEFMATE_RUNTIME_DIR: /var/lib/chefmate
+      CHEFMATE_ALLOWED_HOSTS: "${CHEFMATE_ALLOWED_HOSTS:-127.0.0.1,localhost,::1}"
+      CHEFMATE_COOKIE_SECURE: "${CHEFMATE_COOKIE_SECURE:-false}"
+      FORWARDED_ALLOW_IPS: "${FORWARDED_ALLOW_IPS:-127.0.0.1}"
+      CHEFMATE_ADMIN_USERNAME: "${CHEFMATE_ADMIN_USERNAME:-admin}"
+      CHEFMATE_ADMIN_PASSWORD: "${CHEFMATE_ADMIN_PASSWORD:?Set a unique CHEFMATE_ADMIN_PASSWORD in .env}"
+      CHEFMATE_APP_DATABASE_URL: "${CHEFMATE_APP_DATABASE_URL:-}"
+      CHEFMATE_APP_DB_HOST: app-db
+      CHEFMATE_APP_DB_USER: chefmate
+      CHEFMATE_APP_DB_NAME: chefmate_app
+      CHEFMATE_APP_DB_PASSWORD: "${CHEFMATE_APP_DB_PASSWORD:?Set CHEFMATE_APP_DB_PASSWORD in .env}"
+      CHEFMATE_APP_DATABASE_SCHEMA: "${CHEFMATE_APP_DATABASE_SCHEMA:-chefmate}"
+      CHEFMATE_NEW_USER_COST_LIMIT_MICROS: "${CHEFMATE_NEW_USER_COST_LIMIT_MICROS:-5000000}"
+      CHEFMATE_CATALOG_DB_HOST: db
+      CHEFMATE_CATALOG_DB_USER: chefmate
+      CHEFMATE_CATALOG_DB_NAME: chefmate
+      CHEFMATE_CATALOG_DB_PASSWORD: "${CHEFMATE_POSTGRES_PASSWORD:-${CHEFMATE_APP_DB_PASSWORD:?Set CHEFMATE_APP_DB_PASSWORD in .env}}"
+      CHEFMATE_CATALOG_SEED_REQUIRED: "true"
+      CHEFMATE_DATABASE_SCHEMA: "${CHEFMATE_DATABASE_SCHEMA:-chefmate}"
+      CHEFMATE_USDA_DATABASE: "${CHEFMATE_USDA_DATABASE:-}"
+      OPENAI_API_KEY: "${OPENAI_API_KEY:-}"
+      OPENAI_MODEL: "${OPENAI_MODEL:-}"
+      OPENAI_BASE_URL: "${OPENAI_BASE_URL:-https://api.openai.com/v1}"
+    volumes:
+      - chefmate-data:/var/lib/chefmate
+      - catalog-status:/var/lib/chefmate-catalog-status:ro
+    depends_on:
+      app-db:
+        condition: service_healthy
+      catalog-migrate:
+        condition: service_completed_successfully
+    read_only: true
+    tmpfs:
+      - /tmp:size=128m,mode=1777
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    stop_grace_period: 30s
+
+  app-db:
+    image: postgres:18@sha256:5a5a84b19854a9ffaa54082c166ff4ec27473a361e496e5ea167f298f2da9722
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: chefmate_app
+      POSTGRES_USER: chefmate
+      POSTGRES_PASSWORD: "${CHEFMATE_APP_DB_PASSWORD:?Set CHEFMATE_APP_DB_PASSWORD in .env}"
+    volumes:
+      - app-db-data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U chefmate -d chefmate_app"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 15s
+
+  db:
+    image: postgres:18@sha256:5a5a84b19854a9ffaa54082c166ff4ec27473a361e496e5ea167f298f2da9722
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: chefmate
+      POSTGRES_USER: chefmate
+      POSTGRES_PASSWORD: "${CHEFMATE_POSTGRES_PASSWORD:-${CHEFMATE_APP_DB_PASSWORD:?Set CHEFMATE_APP_DB_PASSWORD in .env}}"
+    volumes:
+      - chefmate-catalog:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U chefmate -d chefmate"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 15s
+
+  catalog-migrate:
+    image: "${CHEFMATE_IMAGE:-chefmate-next:local}"
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        CHEFMATE_BUILD_COMMIT: "${CHEFMATE_BUILD_COMMIT:-}"
+    command: ["python", "/app/docker/seed_catalog.py"]
+    environment:
+      CHEFMATE_CATALOG_DB_HOST: db
+      CHEFMATE_CATALOG_DB_USER: chefmate
+      CHEFMATE_CATALOG_DB_NAME: chefmate
+      CHEFMATE_CATALOG_DB_PASSWORD: "${CHEFMATE_POSTGRES_PASSWORD:-${CHEFMATE_APP_DB_PASSWORD:?Set CHEFMATE_APP_DB_PASSWORD in .env}}"
+      CHEFMATE_DATABASE_SCHEMA: "${CHEFMATE_DATABASE_SCHEMA:-chefmate}"
+    volumes:
+      - catalog-status:/var/lib/chefmate-catalog-status
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: "no"
+    read_only: true
+    tmpfs:
+      - /tmp:size=32m,mode=1777
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+
+volumes:
+  chefmate-data:
+  app-db-data:
+  chefmate-catalog:
+  catalog-status:

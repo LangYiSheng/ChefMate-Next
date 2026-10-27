@@ -22,11 +22,12 @@ ChefMate 把这些问题接到同一顿饭上。刷新页面、补充条件、�
 - **收好自己的菜谱**：把文字或截图整理成草稿，在聊天里核对食材、做法和来源，继续修改并确认保存；保存后可收藏、再次烹饪，也可以删除和恢复。
 - **留下食光手记**：照片或文字记餐先核对；单人完成餐按明确产品规则登记，多人餐先问本人吃了多少，营养保留估算与来源。
 - **慢慢了解你**：用户记忆与助手总结分别保存，相关历史按需查找，当前要求优先。
+- **每个人都有自己的厨房**：账号登录、欢迎配置和个人数据隔离；管理员集中管理模型、金额额度、用量、价格和开发者权限。
 - **用习惯的界面聊天**：直接让助手调整主题、配色、字体和普通对话偏好；模型、开发者和系统参数由设置页单独管理，助手不能读取或修改。
 
 这些能力由七个[系统组件](docs/design/agent-ui.md#系统组件)管理。关闭组件会同时撤去对应工具权限，已有记录仍可保留；已有显式组件清单的环境，需要在设置中启用新增组件。
 
-当前 App 为 **0.2.2**。近期厨房、对话与界面细节改进，见[本次发布与验收](docs/engineering/records/2026-10-27-release-0.2.2.md)；用户更新说明也可在设置中的“版本更新日志”查看。
+当前 App 版本保持 **0.2.2**。本轮账号、金额管理与 Docker/PostgreSQL 改造见[实现与验收](docs/engineering/records/2026-10-27-accounts-admin-postgresql.md)。已发布的厨房、对话与界面细节见[0.2.2 发布记录](docs/engineering/records/2026-10-27-release-0.2.2.md)及设置中的“版本更新日志”。
 
 ## 试着这样说
 
@@ -42,14 +43,24 @@ ChefMate 把这些问题接到同一顿饭上。刷新页面、补充条件、�
 
 ## 快速开始
 
-需要 Python 3.12+、[uv](https://docs.astral.sh/uv/)、Node.js 22.12+ 和一个支持原生工具调用的模型连接。React 前端需要先构建；完整菜谱检索还需要已有的 PostgreSQL 菜谱库，本地 USDA 库用于营养查询。应用默认只监听本机。
+日常运行使用 Docker Desktop / Docker Engine 和 Compose v2。镜像会构建前端与 Python 依赖，独立 PostgreSQL 保存账号和个人数据，另一项 PostgreSQL 保存公共菜谱，图片和设置保存到持久卷。首次启动自动导入随 GitHub 仓库提供的 [358 道基础菜谱](data/seed/catalog/README.md)，后续重启保留数据。完整 AI 做饭仍需配置支持原生工具调用的模型；可选 USDA 原始营养库和自定义菜谱数据按[部署指南](docs/guide/deployment.md)接入。
+
+```powershell
+Copy-Item .env.docker.example .env
+# 编辑根目录 .env，设置独立的管理员密码和应用数据库密码。
+docker compose up --build -d --wait --wait-timeout 180
+```
+
+打开 [ChefMate](http://127.0.0.1:18765)，普通用户注册后完成欢迎引导；部署者使用 `.env` 中的管理员账号管理模型、用户、价格、额度和开发者权限。已有 `.env` 时保留原文件。停止使用 `docker compose down`，持久卷会保留。
+
+以下为参与源码开发时的本机方式，需要 Python 3.12+、[uv](https://docs.astral.sh/uv/) 和 Node.js 22.12+：
 
 在仓库根目录运行：
 
 ```powershell
 uv sync --project apps/chefmate-playground --extra dev --python 3.12
 Copy-Item apps/chefmate-playground/.env.example apps/chefmate-playground/.env
-# 编辑刚创建的 .env，填写自己的模型和数据库连接。
+# 编辑刚创建的 .env，填写管理员初始化账号密码，以及模型和数据库连接。
 npm --prefix apps/chefmate-playground/frontend ci
 npm --prefix apps/chefmate-playground/frontend run build
 uv run --project apps/chefmate-playground chefmate-playground
@@ -59,7 +70,7 @@ uv run --project apps/chefmate-playground chefmate-playground
 
 Windows 也可运行 `apps/chefmate-playground/run.ps1`，脚本会安装锁定的前端依赖、构建页面，再启动 Python 服务。前端使用 React 19.3.1、TypeScript 7 和 Vite 8，后端将 `web/` 构建产物挂载到 `/static`。
 
-新环境的数据准备、只读检查和隔离运行方式见[开发指南](docs/guide/development.md)。启动工作台不会创建数据库、导入菜谱或下载 USDA 数据。
+新环境的数据准备、只读检查和隔离运行方式见[开发指南](docs/guide/development.md)。Docker 会准备两个 PostgreSQL 与内置基础菜谱，工作台初始化账号和个人数据表；替换自定义菜谱及下载 USDA 原始数据仍是显式维护步骤。
 
 ## 从 App 看架构
 
@@ -71,7 +82,7 @@ flowchart TD
     Agent --> Workflow[工作流：餐单、备菜、步骤、计时]
     App --> Personal[个人菜谱、记忆、食光手记]
     Retrieval --> Catalog[(PostgreSQL 基础菜谱库)]
-    Workflow --> Local[(SQLite 会话与个人数据)]
+    Workflow --> Local[(PostgreSQL 账号与个人数据)]
     Personal --> Local
     Cleaning[AI 转换、程序校验、人工审阅] --> Catalog
 ```
@@ -112,6 +123,6 @@ apps/chefmate-playground/.venv/Scripts/python.exe scripts/check_docs.py
 - 准备参与开发：[模块地图与开发指南](docs/guide/development.md) → [设计规范](docs/design/README.md) → [接口参考](docs/reference/README.md)。
 - 想追溯演进：[工程档案](docs/engineering/README.md)保留计划、真实验收和限制，不把旧结论当作当前状态。
 
-当前实现是本地厨房工作台。账号体系、语音、自训练视觉模型与经过对照实验验证的推荐算法仍有独立扩展空间；图片理解来自配置的外部多模态模型。文档中的设计收益以代码机制和验收范围为依据，不等同于量化效果承诺。
+当前实现提供账号注册登录、欢迎配置、独立用户工作区和管理员平台。语音、自训练视觉模型与经过对照实验验证的推荐算法仍有独立扩展空间；图片理解来自配置的外部多模态模型。文档中的设计收益以代码机制和验收范围为依据，不等同于量化效果承诺。
 
 README 的信息组织参考 [Gemini CLI](https://github.com/google-gemini/gemini-cli)：先认识产品、快速运行，再深入功能和文档。字体与图标的来源和许可证保留在各自资源目录。

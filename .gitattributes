@@ -1,0 +1,2 @@
+# The bundled catalog is hashed byte-for-byte during Docker initialization.
+data/seed/catalog/*.json text eol=lf

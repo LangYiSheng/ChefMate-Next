@@ -5,7 +5,7 @@
 
 ## 运行与数据位置
 
-从仓库根目录、使用 Python 3.12+、uv 和 Node.js 22.12+：
+日常运行按 [Docker 部署指南](../guide/deployment.md)启动，默认包含应用 PostgreSQL。下列命令用于源码开发，需要 Python 3.12+、uv 和 Node.js 22.12+：
 
 ```powershell
 uv sync --project apps/chefmate-playground --extra dev
@@ -15,7 +15,7 @@ uv run --project apps/chefmate-playground chefmate-playground
 ```
 
 默认访问 [本地工作台](http://127.0.0.1:18765/)，设置地址为 `/settings`；也可运行 `apps/chefmate-playground/run.ps1`，脚本自动执行 `npm ci`、前端构建和 uv 启动。
-使用 `chefmate-playground --port 18766` 可选择其他端口。启动器只监听 `127.0.0.1`。
+使用 `chefmate-playground --port 18766` 可选择其他端口。启动器默认监听 `127.0.0.1`，Docker 通过环境变量显式监听 `0.0.0.0`。
 应用连接调用方准备的 PostgreSQL，启动时不下载 USDA、不启动数据库、不迁移或替换菜谱数据。
 
 前端为 React 19.3.1、TypeScript 7 和 Vite 8。源码与样式在 [frontend/src](../../apps/chefmate-playground/frontend/src/)，全局样式入口是 [styles/index.css](../../apps/chefmate-playground/frontend/src/styles/index.css)，功能域保留自己的作用域样式。[frontend/public](../../apps/chefmate-playground/frontend/public/) 只保存字体、品牌与 Lucide sprite 等静态资源。构建生成 `apps/chefmate-playground/web/`，后端从此提供 SPA 页面并挂载 `/static`。直接使用 uv 启动前先构建，修改源码后也需重新构建；`npm --prefix apps/chefmate-playground/frontend run dev` 仅用于前端开发，其 `/api` 代理到默认后端端口。
@@ -23,13 +23,14 @@ uv run --project apps/chefmate-playground chefmate-playground
 | 数据 | 位置与所有者 |
 | --- | --- |
 | 基础菜谱 | PostgreSQL 指定 schema，由 `chefmate-storage` 管理当前发布集 |
-| 会话、厨房任务、个人菜谱、收藏、制作与饮食记录、长期记忆、用量 | 默认应用目录 `.runtime/sessions.db` 的独立表 |
-| 图片 | 会话数据库同目录的 `images/`，按会话归属管理 |
+| 身份、会话哈希、额度、成本、审计 | 应用 PostgreSQL 的 `<prefix>_accounts` schema |
+| 会话、厨房任务、个人菜谱、收藏、制作与饮食记录、长期记忆、用量 | 应用 PostgreSQL 的 `<prefix>_user_<id>` 独立 schema；本机旧数据与离线测试可使用 SQLite 适配 |
+| 图片 | 运行目录 `users/<id>/images/`，按用户与会话归属管理 |
 | 应用设置覆盖 | 应用目录 `.runtime/settings.json` |
 | USDA 参考 | 配置指定的本地 SQLite，默认指向清洗子项目的食品库 |
 | 界面显示偏好 | 应用设置覆盖中的安全偏好域；浏览器本地存储作为缓存与首次迁移来源 |
 | 未发送文字、确认后续轮 | 当前浏览器 localStorage，由 React 会话状态服务管理 |
-| 未发送图片 Blob | 当前浏览器 IndexedDB；正式聊天图片仍归服务端会话 |
+| 未发送图片 Blob | 按账号分区的浏览器 IndexedDB；正式聊天图片仍归服务端会话 |
 
 删除聊天不会连带删除独立的个人菜谱、制作记录、饮食记录、长期记忆或用量账本。
 活跃对话先停止才能删除；图片按会话清理。[应用资源组装](../../apps/chefmate-playground/src/chefmate_playground/app.py) · [会话路由](../../apps/chefmate-playground/src/chefmate_playground/routes/conversations.py)
@@ -42,6 +43,12 @@ uv run --project apps/chefmate-playground chefmate-playground
 
 | 配置 | 默认与含义 |
 | --- | --- |
+| `CHEFMATE_APP_DATABASE_URL` | Docker 必需；应用个人数据 PostgreSQL，与公共菜谱连接分开；本机开发空值保留 SQLite 适配 |
+| `CHEFMATE_APP_DATABASE_SCHEMA` | `chefmate`，命名空间前缀最多 25 位 |
+| `CHEFMATE_ADMIN_USERNAME` / `CHEFMATE_ADMIN_PASSWORD` | 显式初始化管理员，不接管普通账号或重设已有密码 |
+| `CHEFMATE_RUNTIME_DIR` | 应用 `.runtime`；Docker 为 `/var/lib/chefmate`，保存图片与设置 |
+| `CHEFMATE_NEW_USER_COST_LIMIT_MICROS` | 5000000，即 ¥5；仅首次初始化金额政策，之后以管理员保存的默认额度为准 |
+| `CHEFMATE_ALLOWED_HOSTS` / `CHEFMATE_COOKIE_SECURE` | 允许访问的主机名、HTTPS 会话 Cookie 开关 |
 | `CHEFMATE_DATABASE_URL` | 空；已有 PostgreSQL 连接，由调用方配置 |
 | `CHEFMATE_DATABASE_SCHEMA` | `chefmate` |
 | `CHEFMATE_USDA_DATABASE` | `../../data_cleaning/database/usda.db`；相对应用 `.env` 目录解析，空值关闭本地参考 |
@@ -63,7 +70,7 @@ uv run --project apps/chefmate-playground chefmate-playground
 设置页模型协议支持 `chat_completions` 和 `responses`，默认前者；推荐回复默认开启、数量 3，可配置 1–6。
 设置页保存与环境变量的完整映射见[配置类](../../apps/chefmate-playground/src/chefmate_playground/config.py)和[设置模型](../../apps/chefmate-playground/src/chefmate_playground/settings.py)。
 
-`PATCH /api/settings` 使用 `{revision,section,values}`，section 为 `model/runtime/context/interaction/cooking/components`。
+`PATCH /api/settings` 使用 `{revision,section,values}`，仅允许个人 `interaction/cooking` 分类。全局模型、组件和预算使用管理员的 `GET/PATCH /api/admin/settings`，分类为 `model/runtime/context/components`。
 保存先核对设置版本，校验成功再原子写文件并应用；冲突保留用户草稿供复核。
 活跃模型轮次存在时，除 `cooking` 外的分类会返回 409；计时策略使用最新设置读取，不替换当前 Agent。
 普通外观和对话偏好使用独立的 `GET/PATCH /api/ui-preferences`：读取返回 `{revision,initialized,values}`，保存发送 `{revision,changes}`。字段白名单为 `theme/light_palette/dark_palette/font_pairing/font_size/density/inline_limit/show_estimates/reply_suggestions/reply_suggestion_count`。`font_size=small|medium|large`，根字号为 14 / 15 / 16px，默认中；滑块预览草稿，保存后全局生效，大档保留调整前尺寸。该域独立校验版本，可在轮次运行中更新，不暴露模型、开发者、系统或密钥。首次使用将浏览器外观迁入服务端；冲突不自动重放修改。
@@ -101,6 +108,34 @@ uv run --project apps/chefmate-playground chefmate-playground
 
 `complete_cooking_step` 同属 `cooking-guide`，只在用户明确确认单步完成或撤销时使用。必填 `expected_revision`，`recipe_id/step_id` 省略表示当前步，`completed` 默认true、false撤销；成功更新卡片并定位该菜首个未完成步骤，不自动结束本餐。用户只说“下一步”仍使用导航工具，不能代替完成授权。无当前步且未指定真实步骤时返回 `step_required`，旧版本或非法引用不会修改任何进度。
 完整模型字段见[工作流参考](workflow.md)与[智能界面设计](../design/agent-ui.md)。
+
+## 身份与管理员 API
+
+除 `/healthz`、静态页面与注册登录接口外，业务 API 都要求有效 Cookie，并以服务端会话确定用户。未登录返回 401，未完成引导或权限不足返回 403；不存在或不属于自己的业务 ID 返回 404。写接口核对同源；请求头、用户 ID 参数和浏览器设置不能授予管理权限。
+
+| 接口 | 行为 |
+| --- | --- |
+| `GET /api/auth/me` | 当前用户或 `null`，含欢迎状态、角色、开发者授权、档案、额度 |
+| `POST /api/auth/register` / `login` | `{username,password}`；注册为普通用户并签发 HttpOnly Cookie |
+| `POST /api/auth/logout` | 撤销会话并清除 Cookie |
+| `PATCH /api/auth/password` | `{current_password,new_password}`，撤销旧会话并轮换当前 Cookie |
+| `PATCH /api/auth/onboarding` | `{display_name,cooking_level,household_size,preferences,theme,use_for_ai}`；经验值 `beginner/comfortable/confident`，AI 使用默认关闭 |
+| `GET /api/auth/quota` | 自己的金额额度、已用、暂估占用、预留、可用余额及单价；Token 仅作统计 |
+| `GET /api/admin/users` | 用户列表 |
+| `GET/PATCH /api/admin/policy` | `{revision,registration_enabled,default_cost_limit_micros}`；控制开放注册和后续注册账号的默认金额，不追改已有金额配置 |
+| `PATCH /api/admin/users/{id}` | 停用、角色、开发者许可、`cost_limit_micros` 金额额度；`null` 不限、0 停止新模型调用；拒绝 Token 上限字段 |
+| `POST /api/admin/users/{id}/password` | `{new_password}`，重置并撤销该用户会话 |
+| `GET/PATCH /api/admin/pricing` | 每百万输入、缓存输入、输出 Token 的 CNY 单价，revision 防覆盖；GET 含只读 `configured`，首次必须显式保存确认，允许明确确认全零免费 |
+| `POST /api/admin/users/{id}/usage/{turn_id}/reconcile` | 管理员核对该轮最终总金额：`revision`、`final_cost_micros`、必填 `reason`；运行/预留未结束或版本冲突返回 409，原始记录不改写 |
+| `GET /api/admin/users/{id}/usage/{turn_id}/reconciliations` | 按版本倒序读取该轮完整核对历史；仅管理员 |
+| `GET /api/admin/usage` | `days` 为 1–366；全体、用户和每日汇总，缺失与估算单列 |
+| `GET /api/admin/users/{id}/usage` | 用户用量明细与历史价格快照 |
+| `POST /api/admin/settings/test-model` | 连接与原生工具往返测试，用量计入管理员账本 |
+| `GET /api/admin/data` | 个人数据计数、附件文件占用、存储类型与运行状态 |
+| `POST /api/admin/users/{id}/reset-data` | `{confirm_username}`；先归档 schema/文件再重建，保留身份和账本，撤销该用户会话 |
+| `GET /api/admin/audit` | 管理动作与字段，不记录密码或密钥 |
+
+厨房档案位于 `/api/memory` 的 `kitchen_profile`。只有用户明确开启 `use_for_ai` 且长期记忆启用时进入模型上下文，不覆盖手写偏好与助手总结。清空记忆也会清除当前档案投影，普通刷新不会恢复。规则见[账号设计](../design/accounts-admin.md)。
 
 ## 会话、图片与厨房 API
 

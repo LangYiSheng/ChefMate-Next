@@ -15,6 +15,8 @@ SNAPSHOT = {"data_version": "fixture", "imported_at": "2026-10-13T00:00:00+00:00
 
 def test_default_search_page_is_small_and_explicit_paging_remains_available():
     assert RecipeSearchRequest().limit == 8
+    assert RecipeSearchRequest().ready_for_recommendation is None
+    assert RecipeSearchRequest(ready_for_recommendation=True).ready_for_recommendation is True
     assert RecipeSearchRequest(limit=20, offset=8).limit == 20
 
 

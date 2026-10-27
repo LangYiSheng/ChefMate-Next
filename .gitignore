@@ -1,6 +1,7 @@
 .env
 .env.*
 !.env.example
+!.env.docker.example
 .venv/
 .uv-cache/
 __pycache__/
@@ -20,3 +21,4 @@ data_cleaning/data/intermediate/*
 data_cleaning/data/exported/*
 !data_cleaning/data/exported/.gitkeep
 apps/chefmate-playground/.runtime/
+backups/

@@ -1,0 +1,17 @@
+{
+  "schema_version": 2,
+  "phase": "unified",
+  "data_version": "chefmate-bundled-20261005",
+  "approved_only": false,
+  "recipe_count": 358,
+  "created_at": "2026-10-05T05:30:28.709824+00:00",
+  "sha256": {
+    "recipes.json": "534cf9e71d0977b4b23d57ab23a46444bf06510f75fab87f642cee105009e04e"
+  },
+  "notice": "Compact online projection. Approval, readiness, estimates and unknown nutrition remain unchanged.",
+  "source_export": {
+    "directory": "20261005T053022_ab368ecd",
+    "recipes_sha256": "bea2ebe0eb6eb831b603e4628436f3412f810775c017a1da860474153e761613",
+    "manifest_sha256": "d537d3e70072f363664bc36bea33b7bcf95cce6d7841f9eed0dbf2140ba67734"
+  }
+}

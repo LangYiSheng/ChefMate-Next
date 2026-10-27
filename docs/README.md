@@ -2,7 +2,7 @@
 
 先从用户手里的一顿饭认识系统，再沿着工具、状态和数据往里走。
 
-当前 App 为 **0.2.2**。近期厨房、对话与界面细节的范围和实测结果，见[0.2.2 发布与验收](engineering/records/2026-10-27-release-0.2.2.md)。下列指南和参考描述当前实现，历史档案按记录日期阅读。
+当前 App 版本保持 **0.2.2**。本轮[账号、金额额度与 PostgreSQL 改造](engineering/records/2026-10-27-accounts-admin-postgresql.md)另有实现和验收记录；已发布的厨房、对话与界面改进见[0.2.2 发布记录](engineering/records/2026-10-27-release-0.2.2.md)。下列指南和参考描述当前实现，历史档案按记录日期阅读。
 
 ## 第一次来到项目
 
@@ -17,6 +17,10 @@
 
 - [设计规范](design/README.md)：领域边界、交互协议、视觉和工程约定，以及选择背后的理由。
 - [接口参考](reference/README.md)：App、各独立包、清洗工具和字段细节。
+- [Docker 部署与备份](guide/deployment.md)：账号初始化、应用 PostgreSQL、模型配置、持久数据和升级。
+- [账号与管理员设计](design/accounts-admin.md)：登录、用户隔离、额度、成本和厨房档案的授权边界。
+- [账号与管理员操作](guide/accounts.md)：注册引导、金额余额、价格确认、费用核对和开发者授权。
+- [旧 SQLite 迁移](guide/migrate-sqlite.md)：只读源、明确归属、全新 PostgreSQL 目标和内容核对。
 - [工程档案](engineering/README.md)：历史计划、工程记录与本轮验收，按记录时点阅读。
 
 当前行为优先看源码、当前指南和最新验收。档案保留当时的事实与未完成事项，旧测试数量、旧模型表现和旧功能限制不会自动延伸到今天。
