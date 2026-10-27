@@ -144,7 +144,17 @@ def migrate_runtime(source_dir, target_dir, url, *, schema_prefix="chefmate", le
         else:
             if not legacy_owner or not admin_username or not admin_password or legacy_owner.lower() != admin_username.lower():
                 raise ValueError("旧单用户库需显式 --legacy-owner，并配置同名管理员初始化账号与密码。")
-            accounts.bootstrap_admin(admin_username, admin_password)
+            legacy_user = accounts.bootstrap_admin(admin_username, admin_password)
+            # The explicitly named owner is an existing single-user operator.
+            # Preserve direct access without inventing a new kitchen profile
+            # or inferring consent to send that profile to a model provider.
+            with accounts._connect() as db:
+                db.execute("BEGIN IMMEDIATE")
+                instant = accounts._time()
+                db.execute("UPDATE accounts SET onboarding_completed=1,updated_at=? WHERE id=?",
+                           (instant, legacy_user["id"]))
+                accounts._audit(db, legacy_user["id"], legacy_user["id"], "import_legacy_data",
+                                ["onboarding_completed", "legacy_owner"], instant)
         mapping[account_db.schema] = schema_prefix + "_accounts"
         users = accounts.list_users()
         if any(not isinstance(user["id"], str) or not re.fullmatch(r"[0-9a-f]{32}", user["id"]) for user in users):

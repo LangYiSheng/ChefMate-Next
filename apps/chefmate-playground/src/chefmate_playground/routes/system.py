@@ -118,7 +118,9 @@ def build_router(context: AppContext) -> APIRouter:
                 if options.get("status", "ok") == "ok":
                     database.update(ready=True, data_version=(options.get("snapshot") or {}).get("data_version"))
                     if getattr(context.retrieval, "store", None) is not None:
-                        count = await asyncio.to_thread(context.retrieval.store.search, limit=1)
+                        from chefmate_storage import RecipeFilter
+                        count = await asyncio.to_thread(context.retrieval.store.search,
+                            RecipeFilter(ready_for_recommendation=None), limit=1)
                         database["recipe_count"] = count["total"]
                     else:
                         database["recipe_count"] = options.get("recipe_count", 0)

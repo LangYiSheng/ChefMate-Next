@@ -99,12 +99,33 @@ def test_migrated_account_audit_sequence_advances_after_explicit_ids(tmp_path, d
     assert hashes(source) == before
     copied = AccountsRepository(Database(target / "accounts.db", url=destination.url,
                                           schema=destination.prefix + "_accounts"))
+    assert copied.get_user(admin["id"])["onboarding_completed"] is False
+    assert copied.get_user(user["id"])["onboarding_completed"] is False
     assert [item["revision"] for item in copied.reconciliations(user["id"], "migrated-turn")] == [2, 1]
     entry = copied.get_usage(user["id"])[0]
     assert entry["cost_micros"] == 10 and entry["effective_cost_micros"] == 4
     assert copied.get_user(user["id"])["quota"]["balance_micros"] == 12341
     copied.update_user(admin["id"], user["id"], {"developer_allowed": True})
     assert copied.audit_log()[0]["id"] > maximum
+
+
+def test_explicit_legacy_owner_skips_new_user_welcome_without_inventing_a_profile(tmp_path, destination):
+    source, target = tmp_path / "source", tmp_path / "target"
+    sessions = SessionRepository(source / "sessions.db")
+    session = sessions.create()
+    sessions.mutate(session["id"], lambda state: state["messages"].append({"role": "user", "content": "旧记录"}))
+    before = hashes(source)
+    migrate_runtime(source, target, destination.url, schema_prefix=destination.prefix,
+        legacy_owner="owner", admin_username="owner", admin_password="fixture-migration-password-123")
+    accounts = AccountsRepository(Database(target / "accounts.db", url=destination.url,
+                                           schema=destination.prefix + "_accounts"))
+    owner = accounts.list_users()[0]
+    assert owner["username"] == "owner" and owner["onboarding_completed"] is True
+    assert owner["profile"] == {} and not owner["profile"].get("use_for_ai", False)
+    assert any(item["action"] == "import_legacy_data" for item in accounts.audit_log())
+    new_user = accounts.register("new-member", "fixture-migration-password-123")
+    assert new_user["onboarding_completed"] is False
+    assert hashes(source) == before
 
 
 def test_sqlite_wal_sidecars_require_stopped_checkpointed_source(tmp_path, destination):
