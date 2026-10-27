@@ -93,7 +93,10 @@ class WorkspacePool:
                         await old.state.manager.close()
                     else:
                         raise HTTPException(503, "当前工作区繁忙，请稍后重试。")
-                app = create_workspace_app(config, service=self.service, agent=self.injected_agent)
+                # Schema setup and SDK construction are synchronous. Holding the
+                # pool lock still prevents partial publication while the event
+                # loop remains available for other users' auth and health checks.
+                app = await asyncio.to_thread(create_workspace_app, config, service=self.service, agent=self.injected_agent)
                 app.state.manager.account_usage = AccountUsage(self.accounts, user_id, app.state.context)
                 self.workspaces[user_id] = app
                 self.revisions[user_id] = revision
@@ -120,7 +123,8 @@ class WorkspacePool:
             kitchen_profile = ({"display_name": user["display_name"], **{
                 key: profile[key] for key in ("cooking_level", "household_size", "preferences") if key in profile}}
                 if profile.get("use_for_ai") is True else {})
-            app.state.memory.sync_kitchen_profile(kitchen_profile, source_revision=profile.get("revision"))
+            await asyncio.to_thread(app.state.memory.sync_kitchen_profile, kitchen_profile,
+                                   source_revision=profile.get("revision"))
             self.inflight[user_id] = self.inflight.get(user_id, 0) + 1
             return app
 
