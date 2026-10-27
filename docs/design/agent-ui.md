@@ -119,7 +119,7 @@ SSE 活跃事件带 `session_id/turn_id/sequence`。离开视图只断开订阅�
 不可变 `ComponentSpec` 统一声明组件 ID、中文名称、指引、工具归属、目标阶段、UI 类型与页面、依赖和工厂。
 设置、调试、构建和执行权限从同一清单派生；新增工具漏归属、重复归属、阶段冲突或工厂漏工具会由构建与合同测试拒绝。
 
-0.2.1 当前有七个系统组件：[组件清单](../../apps/chefmate-playground/src/chefmate_playground/components.py)。
+0.2.2 当前有七个系统组件：[组件清单](../../apps/chefmate-playground/src/chefmate_playground/components.py)。
 
 | 组件 ID | 能力 |
 | --- | --- |

@@ -18,7 +18,7 @@ def test_release_page_uses_the_same_version_as_about_and_openapi_without_configu
         response = client.get("/api/changelog")
         assert response.status_code == 200
         body = response.json()
-        assert body["current_version"] == expected == "0.2.1"
+        assert body["current_version"] == expected == "0.2.2"
         assert client.get("/api/about").json()["version"] == expected
         assert client.get("/openapi.json").json()["info"]["version"] == expected
         assert body["releases"] == json.loads((APP_ROOT / "releases.json").read_text(encoding="utf-8"))
@@ -26,6 +26,16 @@ def test_release_page_uses_the_same_version_as_about_and_openapi_without_configu
         assert release["version"] == expected
         assert release["title"] and release["summary"]
         assert all(section["title"] and all(section["items"]) for section in release["sections"])
+        previous = next(entry for entry in body["releases"] if entry["version"] == "0.2.1")
+        assert previous["source"]["commit"] == "bd242d99ddee51f0e760dd52cfd4736f7fc68a89"
+        assert previous["date"] == "2026-10-24"
+        assert {section["title"] for section in previous["sections"]} == {
+            "对话与做饭", "更一致的界面与设置", "个人菜谱在聊天里完成", "开发者视图更清晰",
+        }
+        assert not ({section["title"] for section in release["sections"]}
+                    & {section["title"] for section in previous["sections"]})
+        assert not ({entry["commit"] for entry in release.get("includes", [])}
+                    & {entry["commit"] for entry in previous.get("includes", [])})
         for entry in body["releases"]:
             assert date.fromisoformat(entry["date"]) >= date(2026, 10, 22)
             assert entry["source"]["branch"]
