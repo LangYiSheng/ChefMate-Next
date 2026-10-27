@@ -14,3 +14,8 @@
 .react-settings .appearance-preview[data-font-size] .appearance-preview-metrics dd{font-size:calc(var(--font-size-base) * 1.5625)}
 .react-settings .appearance-preview[data-font-size] :is(.appearance-preview-chat strong,.appearance-preview-action){font-size:calc(var(--font-size-base) * .875)}
 .react-settings .appearance-preview[data-font-size] .appearance-preview-chat p{font-size:calc(var(--font-size-base) * .9375)}
+
+.react-settings .font-size-label output{min-width:2em;text-align:right;font-variant-numeric:tabular-nums}
+.react-settings .font-size-ticks span{padding:2px 8px;border-radius:6px;transition:background-color var(--motion-normal) var(--ease-settle),color var(--motion-fast) ease}
+.react-settings .font-size-ticks [data-selected=true]{background:var(--color-accent-soft)}
+@media(prefers-reduced-motion:reduce){.react-settings .font-size-ticks span{transition:none}}

@@ -3,7 +3,7 @@ import { chefStore } from '../runtime/store';
 import type { Message, RunState, RuntimeState } from '../runtime/types';
 import { MessageViews } from '../features/workspace';
 import { Brand, Icon } from './Icon';
-import { Markdown } from './Markdown';
+import { ReplyMarkdown, replyMessageKeys } from './ReplyMarkdown';
 import { Welcome } from './Welcome';
 import { ImagePreview, imageURL } from './ImagePreview';
 import { FoodCards, foodRecords } from './FoodCards';
@@ -12,20 +12,19 @@ import { assistantProgress, recipeSearchCards } from './chat-presentation';
 import { ActivityText } from './ActivityText';
 import { ExecutionTrace } from './developer/ExecutionTrace';
 
-const ChatMessage = memo(function ChatMessage({ message, sessionId, running, developer, onRecipe, onAsk, foodIds, recipeIds, onFocus, run }: {
-  message: Message; sessionId: string; running: boolean; developer: boolean; foodIds: Set<string>; recipeIds: Set<string>;
+const ChatMessage = memo(function ChatMessage({ message, sessionId, running, developer, active, onRecipe, onAsk, foodIds, recipeIds, onFocus, run }: {
+  message: Message; sessionId: string; running: boolean; developer: boolean; active: boolean; foodIds: Set<string>; recipeIds: Set<string>;
   onRecipe: (id: string, snapshot?: Record<string, any>) => void; onAsk: (text: string) => void;
   onFocus: (kind: string) => void;
   run?: RunState | null;
 }) {
   const [image, setImage] = useState<number | null>(null);
-  const showContent = message.content && (!message.streaming || message.resultComplete) && !message.cancelled && !message.error;
   const recipes = recipeSearchCards(message);
   return <article className={`message ${message.role}`} aria-label={message.role === 'user' ? '你的消息' : 'ChefMate 的回复'}>
     {message.images?.length ? <div className="message-images">{message.images.map((attachment, index) => <button key={attachment.id} type="button" className="image-thumbnail" aria-label={`预览图片：${attachment.name || '消息图片'}`} onClick={() => setImage(index)}><img src={imageURL(sessionId, attachment)} alt={attachment.name || '消息图片'} loading="lazy" /></button>)}</div> : null}
     {message.role === 'user' ? message.content && <div className="user-bubble">{message.content}</div> : <>
       <div className="assistant-heading"><Brand className="assistant-icon" /><span>ChefMate</span></div>
-      <div className="assistant-body markdown">{showContent && <Markdown text={message.content} />}</div>
+      <div className="assistant-body markdown"><ReplyMarkdown message={message} active={active} /></div>
       {message.streaming && !message.error && !message.cancelled && <ActivityText text={assistantProgress(message, run)} />}
       {!message.streaming && <><MessageViews message={message} sessionId={sessionId} running={running} onContinue={text => { void chefStore.enqueueContinuation(sessionId, text); }} onRecipe={onRecipe} onFocus={onFocus} />
         {recipes.length > 0 && <div className="recipe-results">{recipes.map((recipe: Record<string, any>) =>
@@ -50,6 +49,7 @@ export function Conversation({ state, developer, onRecipe, onAsk, onFocus, activ
   const messages = state.session?.messages || [];
   const running = Boolean(state.session?.running || state.currentId && state.runs[state.currentId]);
   const run = state.currentId ? state.runs[state.currentId] : null;
+  const messageKeys = useMemo(() => replyMessageKeys(messages, state.currentId || state.blankId), [messages, state.currentId, state.blankId]);
   const owners = useMemo(() => { const map = new Map<string, number>(); messages.forEach((message, i) => foodRecords(message).forEach(record => map.set(record.id, i))); return map; }, [messages]);
   const recipeOwners = useMemo(() => {
     const map = new Map<string, { index: number; revision: number }>();
@@ -66,6 +66,6 @@ export function Conversation({ state, developer, onRecipe, onAsk, onFocus, activ
   return <div ref={scroll} className="conversation" tabIndex={-1} aria-label="聊天记录" onScroll={event => { if (!active) return; const el = event.currentTarget; stick.current = el.scrollHeight - el.scrollTop - el.clientHeight < 100; if (selected.current) positions.current.set(selected.current, { top: el.scrollTop, stick: stick.current }); }}>
     {state.loading && <p className="panel-loading" role="status">正在读取对话…</p>}
     {!messages.length ? <Welcome supportsImages={Boolean(state.status?.supports_images)} onUse={onAsk} /> : <div className="messages">{messages.map((message, i) =>
-      <ChatMessage key={`${state.currentId}:${message.id || `${message.turn_id || i}:${message.role}`}`} message={message} sessionId={state.currentId!} running={running} developer={developer} run={run} onRecipe={onRecipe} onAsk={onAsk} onFocus={onFocus} foodIds={new Set([...owners].filter(([, index]) => index === i).map(([id]) => id))} recipeIds={new Set([...recipeOwners].filter(([, owner]) => owner.index === i).map(([id]) => id))} />)}</div>}
+      <ChatMessage key={messageKeys[i]} message={message} sessionId={state.currentId!} running={running} developer={developer} active={active} run={run} onRecipe={onRecipe} onAsk={onAsk} onFocus={onFocus} foodIds={new Set([...owners].filter(([, index]) => index === i).map(([id]) => id))} recipeIds={new Set([...recipeOwners].filter(([, owner]) => owner.index === i).map(([id]) => id))} />)}</div>}
   </div>;
 }

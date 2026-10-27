@@ -6,3 +6,13 @@
 .card-disclosure-body[hidden]{display:none!important}
 .chat-food-heading>.card-disclosure-title{min-width:0;flex:1}
 .chat-food-summary .chat-food-heading{align-items:center}
+
+.card-disclosure-toggle{transition:background var(--motion-fast) var(--ease-settle),color var(--motion-fast) var(--ease-settle)}
+.card-disclosure-toggle[aria-expanded=false]{background:var(--surface-inset)}
+@keyframes card-body-settle{from{opacity:0;translate:0 5px}to{opacity:1;translate:0 0}}
+@media(prefers-reduced-motion:no-preference){
+ .card-disclosure-body:not([hidden]){animation:card-body-settle var(--motion-normal) var(--ease-settle)}
+ .card-disclosure-toggle:active .icon{scale:.85;transition:scale var(--motion-fast) var(--ease-spring)}
+ .card-disclosure-toggle .icon{transition:scale var(--motion-normal) var(--ease-spring)}
+}
+@media(prefers-reduced-motion:reduce){.card-disclosure-toggle,.card-disclosure-toggle .icon,.card-disclosure-body{animation:none!important;transition:none!important}}

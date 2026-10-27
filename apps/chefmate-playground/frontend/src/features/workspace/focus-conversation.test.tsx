@@ -21,7 +21,7 @@ describe('focus conversation alongside the task', () => {
     expect(screen.getByText('帮我进入备菜')).toBeInTheDocument();
     expect(screen.queryByText('较早的回复')).not.toBeInTheDocument(); expect(screen.queryByText('内部过程')).not.toBeInTheDocument();
     rendered.rerender(<FocusConversation messages={[...messages.slice(0, 2), { role: 'assistant', content: '现在先准备鸡蛋。' }]} sessionId={id} active />);
-    expect(screen.getByText('现在先准备鸡蛋。')).toBeInTheDocument(); expect(screen.queryByRole('status')).not.toBeInTheDocument();
+    expect(rendered.container.querySelector('.focus-assistant')).toHaveTextContent('现在先准备鸡蛋。'); expect(screen.queryByRole('status')).not.toBeInTheDocument();
     expect(screen.queryByText('帮我进入备菜')).not.toBeInTheDocument(); expect(screen.queryByText('ChefMate')).not.toBeInTheDocument();
     rendered.rerender(<FocusConversation messages={[...messages.slice(0, 2), { role: 'assistant', content: '', error: '连接暂时中断', retryMessage: '进入备菜' }]} sessionId={id} active />);
     expect(screen.getByRole('alert')).toHaveTextContent('连接暂时中断'); expect(screen.getByRole('button', { name: '重试这次请求' })).toBeInTheDocument();
@@ -39,6 +39,23 @@ describe('focus conversation alongside the task', () => {
     expect(screen.getByText('下一步')).toBeVisible(); expect(screen.getByRole('status')).toHaveTextContent('整理烹饪步骤');
     rendered.rerender(<FocusConversation {...props} messages={[...messages, { role: 'user', request_id: 'two', content: '下一步' }, { role: 'assistant', content: '', error: '连接暂时中断', retryMessage: '下一步' }]} />);
     fireEvent.click(screen.getByRole('button', { name: '收起助手回复' })); expect(screen.getByRole('alert')).toBeVisible();
+  });
+
+  it('uses the same confirmed character reveal in focus mode and keeps it alive after saving', () => {
+    const user: Message = { role: 'user', request_id: 'focus-arrival', content: '现在做什么' };
+    const props = { sessionId: id, active: true };
+    const view = render(<FocusConversation {...props} messages={[user, { role: 'assistant', content: '过程文字', streaming: true }]} />);
+    expect(view.container).not.toHaveTextContent('过程文字');
+    view.rerender(<FocusConversation {...props} messages={[user, { role: 'assistant', content: '先洗菜。', streaming: true, resultComplete: true }]} />);
+    const character = view.container.querySelector('.stream-character');
+    expect(character).toHaveTextContent('先');
+    view.rerender(<FocusConversation {...props} messages={[user, { id: 'saved-focus-reply', role: 'assistant', content: '先洗菜。' }]} />);
+    expect(view.container.querySelector('.stream-character')).toBe(character);
+    fireEvent.click(screen.getByRole('button', { name: '收起助手回复' }));
+    expect(view.container.querySelector('.stream-character')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: '展开助手回复' }));
+    expect(view.container.querySelector('.stream-character')).toBeNull();
+    expect(view.container.querySelector('.focus-assistant')).toHaveTextContent('先洗菜。');
   });
 
   it('uses the ordinary conversation presentation in the full chat view', () => {

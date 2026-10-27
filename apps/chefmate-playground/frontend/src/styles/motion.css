@@ -1,0 +1,67 @@
+/* Large surfaces settle without overshoot; only small controls have a soft rebound. */
+button {
+  transition:background-color var(--motion-fast) var(--ease-settle),
+    color var(--motion-fast) var(--ease-settle),opacity var(--motion-fast) var(--ease-settle),
+    box-shadow var(--motion-normal) var(--ease-settle),transform var(--motion-normal) var(--ease-spring);
+}
+@media(prefers-reduced-motion:no-preference){
+:where(.icon-button,.send-button,.attach-button,.starter-shuffle,.session-more,.panel-toggle):not(:disabled):active {
+  transform:scale(.93);
+  transition-duration:80ms;
+}
+:where(.primary-button,.secondary-button,.center-button,.ui-button,.retry-button,.page-button):not(:disabled):active {
+  transform:scale(.975);
+  transition-duration:80ms;
+}
+}
+:where(.primary-navigation button,.settings-link,.session-row,.panel-tab,.dev-tabs button,.starter-card,.recipe-result) {
+  transition:background-color var(--motion-normal) var(--ease-settle),color var(--motion-fast) var(--ease-settle),
+    opacity var(--motion-fast) var(--ease-settle),transform var(--motion-normal) var(--ease-settle);
+}
+.primary-navigation{position:relative;isolation:isolate}
+.primary-navigation::before{
+  content:'';position:absolute;z-index:-1;inset:0 0 auto;height:calc((100% - 8px)/3);border-radius:9px;
+  background:var(--color-accent-soft);opacity:0;pointer-events:none;
+  transform:translateY(calc(var(--nav-index,0)*(100% + 4px)));
+  transition:transform var(--motion-slow) var(--ease-settle),opacity var(--motion-normal) var(--ease-settle);
+}
+.primary-navigation:has([aria-current=page])::before{opacity:1}
+.primary-navigation:has(button:nth-child(2)[aria-current=page]){--nav-index:1}
+.primary-navigation:has(button:nth-child(3)[aria-current=page]){--nav-index:2}
+.primary-navigation button[aria-current=page]:hover{background:transparent}
+.primary-navigation button .icon,.settings-link .icon,.panel-toggle .icon,.starter-use .icon,.context-meter-heading .icon{
+  transition:transform var(--motion-normal) var(--ease-spring),color var(--motion-fast) var(--ease-settle);
+}
+@media(prefers-reduced-motion:no-preference){.primary-navigation button:active .icon,.settings-link:active .icon{transform:scale(.88)}}
+.session-more{transition:opacity var(--motion-fast) var(--ease-settle),background-color var(--motion-fast) var(--ease-settle)}
+.context-meter-body,.panel-content>*,.chat-page:not([hidden]){animation:surface-arrive var(--motion-normal) var(--ease-settle)}
+.context-meter:not([open]) .context-meter-body{animation:none}
+.starter-card{animation:surface-arrive var(--motion-slow) var(--ease-settle) both}
+.starter-card:nth-child(2){animation-delay:35ms}.starter-card:nth-child(3){animation-delay:70ms}
+.composer{transition:background-color var(--motion-normal) var(--ease-settle),box-shadow var(--motion-normal) var(--ease-settle)}
+.starter-use:hover .icon{transform:translate(2px,-2px)}
+.markdown table{border-collapse:separate;border-spacing:0 3px}
+.markdown td{background:var(--surface-inset)}
+.markdown :is(th,td):first-child{border-radius:6px 0 0 6px}
+.markdown :is(th,td):last-child{border-radius:0 6px 6px 0}
+.markdown hr{height:2px;background:var(--surface-inset);border:0;border-radius:2px}
+.ingredient-list li,.dev-fields>div,.chat-food-items li{border-radius:8px;padding-inline:10px}
+.ingredient-list li:nth-child(odd),.dev-fields>div:nth-child(odd),.chat-food-items li:nth-child(odd){background:var(--surface-inset)}
+.session-dialog[open]{animation:dialog-arrive var(--motion-slow) var(--ease-settle)}
+.session-dialog::backdrop,.drawer-backdrop{animation:veil-arrive var(--motion-normal) var(--ease-settle)}
+.session-menu{transform-origin:top right;animation:menu-arrive var(--motion-normal) var(--ease-settle)}
+.toast{animation:toast-arrive var(--motion-slow) var(--ease-settle)}
+.context-meter-bar>span{transition:flex-grow var(--motion-slow) var(--ease-settle)}
+:root :is(input[type=number],time,output,.usage-summary,.context-meter-heading>strong,.recipe-review-times,.recipe-result-meta,.chat-food-metrics dd,.chat-food-kicker,.recipe-review-steps li>span){font-variant-numeric:tabular-nums lining-nums}
+@keyframes surface-arrive{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}
+@keyframes dialog-arrive{from{opacity:0;transform:translateY(10px) scale(.985)}to{opacity:1;transform:translateY(0) scale(1)}}
+@keyframes menu-arrive{from{opacity:0;transform:translateY(-4px) scale(.98)}to{opacity:1;transform:translateY(0) scale(1)}}
+@keyframes veil-arrive{from{opacity:0}to{opacity:1}}
+@keyframes toast-arrive{from{opacity:0;transform:translate(-50%,8px)}to{opacity:1;transform:translate(-50%,0)}}
+@media(hover:hover) and (pointer:fine) and (prefers-reduced-motion:no-preference){
+  .starter-card:hover,.recipe-result:hover{transform:translateY(-2px)}
+}
+@media(prefers-reduced-motion:reduce){
+  *,*::before,*::after{animation:none!important;transition:none!important;scroll-behavior:auto!important}
+  button:active,.primary-navigation button:active .icon,.settings-link:active .icon,.starter-use:hover .icon,.starter-card:hover,.recipe-result:hover{transform:none}
+}

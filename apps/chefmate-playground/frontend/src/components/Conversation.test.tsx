@@ -53,6 +53,24 @@ describe('conversation reading position', () => {
     expect(screen.queryByRole('button', { name: /豆豉鲮鱼油麦菜/ })).not.toBeInTheDocument();
   });
 
+  it('reveals only a confirmed reply and retains its animation instance when persisted ids arrive', () => {
+    const props = { developer: false, onRecipe: vi.fn(), onAsk: vi.fn(), onFocus: vi.fn() };
+    const state = (reply: Message) => ({ ...chefStore.getSnapshot(), currentId: 'arrival', session: {
+      id: 'arrival', title: '本餐', messages: [{ role: 'user' as const, content: '你好', request_id: 'request-arrival' }, reply],
+    } });
+    const view = render(<Conversation {...props} state={state({ role: 'assistant', content: '工具前的过程文字', streaming: true })} />);
+    expect(view.container).not.toHaveTextContent('工具前的过程文字');
+    view.rerender(<Conversation {...props} state={state({ role: 'assistant', content: '你好呀', streaming: true, resultComplete: true })} />);
+    const firstCharacter = view.container.querySelector('.stream-character');
+    expect(firstCharacter).toHaveTextContent('你');
+    view.rerender(<Conversation {...props} state={state({ id: 'persisted-id', turn_id: 'persisted-turn', role: 'assistant', content: '你好呀' })} />);
+    expect(view.container.querySelector('.stream-character')).toBe(firstCharacter);
+    view.unmount();
+    const history = render(<Conversation {...props} state={state({ id: 'persisted-id', role: 'assistant', content: '你好呀' })} />);
+    expect(history.container).toHaveTextContent('你好呀');
+    expect(history.container.querySelector('.stream-character')).toBeNull();
+  });
+
   it('keeps visible errors and stop/retry actions in normal mode', () => {
     const state = { ...chefStore.getSnapshot(), currentId: 'a', session: { id: 'a', title: '本餐', messages: [
       { role: 'assistant' as const, content: '', error: '请求暂时失败', retryMessage: '重试输入' },

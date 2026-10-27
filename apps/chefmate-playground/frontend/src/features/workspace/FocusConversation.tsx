@@ -3,7 +3,7 @@ import { chefStore } from '../../runtime/store';
 import type { Message, RunState } from '../../runtime/types';
 import { ActivityText } from '../../components/ActivityText';
 import { assistantProgress } from '../../components/chat-presentation';
-import { Markdown } from '../../components/Markdown';
+import { ReplyMarkdown, replyMessageKeys } from '../../components/ReplyMarkdown';
 import { Icon } from '../../components/Icon';
 import './focus-conversation.css';
 
@@ -28,13 +28,14 @@ export function FocusConversation({ messages, run, sessionId, active, expanded =
     observer.observe(element); return () => observer.disconnect();
   }, [active, expanded]);
   const visible = expanded ? exchange : finished ? [answer] : [user, answer].filter((message): message is Message => Boolean(message));
+  const keys = replyMessageKeys(messages, sessionId);
   return <section className={`focus-reply${collapsed ? ' is-collapsed' : ''}${expanded ? ' is-expanded' : ''}`} aria-label="专注模式对话">
     {!expanded && <button type="button" className="focus-reply-toggle" aria-label={`${collapsed ? '展开' : '收起'}助手回复`} aria-expanded={!collapsed} aria-controls={bodyId} onClick={() => setCollapsed(value => !value)}><Icon name="message-circle" /><span>助手回复</span><Icon name={collapsed ? 'chevron-down' : 'chevron-up'} /></button>}
     <div id={bodyId} ref={scroll} hidden={collapsed} className={`focus-assistant${expanded ? ' is-expanded' : ''}`} onScroll={event => { const el = event.currentTarget; stick.current = el.scrollHeight - el.scrollTop - el.clientHeight < 60; }}>
     {!visible.length && <p className="ui-hint">有问题随时问我。</p>}
-    {visible.map((message, index) => <div key={message.id || `${index}:${message.role}`} className={`focus-exchange ${message.role}`}>
+    {visible.map(message => <div key={keys[messages.indexOf(message)]} className={`focus-exchange ${message.role}`}>
       {message.role === 'user' ? <p className="focus-user-message">{message.content || '已发送图片'}</p> : <>
-        {message.content && (!message.streaming || message.resultComplete) && !message.recovering && !message.error && !message.cancelled && <Markdown text={message.content} />}
+        <ReplyMarkdown message={message} active={active && !collapsed} />
         {(message.streaming || message.recovering || run?.recovering) && !message.error && !message.cancelled && <ActivityText text={assistantProgress(message, run)} active={active} />}
       </>}
     </div>)}

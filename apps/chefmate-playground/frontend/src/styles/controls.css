@@ -2,36 +2,36 @@ button{border:0;background:transparent;padding:0;font-weight:400}
 button:disabled{opacity:.42}
 .primary-button,.secondary-button,.text-button,.ui-text-button,.ui-button,.center-button,.retry-button,.page-button{
   display:inline-flex;align-items:center;justify-content:center;gap:7px;min-height:38px;
-  padding:8px 14px;border:1px solid transparent;border-radius:var(--radius-control);
+  padding:8px 14px;border:0;border-radius:var(--radius-control);
   font:0.9375rem/1.5 var(--font-ui);font-weight:500;text-align:center;vertical-align:middle;
-  white-space:normal;transition:background .14s,border-color .14s,color .14s;
+  white-space:normal;
 }
-.primary-button,.center-button.primary{background:var(--color-accent);border-color:var(--color-accent);color:var(--color-on-accent)}
-.primary-button:not(:disabled):hover,.center-button.primary:not(:disabled):hover{background:var(--color-accent-hover);border-color:var(--color-accent-hover)}
-.secondary-button,.ui-button,.center-button,.page-button,.retry-button{background:var(--color-canvas);border-color:var(--color-border);color:var(--color-text)}
-.secondary-button:not(:disabled):hover,.ui-button:not(:disabled):hover,.center-button:not(:disabled):hover,.page-button:not(:disabled):hover,.retry-button:not(:disabled):hover{background:var(--color-hover);border-color:var(--color-border-strong)}
-.text-button,.ui-text-button,.center-button.quiet{background:transparent;color:var(--color-muted);border-color:transparent}
+.primary-button,.center-button.primary{background:var(--color-accent);color:var(--color-on-accent)}
+.primary-button:not(:disabled):hover,.center-button.primary:not(:disabled):hover{background:var(--color-accent-hover);}
+.secondary-button,.ui-button,.center-button,.page-button,.retry-button{background:var(--surface-inset);color:var(--color-text)}
+.secondary-button:not(:disabled):hover,.ui-button:not(:disabled):hover,.center-button:not(:disabled):hover,.page-button:not(:disabled):hover,.retry-button:not(:disabled):hover{background:var(--color-hover);}
+.text-button,.ui-text-button,.center-button.quiet{background:transparent;color:var(--color-muted);}
 .text-button:not(:disabled):hover,.ui-text-button:not(:disabled):hover,.center-button.quiet:not(:disabled):hover{background:var(--color-hover);color:var(--color-accent)}
-.danger-button,.center-button.danger{display:inline-flex;align-items:center;justify-content:center;gap:7px;min-height:38px;padding:8px 14px;border:1px solid var(--color-danger);border-radius:9px;color:var(--color-danger);font:0.9375rem/1.5 var(--font-ui)}
+.danger-button,.center-button.danger{display:inline-flex;align-items:center;justify-content:center;gap:7px;min-height:38px;padding:8px 14px;border:0;background:var(--color-danger-soft);border-radius:9px;color:var(--color-danger);font:0.9375rem/1.5 var(--font-ui)}
 .danger-button:not(:disabled):hover,.center-button.danger:not(:disabled):hover{background:var(--color-danger-soft)}
 .icon-button{display:inline-flex;align-items:center;justify-content:center;width:34px;height:34px;min-width:34px;padding:0;border:0;border-radius:8px;background:transparent;color:var(--color-muted);flex:none}
 .icon-button:not(:disabled):hover{background:var(--color-hover);color:var(--color-text)}
 .icon-button .icon{width:18px;height:18px}
 :where(input:not([type=checkbox]):not([type=radio]):not([type=file]):not([type=range]),textarea,select){
-  min-height:40px;max-width:100%;padding:9px 12px;border:1px solid var(--color-border);border-radius:var(--radius-control);
-  background:var(--color-canvas);color:var(--color-text);font:1rem/1.6 var(--font-ui);outline:none;
-  transition:border-color .14s,box-shadow .14s;
+  min-height:40px;max-width:100%;padding:10px 13px;border:0;border-radius:var(--radius-control);
+  background:var(--surface-inset);color:var(--color-text);font:1rem/1.6 var(--font-ui);outline:none;
+  transition:background-color var(--motion-fast) var(--ease-settle),box-shadow var(--motion-fast) var(--ease-settle);
 }
 textarea{resize:vertical}
 input::placeholder,textarea::placeholder{color:var(--color-subtle);opacity:.85}
-input:not([type=checkbox]):not([type=radio]):focus,textarea:focus,select:focus{border-color:var(--color-accent);box-shadow:0 0 0 2px color-mix(in srgb,var(--color-accent) 12%,transparent)}
+input:not([type=checkbox]):not([type=radio]):focus,textarea:focus,select:focus{box-shadow:0 0 0 2px color-mix(in srgb,var(--color-accent) 12%,transparent)}
 input:disabled,textarea:disabled,select:disabled{background:var(--color-surface);color:var(--color-muted);opacity:.7}
 input[type=checkbox],input[type=radio]{width:16px;height:16px;margin:0;flex:none;accent-color:var(--color-accent);vertical-align:middle;cursor:pointer}
-input[role=switch]{appearance:none;width:36px;height:22px;border:1px solid var(--color-border-strong);border-radius:20px;background:var(--color-hover);position:relative;transition:background .15s}
-input[role=switch]::after{content:'';position:absolute;top:3px;left:3px;width:14px;height:14px;border-radius:50%;background:var(--color-muted);transition:transform .15s}
-input[role=switch]:checked{border-color:var(--color-accent);background:var(--color-accent)}
+input[role=switch]{appearance:none;width:36px;height:22px;border:0;border-radius:20px;background:var(--color-hover);position:relative;transition:background var(--motion-normal) var(--ease-settle)}
+input[role=switch]::after{content:'';position:absolute;top:4px;left:4px;width:14px;height:14px;border-radius:50%;background:var(--color-muted);transition:transform var(--motion-normal) var(--ease-spring),background var(--motion-fast) var(--ease-settle)}
+input[role=switch]:checked{background:var(--color-accent)}
 input[role=switch]:checked::after{background:var(--color-on-accent);transform:translateX(14px)}
-.session-dialog{width:min(440px,calc(100vw - 32px));max-height:calc(100dvh - 32px);padding:26px;border:1px solid var(--color-border);border-radius:16px;background:var(--color-canvas);color:var(--color-text);box-shadow:0 18px 60px var(--color-shadow);overflow:auto}
+.session-dialog{width:min(440px,calc(100vw - 32px));max-height:calc(100dvh - 32px);padding:26px;border:0;border-radius:16px;background:var(--color-canvas);color:var(--color-text);box-shadow:0 18px 60px var(--color-shadow);overflow:auto}
 .session-dialog::backdrop{background:var(--color-overlay);backdrop-filter:blur(2px)}
 .session-dialog h2{font-size:1.375rem;margin:0 0 14px}.session-dialog p{font:0.9375rem/1.85 var(--font-ui);color:var(--color-muted)}
 .session-dialog form>input{width:100%;margin:4px 0 16px}.session-dialog-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:20px}
