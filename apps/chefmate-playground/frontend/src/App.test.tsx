@@ -83,6 +83,13 @@ describe('App surface coordination', () => {
     render(<App account={{id: 'user-a', role: 'user', developer_allowed: false} as AccountUser}/>);
     fireEvent.click(screen.getByRole('button', {name: '展开右侧栏'})); expect(screen.queryByRole('tab', {name: '调试', hidden: true})).not.toBeInTheDocument(); expect(screen.queryByText('开发请求诊断')).not.toBeInTheDocument();
   });
+  it('allows an administrator to open diagnostics without a separate developer grant', () => {
+    localStorage.setItem('chefmate:developer-settings', JSON.stringify({enabled: true}));
+    render(<App account={{id: 'promoted-admin', role: 'admin', developer_allowed: false} as AccountUser}/>);
+    fireEvent.click(screen.getByRole('button', {name: '展开右侧栏'}));
+    fireEvent.click(screen.getByRole('tab', {name: '调试'}));
+    expect(screen.getByText('开发请求诊断')).toBeInTheDocument();
+  });
   it('drags the left separator by pointer distance without snapping to a viewport coordinate', () => {
     const view = render(<App />), app = view.container.querySelector('.app')!;
     const handle = screen.getByRole('separator', { name: '调整侧栏宽度' }), release = capture(handle);

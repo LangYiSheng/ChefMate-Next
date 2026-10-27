@@ -52,7 +52,8 @@ export default function App({account, refreshAccount = async () => {}, logout = 
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const dragging = useRef<{ side: 'left' | 'right'; startX: number; startWidth: number; pointerId: number; handle: HTMLDivElement } | null>(null);
   const editorPositions = useRef(new Map<string, { start: number; end: number }>());
-  const developer = (!account || account.developer_allowed) && local<Record<string, any>>('chefmate:developer-settings', {}).enabled === true;
+  const developerAllowed = !account || account.role === 'admin' || account.developer_allowed;
+  const developer = developerAllowed && local<Record<string, any>>('chefmate:developer-settings', {}).enabled === true;
   const running = Boolean(state.session?.running || state.currentId && state.runs[state.currentId]);
   const notify = useCallback((text: string) => {
     setNotice(text); if (toastTimer.current) clearTimeout(toastTimer.current);
@@ -179,7 +180,7 @@ export default function App({account, refreshAccount = async () => {}, logout = 
         {banner && <div className="connection-banner" role="status">{banner}{(!account || account.role === 'admin') && <button type="button" onClick={() => navigate(account ? 'admin' : 'settings')}>{account ? '管理平台' : '打开设置'}</button>}<button type="button" onClick={() => void chefStore.loadStatus().catch(error => notify(error.message))}>重新连接</button></div>}
         {state.error && <div className="error-box" role="alert">{state.error}</div>}
         <PageBoundary key={`${page}:${pageAttempt}`} onRetry={() => setPageAttempt(value => value + 1)} onBack={() => navigate('chat')}><Suspense fallback={<p className="panel-loading" role="status">正在打开页面…</p>}>
-          {page === 'settings' && <Settings onAccount={() => navigate('account')} scope={account ? 'personal' : undefined} developerAllowed={!account || account.developer_allowed} onClose={() => navigate('chat')} onSaved={() => { void chefStore.loadStatus().catch(error => notify(error.message)); setPrefsVersion(value => value + 1); }} notify={notify} />}
+          {page === 'settings' && <Settings onAccount={() => navigate('account')} scope={account ? 'personal' : undefined} developerAllowed={developerAllowed} onClose={() => navigate('chat')} onSaved={() => { void chefStore.loadStatus().catch(error => notify(error.message)); setPrefsVersion(value => value + 1); }} notify={notify} />}
           {page === 'account' && account && <AccountPanel user={account} refresh={refreshAccount} logout={logout} notify={notify}/>}
           {page === 'admin' && account?.role === 'admin' && <AdminPanel user={account} refreshAccount={refreshAccount} notify={notify} onClose={() => navigate('chat')}/>}
           {(page === 'recipes' || page === 'journal') && <KitchenCenters page={page} onRecipe={openRecipe} onChat={text => navigate('chat', () => { chefStore.newSession(); chefStore.setDraft(text); })} onRecord={() => navigate('chat', () => { chefStore.newSession(); chefStore.setDraft('我想记录刚刚吃的一餐，请先整理草稿让我核对。'); })} onReturn={() => navigate('chat')} notify={notify} />}
