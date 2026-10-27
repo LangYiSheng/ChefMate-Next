@@ -1,9 +1,17 @@
 .react-settings .font-size-setting{max-width:440px;margin:0 0 26px;padding:0}
 .react-settings .font-size-label{display:flex;align-items:center;justify-content:space-between;gap:16px;font:500 1rem/1.6 var(--font-ui)}
 .react-settings .font-size-label output{color:var(--color-accent);font-weight:600}
-.react-settings .font-size-setting input[type=range]{display:block;width:100%;height:32px;margin:10px 0 0;padding:0;accent-color:var(--color-accent);cursor:pointer}
+.react-settings .font-size-setting input[type=range]{appearance:none;-webkit-appearance:none;display:block;width:100%;height:32px;margin:12px 0 4px;padding:0;border:0;background:transparent;box-shadow:none;cursor:pointer}
+.react-settings .font-size-setting input[type=range]::-webkit-slider-runnable-track{height:6px;border:0;border-radius:6px;background:linear-gradient(to right,var(--color-accent) 0 var(--font-size-progress,50%),var(--surface-hover) var(--font-size-progress,50%) 100%)}
+.react-settings .font-size-setting input[type=range]::-webkit-slider-thumb{appearance:none;-webkit-appearance:none;width:20px;height:20px;margin-top:-7px;border:0;border-radius:50%;background:var(--color-accent);box-shadow:0 3px 9px color-mix(in srgb,var(--color-accent) 20%,transparent);transition:scale var(--motion-fast) var(--ease-spring)}
+.react-settings .font-size-setting input[type=range]::-moz-range-track{height:6px;border:0;border-radius:6px;background:var(--surface-hover)}
+.react-settings .font-size-setting input[type=range]::-moz-range-progress{height:6px;border:0;border-radius:6px;background:var(--color-accent)}
+.react-settings .font-size-setting input[type=range]::-moz-range-thumb{width:20px;height:20px;border:0;border-radius:50%;background:var(--color-accent);box-shadow:0 3px 9px color-mix(in srgb,var(--color-accent) 20%,transparent);transition:scale var(--motion-fast) var(--ease-spring)}
+.react-settings .font-size-setting input[type=range]:disabled{opacity:.45;cursor:default}
 .react-settings .font-size-setting input[type=range]:focus-visible{outline:2px solid var(--color-accent);outline-offset:3px;box-shadow:none;border-radius:6px}
-.react-settings .font-size-ticks{display:flex;justify-content:space-between;padding:0 2px;color:var(--color-muted);font:.875rem/1.6 var(--font-ui)}
+.react-settings .font-size-ticks{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;align-items:start;padding:0 1px;color:var(--color-muted);font:.875rem/1.6 var(--font-ui)}
+.react-settings .font-size-ticks span{position:relative;justify-self:center}.react-settings .font-size-ticks span:first-child{justify-self:start}.react-settings .font-size-ticks span:last-child{justify-self:end}
+.react-settings .font-size-ticks span::before{content:'';position:absolute;top:-6px;left:50%;width:3px;height:3px;border-radius:50%;background:var(--color-muted);opacity:.5;translate:-50% 0}
 .react-settings .font-size-ticks [data-selected=true]{color:var(--color-accent);font-weight:600}
 .react-settings .font-size-setting>p{margin:8px 0 0;color:var(--color-muted);font:.875rem/1.75 var(--font-ui)}
 /* Preview text uses its own draft size while the rest of the page keeps the saved size. */
@@ -19,3 +27,5 @@
 .react-settings .font-size-ticks span{padding:2px 8px;border-radius:6px;transition:background-color var(--motion-normal) var(--ease-settle),color var(--motion-fast) ease}
 .react-settings .font-size-ticks [data-selected=true]{background:var(--color-accent-soft)}
 @media(prefers-reduced-motion:reduce){.react-settings .font-size-ticks span{transition:none}}
+@media(prefers-reduced-motion:no-preference){.react-settings .font-size-setting input[type=range]:active::-webkit-slider-thumb{scale:1.12}.react-settings .font-size-setting input[type=range]:active::-moz-range-thumb{scale:1.12}}
+@media(forced-colors:active){.react-settings .font-size-setting input[type=range]::-webkit-slider-runnable-track{background:CanvasText}.react-settings .font-size-setting input[type=range]::-webkit-slider-thumb{background:Highlight}.react-settings .font-size-setting input[type=range]::-moz-range-track{background:CanvasText}.react-settings .font-size-setting input[type=range]::-moz-range-thumb{background:Highlight}}

@@ -2,6 +2,7 @@ export const componentExamples: Record<string, string> = {
   'meal-planning': '5 个人，帮我搭配 4 道家常菜。', 'pantry-preparation': '这些菜要先准备什么？',
   'cooking-guide': '这一步要计时多久？', 'recipe-authoring': '把这张菜谱截图整理成我的菜谱。',
   'personal-memory': '记住我不吃香菜。', 'food-journal': '这是今天的午饭，帮我记一下。',
+  'app-preferences': '把界面调成深色，文字大一点。',
 };
 export const toolLabels: Record<string, string> = {
   create_food_log_draft: '整理饮食记录', search_food_logs: '查看个人饮食', get_food_log: '读取饮食记录',
@@ -11,13 +12,16 @@ export const toolLabels: Record<string, string> = {
   show_recipe_details: '展示菜品详情', set_meal_plan: '安排餐单', show_meal_plan: '核对餐单', show_shopping_list: '整理备菜清单',
   show_prep_checklist: '整理备菜清单', show_cooking_guide: '整理烹饪步骤', set_cooking_timer: '设置计时', show_timers: '查看计时',
   get_cooking_workspace: '核对当前进度', advance_cooking_stage: '更新会话阶段', update_cooking_guidance: '调整当前做法',
+  navigate_cooking_step: '浏览烹饪步骤', complete_cooking_step: '确认步骤完成',
   request_recipe_deletion: '确认删除个人菜谱', confirm_recipe_deletion: '处理菜谱删除确认', create_recipe_draft: '整理个人菜谱草稿',
   search_custom_recipes: '搜索个人菜谱', suggest_replies: '提供对话建议', read_long_term_memory: '读取长期记忆',
+  get_recipe_draft: '读取菜谱草稿', revise_recipe_draft: '调整菜谱草稿', request_recipe_publication: '核对保存菜谱', confirm_recipe_publication: '确认保存菜谱',
+  get_app_preferences: '读取应用偏好', update_app_preferences: '调整应用偏好', set_kitchen_display: '切换厨房视图',
   maintain_memory_summary: '维护助手记忆', search_personal_history: '查找个人历史', update_preferences: '保存用餐条件',
   select_recipes: '更新菜品选择', update_prep_items: '确认备菜状态', ask_user: '向你确认细节', load_skill: '读取组件指南', list_skills: '查看组件指南',
 };
 export const interfaceLabels: Record<string, string> = {
-  journal: '食光手记', recipes: '菜谱中心', memory: '长期记忆设置', preference_form: '用餐条件', recipe_choices: '菜品选择',
+  journal: '食光手记', recipes: '菜谱中心', memory: '长期记忆设置', settings: '应用设置', recipe_draft: '菜谱草稿', preference_form: '用餐条件', recipe_choices: '菜品选择',
   recipe_detail: '菜谱详情', meal_plan: '餐单与份量', prep_checklist: '备菜清单', cooking_guide: '烹饪步骤', timers: '计时器',
   task_progress: '任务进度', food_log: '饮食记录', nutrition_summary: '营养统计',
 };

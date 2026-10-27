@@ -1,6 +1,6 @@
-.app{display:grid;grid-template-columns:var(--sidebar-width,248px) minmax(0,1fr) 0px;transition:grid-template-columns var(--motion-slow) var(--ease-settle);height:100dvh;min-height:0;overflow:hidden;background:var(--color-background)}
+.app{position:relative;display:grid;grid-template-columns:var(--sidebar-width,248px) minmax(0,1fr) 0px;transition:grid-template-columns var(--motion-slow) var(--ease-settle);height:100dvh;min-height:0;overflow:hidden;background:var(--color-background)}
 .app.details-open{grid-template-columns:var(--sidebar-width,248px) minmax(0,1fr) var(--detail-width,390px)}
-.sidebar{position:relative;display:flex;flex-direction:column;gap:0;min-width:0;min-height:0;overflow:hidden;padding:26px 16px 16px;background:var(--color-background)}
+.sidebar{position:relative;display:flex;flex-direction:column;gap:0;min-width:0;min-height:0;overflow:hidden;margin-right:12px;padding:26px 16px 16px;background:var(--color-background)}
 .brand-row{display:flex;align-items:center;justify-content:space-between;gap:8px;min-height:42px;padding:0 4px;margin-bottom:22px}
 .brand{display:flex;align-items:center;gap:10px;min-width:0;text-decoration:none;text-align:left}
 .brand-copy{display:flex;flex-direction:column;gap:3px;min-width:0}
@@ -36,7 +36,7 @@
 .settings-link{display:flex;align-items:center;gap:10px;width:100%;min-height:38px;padding:8px 12px;border-radius:8px;text-align:left;color:var(--color-muted);font:0.9375rem/1.6 var(--font-ui)}
 .settings-link:hover,.settings-link[aria-current=page]{background:var(--color-hover);color:var(--color-accent)}
 .settings-link .icon{width:17px;height:17px}
-.sidebar-collapsed .sidebar{padding-inline:12px}
+.sidebar-collapsed .sidebar{margin-right:0;padding-inline:12px}
 .sidebar-collapsed .brand-row{padding:0;justify-content:center;margin-bottom:22px}
 .sidebar-collapsed .brand,.sidebar-collapsed .brand-row>.desktop-only,.sidebar-collapsed .sidebar-heading,.sidebar-collapsed .sessions,.sidebar-collapsed .context-meter{display:none}
 .sidebar-collapsed .rail-brand{display:flex}
@@ -52,10 +52,12 @@
 .panel-toggle{display:inline-flex;align-items:center;justify-content:center;gap:7px;min-height:36px;padding:7px 10px;border-radius:8px;white-space:nowrap;color:var(--color-muted);font:0.9375rem/1.5 var(--font-ui)}
 .panel-toggle .icon{width:17px;height:17px}
 .panel-toggle:hover,.panel-toggle[aria-expanded=true]{background:var(--color-accent-soft);color:var(--color-accent)}
-.sidebar-resize,.right-pane-resize{position:absolute;z-index:5;top:0;bottom:0;width:7px;cursor:col-resize;touch-action:none;outline-offset:-2px}
-.sidebar-resize{right:-3px}.right-pane-resize{left:-5px;width:10px}
-.sidebar-resize::after,.right-pane-resize::after{content:'';position:absolute;top:35%;bottom:35%;left:3px;width:3px;background:var(--color-border);border-radius:3px}
-.sidebar-resize:hover::after,.right-pane-resize:hover::after{background:var(--color-border-strong)}
+.sidebar-resize,.right-pane-resize{position:absolute;z-index:40;top:12px;bottom:12px;width:12px;cursor:col-resize;touch-action:none}
+.sidebar-resize{left:calc(var(--sidebar-width,248px) - 12px)}.right-pane-resize{right:var(--detail-width,390px)}
+.sidebar-resize::after,.right-pane-resize::after{content:'';position:absolute;top:35%;bottom:35%;left:50%;width:3px;transform:translateX(-50%);background:var(--color-accent);border-radius:3px;opacity:0;transition:opacity var(--motion-fast) var(--ease-settle),box-shadow var(--motion-fast) var(--ease-settle);pointer-events:none}
+.sidebar-resize:focus-visible,.right-pane-resize:focus-visible{outline:none}
+.sidebar-resize:is(:hover,:focus-visible)::after,.right-pane-resize:is(:hover,:focus-visible)::after,.app[data-resizing=left]>.sidebar-resize::after,.app[data-resizing=right]>.right-pane-resize::after{opacity:.65}
+.sidebar-resize:focus-visible::after,.right-pane-resize:focus-visible::after{opacity:1;box-shadow:0 0 0 3px color-mix(in srgb,var(--color-accent) 18%,transparent)}
 .mobile-only{display:none}
 .connection-banner{display:flex;align-items:center;flex-wrap:wrap;gap:8px;flex:none;padding:10px 20px;background:var(--color-warning-soft);color:var(--color-warning);font:0.875rem/1.8 var(--font-ui)}
 .connection-banner button{text-decoration:underline;text-underline-offset:3px;color:inherit;padding:3px 5px}
@@ -76,7 +78,9 @@
 .drawer-backdrop{display:none}
 @media(min-width:761px) and (max-width:1180px){
   .app,.app.details-open{grid-template-columns:var(--sidebar-width,248px) minmax(0,1fr) 0px}
-  .app .detail-panel{position:fixed;z-index:55;top:12px;right:12px;bottom:12px;width:min(480px,calc(100vw - 24px));box-shadow:-8px 0 36px var(--color-shadow)}
+  .app .detail-panel{position:fixed;z-index:55;top:12px;right:12px;bottom:12px;width:min(var(--detail-width,390px),calc(100vw - 24px));margin:0;box-shadow:-8px 0 36px var(--color-shadow)}
+  /* Overlay layouts have no gutter: keep the target inside the panel's empty inset. */
+  .app>.right-pane-resize{position:fixed;z-index:56;right:min(var(--detail-width,390px),calc(100vw - 24px))}
 }
 @media(max-width:760px){
   .app,.app.details-open{grid-template-columns:minmax(0,1fr)}
@@ -85,7 +89,7 @@
   .topbar-title{gap:8px}.chat-title{max-width:48vw}.conversation-stage{display:none}
   .topbar-actions{gap:2px}.panel-toggle{padding:7px}.panel-toggle>span{display:none}
   .mobile-only{display:inline-flex}.desktop-only{display:none!important}
-  .sidebar{position:fixed;z-index:80;inset:0 auto 0 0;width:min(300px,85vw);padding:22px 16px 16px;transform:translateX(-105%);transition:transform .2s ease;border-right:0}
+  .sidebar{position:fixed;z-index:80;inset:0 auto 0 0;width:min(300px,85vw);margin:0;padding:22px 16px 16px;transform:translateX(-105%);transition:transform .2s ease;border-right:0}
   .sidebar-open .sidebar{transform:translateX(0)}
   .sidebar-collapsed .sidebar{padding-inline:16px}
   .sidebar-collapsed .brand{display:flex}.sidebar-collapsed .brand-row{justify-content:space-between;padding:0 4px}.sidebar-collapsed .rail-brand{display:none}
@@ -109,6 +113,7 @@
 .app.pane-resizing .detail-panel{transition:none}
 @media(min-width:761px){.app.pane-resizing .sidebar{transition:none}}
 @media(prefers-reduced-motion:reduce){.app,.app .main,.app .sidebar,.app .detail-panel,.react-cooking-focus,.react-cooking-focus.is-active{transition:none!important}}
+@media(forced-colors:active){.sidebar-resize::after,.right-pane-resize::after{background:Highlight}.sidebar-resize:focus-visible,.right-pane-resize:focus-visible{outline:2px solid Highlight;outline-offset:-2px}}
 
 /* The detail surface travels with main before the cooking scene enters. */
 .app.details-open .detail-panel{transition:opacity var(--motion-normal) var(--ease-settle),transform var(--motion-slow) var(--ease-settle),visibility 0s}

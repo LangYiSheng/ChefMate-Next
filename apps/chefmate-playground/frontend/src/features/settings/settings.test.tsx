@@ -108,7 +108,7 @@ describe('React settings transactions', () => {
     fireEvent.click(screen.getByRole('switch')); rerender(<MemorySettings active={false} onDirty={dirty} onBusy={onBusy}/>); rerender(<MemorySettings active onDirty={dirty} onBusy={onBusy}/>);
     expect(screen.getByLabelText('你希望记住的事')).toHaveValue('不吃香菜，少辣');
     fireEvent.click(screen.getByRole('button', {name: '保存记忆'})); await screen.findByText('记忆已保存。');
-    expect(memory.enabled).toBe(false); expect(dirty).toHaveBeenLastCalledWith(false);
+    expect(memory.enabled).toBe(false); await waitFor(() => expect(dirty).toHaveBeenLastCalledWith(false));
     fireEvent.click(screen.getByRole('button', {name: '清空记忆'})); fireEvent.click(screen.getByRole('button', {name: '确认清空'})); await screen.findByText('记忆已清空。'); expect(memory.user_notes).toBe('');
   });
 

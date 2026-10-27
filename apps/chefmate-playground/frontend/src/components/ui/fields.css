@@ -1,27 +1,28 @@
 /* Shared text controls use the same shape and typography as the themed Select. */
-:where(input:not([type=checkbox]):not([type=radio]):not([type=file]):not([type=range]):not([type=hidden]),textarea){min-height:40px;max-width:100%;padding:9px 12px;border:0;border-radius:var(--radius-control,9px);background:var(--surface-inset);color:var(--color-text);font:400 1rem/1.6 var(--font-ui);outline:none;box-sizing:border-box;transition:background var(--motion-fast) var(--ease-settle),box-shadow var(--motion-fast) var(--ease-settle)}
-:where(input:not([type=checkbox]):not([type=radio]):not([type=file]):not([type=range]):not([type=hidden]),textarea):hover:not(:disabled):not(:focus){background:var(--surface-hover)}
-:where(input:not([type=checkbox]):not([type=radio]):not([type=file]):not([type=range]):not([type=hidden]),textarea):focus{box-shadow:0 0 0 2px color-mix(in srgb,var(--color-accent) 12%,transparent)}
-:where(input:not([type=checkbox]):not([type=radio]),textarea):disabled{background:var(--color-surface);color:var(--color-muted);opacity:.7}
+:where(input:not([type=checkbox]):not([type=radio]):not([type=file]):not([type=range]):not([type=hidden]),textarea):not(:where(.composer textarea)){min-height:40px;max-width:100%;padding:9px 12px;border:0;border-radius:var(--radius-control,9px);background:var(--surface-inset);color:var(--color-text);font:400 1rem/1.6 var(--font-ui);outline:none;box-sizing:border-box;transition:background var(--motion-fast) var(--ease-settle),box-shadow var(--motion-fast) var(--ease-settle)}
+:where(input:not([type=checkbox]):not([type=radio]):not([type=file]):not([type=range]):not([type=hidden]),textarea):not(:where(.composer textarea)):hover:not(:disabled):not(:focus){background:var(--surface-hover)}
+:where(input:not([type=checkbox]):not([type=radio]):not([type=file]):not([type=range]):not([type=hidden]),textarea):not(:where(.composer textarea)):focus{box-shadow:0 0 0 2px color-mix(in srgb,var(--color-accent) 12%,transparent)}
+:where(input:not([type=checkbox]):not([type=radio]),textarea):not(:where(.composer textarea)):disabled{background:var(--color-surface);color:var(--color-muted);opacity:.7}
 :where(input,textarea)[aria-invalid=true]{box-shadow:0 0 0 2px color-mix(in srgb,var(--color-danger) 50%,transparent)}
 :where(input,textarea)::placeholder{color:var(--color-subtle);opacity:.85}
-:where(input[type=checkbox]:not([role=switch]),input[type=radio]){appearance:none;display:inline-grid;place-content:center;width:17px;height:17px;margin:0;border:0;border-radius:5px;background:var(--surface-inset);color:var(--color-on-accent);vertical-align:middle;flex:none;cursor:pointer}
-:where(input[type=radio]){border-radius:50%}
-:where(input[type=checkbox]:not([role=switch]),input[type=radio]):checked{background:var(--color-accent);border-color:var(--color-accent)}
-:where(input[type=checkbox]:not([role=switch]))::before{content:'';display:block;width:8px;height:4px;margin-top:-2px;border:solid currentColor;border-width:0 0 2px 2px;transform:rotate(-45deg) scale(0)}
-:where(input[type=radio])::before{content:'';display:block;width:6px;height:6px;border-radius:50%;background:currentColor;transform:scale(0)}
-:where(input[type=checkbox]:not([role=switch]),input[type=radio]):checked::before{transform:scale(1)}
-:where(input[type=checkbox]:not([role=switch])):checked::before{transform:rotate(-45deg) scale(1)}
-:where(input[type=checkbox]:not([role=switch]),input[type=radio]):focus-visible{outline:2px solid var(--color-accent);outline-offset:3px}
-:where(input[type=checkbox]:not([role=switch]),input[type=radio]):disabled{opacity:.5;cursor:default}
-@media(max-width:760px){:where(input:not([type=checkbox]):not([type=radio]):not([type=file]):not([type=range]):not([type=hidden]),textarea){font-size:1rem}}
-@media(forced-colors:active){:where(input[type=checkbox]:not([role=switch]),input[type=radio]){appearance:auto}}
+input:is([type=checkbox]:not([role=switch]),[type=radio]){appearance:none;display:inline-grid;place-content:center;width:17px;height:17px;margin:0;border:0;border-radius:5px;background:color-mix(in srgb,var(--color-text) 12%,var(--surface-inset));color:var(--color-on-accent);vertical-align:middle;flex:none;cursor:pointer}
+input[type=radio]:not([role=switch]){border-radius:50%}
+/* Explicit checked colors outrank generic control and disabled colors. */
+input:is([type=checkbox]:not([role=switch]),[type=radio]):checked{background:var(--color-accent);color:var(--color-on-accent)}
+input[type=checkbox]:not([role=switch])::before{content:'';display:block;width:8px;height:4px;margin-top:-2px;border:solid currentColor;border-width:0 0 2px 2px;transform:rotate(-45deg) scale(0)}
+input[type=radio]::before{content:'';display:block;width:6px;height:6px;border-radius:50%;background:currentColor;transform:scale(0)}
+input:is([type=checkbox]:not([role=switch]),[type=radio]):checked::before{transform:scale(1)}
+input[type=checkbox]:not([role=switch]):checked::before{transform:rotate(-45deg) scale(1)}
+input:is([type=checkbox]:not([role=switch]),[type=radio]):focus-visible{outline:2px solid var(--color-accent);outline-offset:3px}
+input:is([type=checkbox]:not([role=switch]),[type=radio]):disabled{opacity:.5;cursor:default}
+@media(max-width:760px){:where(input:not([type=checkbox]):not([type=radio]):not([type=file]):not([type=range]):not([type=hidden]),textarea):not(:where(.composer textarea)){font-size:1rem}}
+@media(forced-colors:active){input:is([type=checkbox]:not([role=switch]),[type=radio]){appearance:auto}input:is([type=checkbox]:not([role=switch]),[type=radio])::before{display:none}}
 
 /* Confirmation marks have a little spring; their fields stay still. */
 :where(input[type=number]){font-variant-numeric:tabular-nums lining-nums}
 @media(prefers-reduced-motion:no-preference){
- :where(input[type=checkbox]:not([role=switch]),input[type=radio]){transition:background var(--motion-fast) var(--ease-settle),box-shadow var(--motion-fast) var(--ease-settle)}
- :where(input[type=checkbox]:not([role=switch]),input[type=radio])::before{transition:transform var(--motion-normal) var(--ease-spring)}
+ input:is([type=checkbox]:not([role=switch]),[type=radio]){transition:background var(--motion-fast) var(--ease-settle),box-shadow var(--motion-fast) var(--ease-settle)}
+ input:is([type=checkbox]:not([role=switch]),[type=radio])::before{transition:transform var(--motion-normal) var(--ease-spring)}
 }
 @media(prefers-reduced-motion:reduce){:where(input,textarea),:where(input,textarea)::before,:where(input,textarea)::after{animation:none!important;transition:none!important}}
-@media(forced-colors:active){:where(input:not([type=checkbox]):not([type=radio]):not([type=hidden]),textarea){border:1px solid CanvasText}}
+@media(forced-colors:active){:where(input:not([type=checkbox]):not([type=radio]):not([type=hidden]),textarea):not(:where(.composer textarea)){border:1px solid CanvasText}}

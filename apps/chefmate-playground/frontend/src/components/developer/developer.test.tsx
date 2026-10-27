@@ -38,6 +38,11 @@ describe('developer diagnostics', () => {
     expect(screen.getByText('安排餐单')).toBeInTheDocument(); expect(screen.queryByText('搜索菜谱')).not.toBeInTheDocument();
     view.rerender(<ComponentsCatalog components={catalog.components} />);
     expect(screen.getByText('已启用')).toBeInTheDocument(); expect(screen.getByText('依赖不可用')).toBeInTheDocument(); expect(screen.getByText('菜谱检索服务')).toBeInTheDocument();
+    fireEvent.change(screen.getByRole('searchbox', {name: '搜索组件'}), {target: {value: '未匹配组件'}});
+    expect(screen.getByText('没有匹配的系统组件。')).toBeInTheDocument();
+    expect(view.container.querySelectorAll('.dev-catalog-card')).toHaveLength(0);
+    fireEvent.change(screen.getByRole('searchbox', {name: '搜索组件'}), {target: {value: ''}});
+    expect(view.container.querySelectorAll('.dev-catalog-card')).toHaveLength(1);
   });
 
   it('uses the shared turn selector and rejects late responses from the previously selected session', async () => {

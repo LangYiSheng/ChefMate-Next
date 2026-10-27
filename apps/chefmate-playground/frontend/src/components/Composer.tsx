@@ -6,10 +6,12 @@ import { workspaceStore } from '../features/workspace/store';
 import { Icon } from './Icon';
 import { ImagePreview, imageURL } from './ImagePreview';
 import { replySuggestions } from './suggestions';
+import { readKeyboardPreferences, shouldSendMessage, subscribeKeyboardPreferences } from '../features/settings/keyboard-preferences';
 export { imageURL } from './ImagePreview';
 
 export type EditorPositions = Map<string, { start: number; end: number }>;
 export function Composer({ state, focus = false, notify, positions }: { state: RuntimeState; focus?: boolean; notify: (text: string) => void; positions?: EditorPositions }) {
+  const keyboard = useSyncExternalStore(subscribeKeyboardPreferences, readKeyboardPreferences);
   const input = useRef<HTMLTextAreaElement>(null);
   const upload = useRef<HTMLInputElement>(null);
   const [preview, setPreview] = useState<number | null>(null);
@@ -70,16 +72,15 @@ export function Composer({ state, focus = false, notify, positions }: { state: R
     {!pending && <form className="composer" onSubmit={event => { event.preventDefault(); if (!reading) send(); }}>
       <label className="visually-hidden" htmlFor="composer-input">告诉 ChefMate 你想吃什么</label>
       <textarea key={key} ref={input} id="composer-input" rows={1} value={text} maxLength={8000} autoComplete="off"
-        placeholder="告诉我想吃什么，也可以补充条件…"
+        placeholder="告诉我想吃什么，也可以补充条件…" aria-keyshortcuts={keyboard.send_mode === 'enter' ? 'Enter' : 'Control+Enter Meta+Enter'}
         onChange={event => chefStore.setDraft(event.target.value)}
         onSelect={event => positions?.set(key, { start: event.currentTarget.selectionStart, end: event.currentTarget.selectionEnd })}
         onBlur={event => positions?.set(key, { start: event.currentTarget.selectionStart, end: event.currentTarget.selectionEnd })}
-        onKeyDown={event => { if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) { event.preventDefault(); if (!running && !reading && !state.preparing && !uploading) send(); } }}
+        onKeyDown={event => { if (shouldSendMessage(event, keyboard)) { event.preventDefault(); if (!running && !reading && !state.preparing && !uploading) send(); } }}
         onPaste={event => { const files = [...event.clipboardData.files]; if (files.length && state.status?.supports_images) { event.preventDefault(); if (!running && !state.preparing) attach(files); } }} />
       <div className="composer-bottom">
         {state.status?.supports_images && <button type="button" className="attach-button" aria-label="上传图片" title="上传图片 · 自动压缩" disabled={uploading || running || state.preparing} onClick={() => upload.current?.click()}><Icon name="image-plus" /></button>}
         <input ref={upload} type="file" accept="image/jpeg,image/png,image/webp" multiple hidden onChange={event => { attach([...(event.target.files || [])]); event.target.value = ''; }} />
-        <span className="composer-hint">Enter 发送 · Shift + Enter 换行</span>
         {running ? <button type="button" className="send-button stop-button" aria-label="停止本次执行" disabled={run?.cancelling} onClick={() => void chefStore.cancelTurn().catch(error => notify(error.message))}><Icon name="square" /></button> :
           <button type="submit" className="send-button" aria-label="发送消息" disabled={!state.status?.ready || reading || state.preparing || uploading || Boolean(continuation) || !text.trim() && !images.length}><Icon name="arrow-up" /></button>}
       </div>

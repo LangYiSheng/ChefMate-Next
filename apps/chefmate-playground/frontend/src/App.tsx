@@ -1,4 +1,4 @@
-import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type CSSProperties } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type CSSProperties, type PointerEvent as ReactPointerEvent } from 'react';
 import { chefStore } from './runtime/store';
 import { Sidebar } from './components/Sidebar';
 import { Composer } from './components/Composer';
@@ -43,9 +43,9 @@ export default function App() {
   const [prefsVersion, setPrefsVersion] = useState(0);
   const [width, setWidth] = useState(() => local('chefmate:sidebar-width', 248));
   const [rightWidth, setRightWidth] = useState(() => local('chefmate:detail-width', 390));
-  const [resizing, setResizing] = useState(false);
+  const [resizing, setResizing] = useState<'left' | 'right' | null>(null);
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const dragging = useRef<'left' | 'right' | null>(null);
+  const dragging = useRef<{ side: 'left' | 'right'; startX: number; startWidth: number; pointerId: number; handle: HTMLDivElement } | null>(null);
   const editorPositions = useRef(new Map<string, { start: number; end: number }>());
   const developer = local<Record<string, any>>('chefmate:developer-settings', {}).enabled === true;
   const running = Boolean(state.session?.running || state.currentId && state.runs[state.currentId]);
@@ -100,16 +100,37 @@ export default function App() {
     };
     window.addEventListener('keydown', escape); return () => window.removeEventListener('keydown', escape);
   }, [focus, detail]);
+  const stopResizing = useCallback(() => {
+    const drag = dragging.current;
+    dragging.current = null;
+    if (drag?.handle.hasPointerCapture?.(drag.pointerId)) drag.handle.releasePointerCapture(drag.pointerId);
+    setResizing(null);
+  }, []);
   useEffect(() => {
     const move = (event: PointerEvent) => {
-      if (dragging.current === 'left') setWidth(Math.max(208, Math.min(360, event.clientX)));
-      if (dragging.current === 'right') setRightWidth(Math.max(300, Math.min(720, innerWidth - event.clientX)));
+      const drag = dragging.current;
+      if (!drag || drag.pointerId !== event.pointerId) return;
+      const delta = event.clientX - drag.startX;
+      if (drag.side === 'left') setWidth(Math.max(208, Math.min(360, drag.startWidth + delta)));
+      else setRightWidth(Math.max(300, Math.min(720, drag.startWidth - delta)));
     };
-    const stop = () => { dragging.current = null; setResizing(false); };
-    window.addEventListener('pointermove', move); window.addEventListener('pointerup', stop); window.addEventListener('pointercancel', stop);
-    return () => { window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', stop); window.removeEventListener('pointercancel', stop); };
-  }, []);
+    const stop = (event: PointerEvent) => { if (dragging.current?.pointerId === event.pointerId) stopResizing(); };
+    window.addEventListener('pointermove', move); window.addEventListener('pointerup', stop); window.addEventListener('pointercancel', stop); window.addEventListener('blur', stopResizing);
+    return () => { window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', stop); window.removeEventListener('pointercancel', stop); window.removeEventListener('blur', stopResizing); stopResizing(); };
+  }, [stopResizing]);
+  useEffect(() => {
+    const side = dragging.current?.side;
+    if (side && (mobile || side === 'left' && collapsed || side === 'right' && !detail)) stopResizing();
+  }, [mobile, collapsed, detail, stopResizing]);
   useEffect(() => { try { localStorage.setItem('chefmate:sidebar-width', JSON.stringify(width)); localStorage.setItem('chefmate:detail-width', JSON.stringify(rightWidth)); } catch { /* The layout remains usable without browser storage. */ } }, [width, rightWidth]);
+  function startResizing(event: ReactPointerEvent<HTMLDivElement>, side: 'left' | 'right') {
+    if (event.button !== 0 || mobile || side === 'left' && collapsed || side === 'right' && !detail) return;
+    event.preventDefault();
+    stopResizing();
+    dragging.current = { side, startX: event.clientX, startWidth: side === 'left' ? width : rightWidth, pointerId: event.pointerId, handle: event.currentTarget };
+    event.currentTarget.setPointerCapture?.(event.pointerId);
+    setResizing(side);
+  }
   function navigate(next: Page, after?: () => void) {
     const resume = () => {
       setPage(next); setMobileOpen(false); setFocus(false); if (next !== 'chat') setDetail(false);
@@ -137,11 +158,12 @@ export default function App() {
     {developer && <DeveloperWatermark />}
     <a className="skip-link" href="#composer-input">跳到输入框</a>
     <div inert={focus} className={`app react-app ${focus ? 'focus-scene-active' : ''} ${resizing ? 'pane-resizing' : ''} ${collapsed ? 'sidebar-collapsed' : ''} ${mobileOpen ? 'sidebar-open' : ''} ${detail ? 'details-open' : ''} ${prefs.density === 'compact' ? 'compact-density' : ''}`}
-      data-page={page} data-preferences={prefsVersion} style={{ '--sidebar-width': `${collapsed ? 64 : width}px`, '--detail-width': `${rightWidth}px` } as CSSProperties}>
+      data-page={page} data-preferences={prefsVersion} data-resizing={resizing || undefined} style={{ '--sidebar-width': `${collapsed ? 64 : width}px`, '--detail-width': `${rightWidth}px` } as CSSProperties}>
       <aside className="sidebar" aria-label="会话导航" inert={mobile && !mobileOpen}><Sidebar state={state} page={page} collapsed={collapsed} onCollapse={value => { setCollapsed(value); try { localStorage.setItem('chefmate:sidebar-collapsed', JSON.stringify(value)); } catch { /* Keep this session's layout. */ } }}
         onClose={() => setMobileOpen(false)} navigate={navigate} notify={notify} developer={developer} onInspect={() => { setDetail(true); setTab('query'); }} />
-        {!collapsed && <div className="sidebar-resize" role="separator" aria-label="调整侧栏宽度" aria-orientation="vertical" aria-valuemin={208} aria-valuemax={360} aria-valuenow={width} tabIndex={0}
-          onPointerDown={event => { event.preventDefault(); dragging.current = 'left'; setResizing(true); }} onKeyDown={event => { if (['ArrowLeft', 'ArrowRight'].includes(event.key)) { event.preventDefault(); setWidth(Math.max(208, Math.min(360, width + (event.key === 'ArrowLeft' ? -8 : 8)))); } }} />}</aside>
+      </aside>
+      {!collapsed && <div className="sidebar-resize" role="separator" aria-label="调整侧栏宽度" aria-orientation="vertical" aria-valuemin={208} aria-valuemax={360} aria-valuenow={width} tabIndex={0}
+        onPointerDown={event => startResizing(event, 'left')} onLostPointerCapture={event => { if (dragging.current?.pointerId === event.pointerId) stopResizing(); }} onKeyDown={event => { if (['ArrowLeft', 'ArrowRight'].includes(event.key)) { event.preventDefault(); setWidth(Math.max(208, Math.min(360, width + (event.key === 'ArrowLeft' ? -8 : 8)))); } }} />}
       <main className="main"><header className="topbar"><div className="topbar-title"><button type="button" className="icon-button mobile-only" aria-label="展开会话导航" aria-expanded={mobileOpen} onClick={() => setMobileOpen(true)}><Icon name="panel-left" /></button>
         <span className="chat-title">{title}</span>{page === 'chat' && stage?.stage && <span className="conversation-stage">{({ idea: '闲聊', planning: '选菜', prep: '备菜', cooking: '烹饪', completed: '已完成' } as Record<string, string>)[stage.stage]}</span>}</div>
         <div className="topbar-actions"><KitchenTimers sessionId={state.currentId} active={!focus} onOpenSession={id => navigate('chat', () => { void chefStore.openSession(id).catch(error => notify(error.message)); })} />
@@ -155,7 +177,8 @@ export default function App() {
         </Suspense></PageBoundary>
         <section className="chat-page" hidden={page !== 'chat'} aria-label="对话工作区"><Conversation state={state} active={page === 'chat' && !focus} developer={developer} onRecipe={openRecipe} onAsk={ask} onFocus={openFocus} />{!focus && <Composer state={state} positions={editorPositions.current} notify={notify} />}</section>
       </main>
-      <aside className="detail-panel" inert={!detail} aria-hidden={!detail} aria-label="厨房工作区"><div className="right-pane-resize" role="separator" aria-label="调整右侧栏宽度" aria-orientation="vertical" aria-valuemin={300} aria-valuemax={720} aria-valuenow={rightWidth} tabIndex={0} onPointerDown={event => { event.preventDefault(); dragging.current = 'right'; setResizing(true); }} onKeyDown={event => { if (['ArrowLeft', 'ArrowRight'].includes(event.key)) { event.preventDefault(); setRightWidth(Math.max(300, Math.min(720, rightWidth + (event.key === 'ArrowLeft' ? 8 : -8)))); } }} />
+      {detail && <div className="right-pane-resize" role="separator" aria-label="调整右侧栏宽度" aria-orientation="vertical" aria-valuemin={300} aria-valuemax={720} aria-valuenow={rightWidth} tabIndex={0} onPointerDown={event => startResizing(event, 'right')} onLostPointerCapture={event => { if (dragging.current?.pointerId === event.pointerId) stopResizing(); }} onKeyDown={event => { if (['ArrowLeft', 'ArrowRight'].includes(event.key)) { event.preventDefault(); setRightWidth(Math.max(300, Math.min(720, rightWidth + (event.key === 'ArrowLeft' ? 8 : -8)))); } }} />}
+      <aside className="detail-panel" inert={!detail} aria-hidden={!detail} aria-label="厨房工作区">
         <div className="panel-header"><div className="panel-tabs" role="tablist" aria-label="详情内容">{([['workspace', '工作区'], ...(selection ? [['recipe', '菜谱详情']] : []), ...(developer ? [['query', '调试']] : [])] as ['workspace' | 'recipe' | 'query', string][]).map(([id, name]) => <button key={id} className={`panel-tab ${tab === id ? 'active' : ''}`} type="button" role="tab" aria-selected={tab === id} onClick={() => setTab(id)}>{name}</button>)}</div><button type="button" className="icon-button" aria-label="收起详情面板" onClick={() => setDetail(false)}><Icon name="x" /></button></div>
         <div className="panel-content" role="tabpanel">{tab === 'query' && developer ? <Diagnostics sessionId={state.currentId} status={state.status} developer /> : tab === 'recipe' ? <RecipeDetails selection={selection} onAsk={ask} /> : <WorkspacePanel sessionId={state.currentId} running={running} onContinue={text => { if (state.currentId) void chefStore.enqueueContinuation(state.currentId, text); }} onRecipe={openRecipe} onFocus={openFocus} notify={notify} />}</div>
       </aside>

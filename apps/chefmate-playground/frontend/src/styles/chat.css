@@ -29,8 +29,10 @@
 .starter-shuffle{display:inline-flex;align-items:center;gap:6px;padding:8px 10px;margin-top:12px;color:var(--color-muted);font:0.8125rem/1.7 var(--font-ui)}.starter-shuffle .icon{width:13px;height:13px}
 .composer-area{position:relative;flex:none;width:100%;max-width:906px;margin:0 auto;padding:8px 28px 20px}
 .composer{padding:16px 18px 12px;border:0;border-radius:20px;background:color-mix(in srgb,var(--color-canvas) 50%,var(--color-surface));box-shadow:0 3px 12px var(--color-shadow)}
+.composer:hover:not(:focus-within){background:var(--surface-hover);box-shadow:0 5px 18px var(--color-shadow)}
 .composer:focus-within{background:var(--surface-inset);box-shadow:0 0 0 2px color-mix(in srgb,var(--color-accent) 22%,transparent),0 6px 24px var(--color-shadow)}
-.composer textarea{display:block;width:100%;resize:none;min-height:25px;max-height:180px;padding:0;border:0!important;border-radius:0;box-shadow:none;outline:none;background:transparent;font:1rem/1.8 var(--font-reading)}
+.composer textarea{display:block;width:100%;resize:none;min-height:25px;max-height:180px;padding:0;border:0;border-radius:0;box-shadow:none;outline:none;background:transparent;font:1rem/1.8 var(--font-reading)}
+.composer textarea:is(:hover,:focus,:focus-visible,:disabled){background:transparent;border:0;box-shadow:none;outline:none}
 .composer-bottom{display:flex;align-items:center;gap:10px;margin-top:9px;min-height:30px}.composer-hint{flex:1;font:0.75rem/1.6 var(--font-ui);color:var(--color-subtle)}
 .send-button{display:inline-flex;align-items:center;justify-content:center;flex:none;width:30px;height:30px;border-radius:50%;background:var(--color-accent);color:var(--color-on-accent);margin-left:auto}.send-button:hover{background:var(--color-accent-hover)}.send-button:disabled{opacity:.35}.send-button .icon{width:18px;height:18px}
 .attach-button{display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;color:var(--color-muted);border-radius:7px}.attach-button:hover{color:var(--color-accent);background:var(--color-hover)}.attach-button .icon{width:17px;height:17px}

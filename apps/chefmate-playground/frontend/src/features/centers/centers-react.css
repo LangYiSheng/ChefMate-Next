@@ -29,6 +29,8 @@
 
 /* Tonal surfaces carry hierarchy; only new views and purposeful feedback move. */
 .react-centers .food-log-list,.react-centers .center-journal-list{display:grid;gap:12px}
+.react-centers .intake-hero+.food-log-list{margin-block-start:24px}
+.react-centers .food-log-list{gap:16px}
 .react-centers :is(.center-result-count,.center-pager,.center-eyebrow,.center-stats dd,.center-nutrition dd,.intake-metrics dd,.intake-chart-column,.food-log-energy){font-variant-numeric:tabular-nums lining-nums}
 .react-centers :is(.center-tabs>.center-button,.center-recipe-title,.center-recipe-row,.food-log-row,.center-journal-row){transition:background-color var(--motion-normal) var(--ease-settle),color var(--motion-fast) ease,transform var(--motion-normal) var(--ease-settle)}
 @media(prefers-reduced-motion:no-preference){.react-centers .center-tabs>.center-button:active{transform:scale(.97)}}

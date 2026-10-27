@@ -3,6 +3,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-libra
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ChefStore } from '../runtime/store';
 import { Composer, type EditorPositions } from './Composer';
+import { saveKeyboardPreferences } from '../features/settings/keyboard-preferences';
 
 const runtime = vi.hoisted(() => ({ current: null as ChefStore | null }));
 vi.mock('../runtime/store', async importOriginal => {
@@ -86,6 +87,24 @@ describe('Composer with the real external store', () => {
     expect(input).toHaveValue('');
     expect(requests.filter(item => item.path.endsWith('/turn'))).toHaveLength(1);
     expect(JSON.parse(requests.find(item => item.path.endsWith('/turn'))!.init.body as string).message).toBe('推荐一份早餐');
+  });
+
+  it('applies saved send shortcuts without sending IME composition or editing key combinations', async () => {
+    const store = runtime.current!; await store.openSession('a'); render(<ConnectedComposer />);
+    const input = screen.getByRole('textbox');
+    fireEvent.change(input, { target: { value: '保留这段输入' } });
+    act(() => { saveKeyboardPreferences({ send_mode: 'mod-enter' }); });
+    expect(input).toHaveAttribute('aria-keyshortcuts', 'Control+Enter Meta+Enter');
+    expect(screen.queryByText('Enter 发送 · Shift + Enter 换行')).not.toBeInTheDocument();
+    fireEvent.keyDown(input, { key: 'Enter' });
+    fireEvent.keyDown(input, { key: 'Enter', shiftKey: true, ctrlKey: true });
+    fireEvent.keyDown(input, { key: 'Enter', ctrlKey: true, isComposing: true });
+    fireEvent.keyDown(input, { key: 'Enter', metaKey: true, keyCode: 229 });
+    expect(requests.filter(item => item.path.endsWith('/turn'))).toHaveLength(0);
+    expect(input).toHaveValue('保留这段输入');
+    fireEvent.keyDown(input, { key: 'Enter', metaKey: true });
+    await waitFor(() => expect(requests.filter(item => item.path.endsWith('/turn'))).toHaveLength(1));
+    expect(JSON.parse(requests.find(item => item.path.endsWith('/turn'))!.init.body as string).message).toBe('保留这段输入');
   });
 
   it('adds and removes a file through the runtime attachment actions', async () => {

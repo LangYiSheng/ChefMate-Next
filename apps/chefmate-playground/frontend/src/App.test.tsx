@@ -58,8 +58,60 @@ function workspace(views: Record<string, any>[]) {
     fixture.workspaceListeners.forEach(listener => listener());
   });
 }
+function pointer(target: Element | Window, type: string, clientX: number, pointerId = 1) {
+  const event = new MouseEvent(type, { bubbles: true, cancelable: true, clientX, button: 0 });
+  Object.defineProperty(event, 'pointerId', { value: pointerId });
+  fireEvent(target, event);
+}
+function capture(handle: HTMLElement) {
+  const release = vi.fn();
+  Object.defineProperties(handle, {
+    setPointerCapture: { value: vi.fn() }, hasPointerCapture: { value: () => true }, releasePointerCapture: { value: release },
+  });
+  return release;
+}
 
 describe('App surface coordination', () => {
+  it('drags the left separator by pointer distance without snapping to a viewport coordinate', () => {
+    const view = render(<App />), app = view.container.querySelector('.app')!;
+    const handle = screen.getByRole('separator', { name: '调整侧栏宽度' }), release = capture(handle);
+    expect(handle.parentElement).toBe(app);
+    pointer(handle, 'pointerdown', 242);
+    expect(app).toHaveAttribute('data-resizing', 'left');
+    pointer(window, 'pointermove', 242);
+    expect(handle).toHaveAttribute('aria-valuenow', '248');
+    pointer(window, 'pointermove', 282);
+    expect(handle).toHaveAttribute('aria-valuenow', '288');
+    pointer(window, 'pointermove', 600, 2);
+    expect(handle).toHaveAttribute('aria-valuenow', '288');
+    pointer(window, 'pointerup', 282);
+    expect(release).toHaveBeenCalledWith(1); expect(app).not.toHaveAttribute('data-resizing');
+    pointer(window, 'pointermove', 320);
+    expect(handle).toHaveAttribute('aria-valuenow', '288');
+    fireEvent.keyDown(handle, { key: 'ArrowLeft' });
+    expect(handle).toHaveAttribute('aria-valuenow', '280');
+  });
+
+  it('resizes the right panel in the opposite direction and releases capture on cancel and unmount', () => {
+    const view = render(<App />), app = view.container.querySelector('.app')!;
+    expect(screen.queryByRole('separator', { name: '调整右侧栏宽度' })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '展开右侧栏' }));
+    const handle = screen.getByRole('separator', { name: '调整右侧栏宽度' }), release = capture(handle);
+    expect(handle.parentElement).toBe(app);
+    pointer(handle, 'pointerdown', 1424);
+    pointer(window, 'pointermove', 1424);
+    expect(handle).toHaveAttribute('aria-valuenow', '390');
+    pointer(window, 'pointermove', 1384);
+    expect(handle).toHaveAttribute('aria-valuenow', '430');
+    pointer(window, 'pointermove', 600);
+    expect(handle).toHaveAttribute('aria-valuenow', '720');
+    pointer(window, 'pointercancel', 600);
+    expect(release).toHaveBeenCalledWith(1); expect(app).not.toHaveAttribute('data-resizing');
+    pointer(handle, 'pointerdown', 600);
+    view.unmount();
+    expect(release).toHaveBeenCalledTimes(2);
+  });
+
   it('exposes diagnostics only while developer mode is enabled and returns to workspace when disabled', () => {
     render(<App />);
     fireEvent.click(screen.getByRole('button', { name: '展开右侧栏' }));

@@ -17,7 +17,7 @@ export function AppearanceSettings({values, change, disabled = false}: {values: 
   return <div className="appearance-layout">
     <div className="appearance-options">
       <div className="font-size-setting"><div className="font-size-label"><label htmlFor={sizeId}>字号</label><output htmlFor={sizeId} id={`${sizeId}-value`}>{resolved.fontSize.label}</output></div>
-        <input id={sizeId} type="range" min="0" max="2" step="1" value={FONT_SIZES.indexOf(resolved.fontSize)} disabled={disabled} aria-valuetext={resolved.fontSize.label} aria-describedby={`${sizeId}-hint`} onChange={event => { const size = FONT_SIZES[Number(event.target.value)]; if (size) change('font_size', size.id); }}/>
+        <input id={sizeId} type="range" min="0" max="2" step="1" value={FONT_SIZES.indexOf(resolved.fontSize)} style={{'--font-size-progress': `${FONT_SIZES.indexOf(resolved.fontSize) * 50}%`} as CSSProperties} disabled={disabled} aria-valuetext={resolved.fontSize.label} aria-describedby={`${sizeId}-hint`} onChange={event => { const size = FONT_SIZES[Number(event.target.value)]; if (size) change('font_size', size.id); }}/>
         <div className="font-size-ticks" aria-hidden="true">{FONT_SIZES.map(size => <span key={size.id} data-selected={size.id === resolved.fontSize.id}>{size.label}</span>)}</div>
         <p id={`${sizeId}-hint`}>调整整个工作台的文字大小，可先查看效果预览。</p>
       </div>

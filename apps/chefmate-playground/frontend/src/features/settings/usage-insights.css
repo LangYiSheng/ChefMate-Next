@@ -1,0 +1,8 @@
+.react-settings .usage-insights-toolbar{display:flex;align-items:center;justify-content:space-between;gap:16px;margin:0 0 20px;min-width:0}
+.react-settings .usage-insights-toolbar>label{color:var(--color-muted);font:0.875rem/1.7 var(--font-ui)}
+.react-settings .usage-insights-toolbar>.ui-select{width:200px;max-width:100%;flex:none}
+.react-settings .insight-metrics+.settings-note{margin-bottom:24px}
+.react-settings .settings-group>.usage-calendar{padding:22px 20px;margin:24px 0;border-radius:14px;background:var(--surface-inset)}
+.react-settings .usage-calendar .usage-calendar-cell.is-empty,.react-settings .usage-calendar-legend>.usage-calendar-cell.level-0{background:var(--surface-raised)}
+.react-settings .usage-calendar+.settings-note{margin-top:16px}
+@media(max-width:560px){.react-settings .usage-insights-toolbar{gap:12px;margin-bottom:16px}.react-settings .usage-insights-toolbar>.ui-select{width:170px}.react-settings .settings-group>.usage-calendar{padding:18px 14px;margin-block:20px}}

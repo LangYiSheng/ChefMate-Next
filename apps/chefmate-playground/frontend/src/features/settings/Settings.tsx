@@ -4,8 +4,10 @@ import {Icon} from '../../components/Icon';
 import {readUiPreferences, saveUiPreferences, type UiPreferencesSnapshot} from '../preferences/client';
 import {AppearanceSettings} from './AppearanceSettings';
 import {MemorySettings} from './MemorySettings';
-import {SettingsInsights} from './SettingsInsights';
-import {componentExamples, dependencyLabels, interfaceLabels, toolLabels} from './component-labels';
+import {SettingsInsights, UsageTimeRange} from './SettingsInsights';
+import {KeyboardSettings} from './KeyboardSettings';
+import {ComponentSettings} from './ComponentSettings';
+import {saveKeyboardPreferences, type KeyboardPreferences} from './keyboard-preferences';
 import {Field, SettingsGroup, SettingsTabs} from './SettingsFields';
 import {SettingsIndex} from './SettingsIndex';
 import {advanceRevisions, createDrafts, editableSections, isDirty, type Drafts, type SettingsRevision, type Values} from './settings-state';
@@ -13,6 +15,7 @@ import './settings-react.css';
 
 const sections = [
   ['display', '外观与对话', 'sun-moon', '按你的习惯使用小锅搭子。'],
+  ['keyboard', '快捷键', 'corner-down-left', '把常用操作放在顺手的按键上。'],
   ['cooking', '烹饪与计时', 'timer', '让计时和步骤切换更符合你的做饭习惯。'],
   ['memory', '长期记忆', 'book-open', '留下口味、忌口和做饭习惯，让每一次建议更懂你。'],
   ['model', '模型连接', 'plug', '选择模型、端点和连接方式。保存后用于接下来的对话。'],
@@ -26,13 +29,14 @@ const sections = [
   ['about', '关于 ChefMate', 'info', ''],
 ];
 const navigationGroups: Record<string, string> = {display: '偏好', model: '智能体', context: '高级设置', changelog: '产品信息'};
-const sectionTabs: Record<string, readonly string[]> = {display: ['配色与字体', '对话显示', '对话建议'], cooking: ['烹饪计时'], model: ['连接信息', '连接方式'], components: ['组件管理'], usage: ['用量概览', '每日趋势', '按模型统计'], context: ['信息容量'], runtime: ['等待与重试', '操作预算'], developer: ['调试信息'], changelog: ['更新记录']};
+const sectionTabs: Record<string, readonly string[]> = {display: ['配色与字体', '对话显示', '对话建议'], keyboard: ['发送消息', '浏览与返回'], cooking: ['计时规则', '声音提醒'], model: ['连接信息', '连接方式'], components: ['组件管理'], usage: ['用量概览', '按模型统计'], context: ['信息容量'], runtime: ['等待与重试', '操作预算'], developer: ['调试信息'], changelog: ['更新记录']};
 export type SettingsProps = {onClose: () => void; onSaved?: () => void; notify?: (message: string) => void};
 
 export function Settings({onClose, onSaved}: SettingsProps) {
   const [current, setCurrent] = useState('display'), [loaded, setLoaded] = useState<Values | null>(null), [status, setStatus] = useState<Values>({});
   const [drafts, setDrafts] = useState<Drafts>({}), [baselines, setBaselines] = useState<Drafts>({}), [revisions, setRevisions] = useState<Record<string, SettingsRevision>>({});
   const [displayRevision, setDisplayRevision] = useState('');
+  const [usageDays, setUsageDays] = useState('365');
   const [busy, setBusy] = useState(false), [testing, setTesting] = useState(false), [memoryDirty, setMemoryDirty] = useState(false), [memoryBusy, setMemoryBusy] = useState(false);
   const [notice, setNotice] = useState(''), [error, setError] = useState(false), [confirmation, setConfirmation] = useState<null | {text: string; action: () => void}>(null), [insightRefresh, setInsightRefresh] = useState(0);
   const form = useRef<HTMLFormElement>(null), content = useRef<HTMLDivElement>(null), alive = useRef(true), working = useRef(false), allowedNavigation = useRef(false), loadAbort = useRef<AbortController | null>(null), loadSequence = useRef(0), testAbort = useRef<AbortController | null>(null);
@@ -132,7 +136,8 @@ export function Settings({onClose, onSaved}: SettingsProps) {
         if (!alive.current) return;
         adoptDisplay(accepted);
       } else {
-      if (section === 'developer') localStorage.setItem('chefmate:developer-settings', JSON.stringify(values));
+      if (section === 'keyboard') saveKeyboardPreferences(values as KeyboardPreferences);
+      else if (section === 'developer') localStorage.setItem('chefmate:developer-settings', JSON.stringify(values));
       else {
         const payload: Values = section === 'components' ? {enabled_components: Object.keys(values).filter(key => values[key])} : {...values};
         if (section === 'cooking') delete payload.timer_sound;
@@ -145,7 +150,7 @@ export function Settings({onClose, onSaved}: SettingsProps) {
       setRevisions(previous => ({...previous, [section]: result.revision}));
       }
       window.dispatchEvent(new CustomEvent('chefmate:settings-saved')); onSaved?.();
-      say(section === 'cooking' ? '计时设置已保存，对当前和新会话立即生效。' : section === 'display' ? '外观与对话偏好已保存。' : '设置已保存。接下来的对话使用新设置。');
+      say(section === 'keyboard' ? '快捷键已保存，当前浏览器立即生效。' : section === 'cooking' ? '计时设置已保存，对当前和新会话立即生效。' : section === 'display' ? '外观与对话偏好已保存。' : '设置已保存。接下来的对话使用新设置。');
     } catch (reason) {if (alive.current) {if (remoteSaved) {window.dispatchEvent(new CustomEvent('chefmate:settings-saved')); onSaved?.();} say(`${remoteSaved ? '服务器设置已保存，本机偏好未保存；草稿已保留，可以重试。' : ''}${(reason as Error).message}`, true);}}
     finally {working.current = false; if (alive.current) {setBusy(false); flushPreferences();}}
   };
@@ -170,16 +175,17 @@ export function Settings({onClose, onSaved}: SettingsProps) {
     <section className="settings-workspace"><header className="settings-header"><div><h1>{selected[1]}</h1><p>{selected[3]}</p></div><button type="button" className="icon-button" aria-label="返回工作台" onClick={requestClose}><Icon name="x"/></button></header><div className="settings-content" ref={content}><div className="settings-reading-layout"><div className="settings-reading-main" data-settings-document>
       {notice && <p role="status" className={error ? 'settings-error' : 'settings-success'}>{notice}</p>}
       {!loaded ? <p className="settings-note">{busy ? '正在读取配置…' : '配置读取失败。'}{!busy && <button type="button" onClick={() => load()}>重试</button>}</p> : <>
-      <form id="settings-form" className={current === 'display' ? 'has-appearance' : ''} onSubmit={event => {event.preventDefault(); void save();}} ref={form}><SettingsTabs key={current} items={sectionTabs[current] || []} label={`${selected[1]}内容`}>
+      <form id="settings-form" className={current === 'display' ? 'has-appearance' : current === 'components' ? 'has-components' : ''} onSubmit={event => {event.preventDefault(); void save();}} ref={form}>{current === 'usage' && <UsageTimeRange value={usageDays} onChange={setUsageDays}/>}<SettingsTabs key={current} items={sectionTabs[current] || []} label={`${selected[1]}内容`}>
         {current === 'display' && <><SettingsGroup title="配色与字体">{field('显示模式', 'theme', {options: [['light', '浅色'], ['dark', '深色'], ['system', '跟随系统']]})}<AppearanceSettings values={values} change={change} disabled={locked}/></SettingsGroup><SettingsGroup title="对话显示">{field('每次回复展开几项内容', 'inline_limit', {options: [[1, '只展开一项'], [2, '最多两项']]})}{field('内容间距', 'density', {options: [['comfortable', '宽松 · 内容之间留白更多'], ['compact', '紧凑 · 同一屏显示更多内容']]})}{field('显示估算标记', 'show_estimates', {type: 'checkbox'})}</SettingsGroup><SettingsGroup title="对话建议">{field('显示推荐回复', 'reply_suggestions', {type: 'checkbox', hint: '点击只替换输入框里的文字，你可以修改后再发送。'})}{field('推荐回复数量', 'reply_suggestion_count', {options: [1, 2, 3, 4, 5, 6].map(count => [count, `${count} 条`])})}</SettingsGroup></>}
+        {current === 'keyboard' && <KeyboardSettings values={values as KeyboardPreferences} change={change} disabled={locked}/>}
         {current === 'model' && <><SettingsGroup title="连接信息">{field('API 端点', 'base_url', {required: true, hint: 'OpenAI 兼容端点通常以 /v1 结尾。'})}{field('模型名称', 'model', {required: true})}{field('API Key', 'api_key', {type: 'password', hint: loaded.api_key_set ? '已保存密钥。留空沿用同一端点的密钥；更换供应商需填写专用密钥。' : '尚未保存密钥。'})}</SettingsGroup><SettingsGroup title="连接方式">{field('支持图片输入', 'supports_images', {type: 'checkbox', hint: '按模型实际能力开启，用于识图与拍照记餐。'})}{field('同时接收的图片上限', 'max_images', {type: 'number', min: 1, max: 12})}{field('请求协议', 'api_format', {options: [['chat_completions', 'OpenAI · Chat Completions'], ['responses', 'OpenAI · Responses']]})}{field('流式工具调用', 'stream_tool_calls', {type: 'checkbox'})}<button type="button" className="secondary-button" disabled={locked} onClick={test}>{testing ? '正在验证连接…' : '测试连接与工具调用'}</button></SettingsGroup></>}
-        {current === 'cooking' && <SettingsGroup title="烹饪计时">{field('到时声音提醒', 'timer_sound', {type: 'checkbox', hint: '页面打开时播放提示音，音量跟随设备。'})}<button type="button" className="secondary-button" onClick={previewChime}>试听提醒声</button>{field('同时进行的计时器', 'timer_limit', {options: [[1, '单计时器'], [3, '最多 3 个']], hint: '运行和暂停计入上限；已有计时会保留。'})}{field('切换步骤时清除上一步计时', 'clear_timer_on_step_change', {type: 'checkbox', hint: '仅在进入下一实际步骤时清除，浏览步骤不影响计时。'})}</SettingsGroup>}
-        {current === 'components' && <SettingsGroup title="组件管理"><p className="components-intro">决定小锅搭子能帮你做什么。关闭后保留已有记录。</p>{(loaded.components || []).map((component: any) => <section className="settings-component" id={`settings-component-${component.id}`} data-settings-index={component.name} key={component.id}>{field(component.name, component.id, {type: 'checkbox', hint: component.description})}<details className="settings-component-details"><summary>查看能力</summary><div className="settings-component-body">{componentExamples[component.id] && <><h3>可以这样说</h3><p className="component-example">{componentExamples[component.id]}</p></>}<h3>可执行功能</h3><ul className="component-tool-list">{(component.tools || []).map((tool: string) => <li key={tool}><span>{toolLabels[tool] || tool}</span><code>{tool}</code></li>)}</ul><h3>界面与组成</h3><p>{[...(component.ui?.kinds || []), ...(component.ui?.pages || [])].map((id: string) => interfaceLabels[id] || id).join('、') || '在当前对话内使用'}</p><dl className="component-manifest"><dt>组件 ID</dt><dd>{component.id}</dd><dt>指南</dt><dd>{component.instructions?.entrypoint || '未提供'}</dd><dt>加载方式</dt><dd>{component.instructions?.loading === 'on_demand' ? '按需读取' : component.instructions?.loading}</dd><dt>依赖</dt><dd>{(component.dependencies || []).map((id: string) => dependencyLabels[id] || id).join('、') || '无额外依赖'}</dd><dt>状态</dt><dd>{component.available === false ? '依赖尚未就绪' : '已就绪'}</dd></dl></div></details></section>)}<p className="settings-note">开关同时控制组件指南与工具权限。</p></SettingsGroup>}
+        {current === 'cooking' && <><SettingsGroup title="计时规则">{field('同时进行的计时器', 'timer_limit', {options: [[1, '单计时器'], [3, '最多 3 个']], hint: '运行和暂停计入上限；已有计时会保留。'})}{field('切换步骤时清除上一步计时', 'clear_timer_on_step_change', {type: 'checkbox', hint: '仅在进入下一实际步骤时清除，浏览步骤不影响计时。'})}</SettingsGroup><SettingsGroup title="声音提醒">{field('到时声音提醒', 'timer_sound', {type: 'checkbox', hint: '页面打开时播放提示音，音量跟随设备。', action: <button type="button" className="secondary-button" disabled={locked} onClick={previewChime}><Icon name="play"/>试听提醒声</button>})}</SettingsGroup></>}
+        {current === 'components' && <ComponentSettings components={loaded.components || []} values={values} change={change} disabled={locked}/>}
         {current === 'context' && <SettingsGroup title="信息容量">{field('会话上下文上限', 'max_history_chars', {type: 'number', min: 4000, max: 2000000, hint: '字符，包含对话历史与本轮工具信息。默认 400,000。'})}{field('单次工具结果上限', 'max_tool_result_chars', {type: 'number', min: 2000, max: 200000, hint: '字符，控制每次查询送给模型的信息量。默认 60,000。'})}<p className="settings-note">这里按字符计量，和模型的 token 上限不同。提高预算可以容纳更多结果，也会增加每轮发送的信息量。</p></SettingsGroup>}
         {current === 'runtime' && <><SettingsGroup title="等待与重试">{field('单轮任务时限', 'turn_timeout_s', {type: 'number', min: 10, max: 300, hint: '秒，10–300'})}{field('单次模型等待', 'model_timeout_s', {type: 'number', min: 10, max: 300, hint: '秒，10–300'})}{field('模型请求重试', 'model_max_retries', {type: 'number', min: 0, max: 2})}</SettingsGroup><SettingsGroup title="操作预算">{field('模型调用上限', 'max_model_rounds', {type: 'number', min: 2, max: 30})}{field('工具调用上限', 'max_tool_calls', {type: 'number', min: 2, max: 50})}</SettingsGroup></>}
         {current === 'developer' && <SettingsGroup title="调试信息">{field('开发者模式', 'enabled', {type: 'checkbox', hint: '显示上下文占用、系统组件、工具和脱敏请求记录。'})}{field('记录展示方式', 'trace_mode', {options: [['compact', '收起记录 · 按需展开'], ['detailed', '展开公开执行轨迹']]})}<p className="settings-note">只展示公开操作与工具状态。Token 分解为估算；实际用量以服务端报告为准。</p></SettingsGroup>}
         {current === 'data' && <><SettingsGroup title="当前连接">{[['模型', status.model || '尚未配置'], ['菜谱库', status.database?.ready ? '已连接' : '暂未连接'], ['菜谱数量', `${status.database?.recipe_count || 0} 道`], ['数据版本', status.database?.data_version || '未知'], ['进行中的对话', String(status.active_sessions || 0)]].map(([label, value]) => <div className="status-row" key={label}><span>{label}</span><span>{value}</span></div>)}</SettingsGroup><SettingsGroup title="本机保存"><p className="settings-note">会话、厨房进度和计时器随当前任务保存。模型与组件设置保存在本机，外观与对话偏好会在这个工作台的设置页与助手之间同步。</p></SettingsGroup></>}
-        {['usage', 'changelog', 'about'].includes(current) && <SettingsInsights section={current} refresh={insightRefresh}/>}
+        {['usage', 'changelog', 'about'].includes(current) && <SettingsInsights section={current} refresh={insightRefresh} usageDays={current === 'usage' ? usageDays : undefined}/>}
       </SettingsTabs></form>
       <MemorySettings active={current === 'memory'} onDirty={setMemoryDirty} onBusy={setMemoryBusy}/>
       </>}
