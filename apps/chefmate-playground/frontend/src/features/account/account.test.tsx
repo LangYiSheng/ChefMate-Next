@@ -22,6 +22,26 @@ beforeEach(() => {
 afterEach(() => vi.restoreAllMocks());
 
 describe('Account boundary', () => {
+  it('reads the latest wallet on entering the account page after earlier usage', async () => {
+    let reads = 0; const updated = user({quota: {...user().quota, used_cost_micros: 500000}});
+    request.mockImplementation(() => Promise.resolve({user: ++reads === 1 ? user() : updated}));
+    render(<AccountGate>{(account, refresh, logout) => <AccountPanel user={account} refresh={refresh} logout={logout} notify={vi.fn()}/>}</AccountGate>);
+    expect(await screen.findByText('剩余额度 ¥4.50')).toBeVisible(); expect(reads).toBe(2);
+  });
+  it('reports a real manual wallet refresh failure without claiming success', async () => {
+    let reads = 0; const notify = vi.fn(); request.mockImplementation(() => ++reads <= 2 ? Promise.resolve({user: user()}) : Promise.reject(new Error('金额信息暂时无法读取')));
+    render(<AccountGate>{(account, refresh, logout) => <AccountPanel user={account} refresh={refresh} logout={logout} notify={notify}/>}</AccountGate>);
+    await screen.findByText('剩余额度 ¥4.99'); await waitFor(() => expect(reads).toBe(2)); fireEvent.click(screen.getByRole('button', {name: '刷新'}));
+    expect(await screen.findByRole('alert')).toHaveTextContent('金额信息暂时无法读取'); expect(screen.queryByText('账号信息已更新。')).not.toBeInTheDocument(); expect(notify).not.toHaveBeenCalled();
+  });
+  it('ignores an older wallet response after a newer refresh has completed', async () => {
+    let reads = 0, old!: (value: unknown) => void, latest!: (value: unknown) => void;
+    request.mockImplementation(() => ++reads === 1 ? Promise.resolve({user: user()}) : new Promise(resolve => {if (reads === 2) old = resolve; else latest = resolve;}));
+    render(<AccountGate>{account => <p aria-label="当前已用金额">{account.quota.used_cost_micros}</p>}</AccountGate>); await screen.findByLabelText('当前已用金额');
+    act(() => window.dispatchEvent(new Event('focus'))); act(() => window.dispatchEvent(new Event('focus')));
+    await act(async () => latest({user: user({quota: {...user().quota, used_cost_micros: 200000}})})); expect(screen.getByLabelText('当前已用金额')).toHaveTextContent('200000');
+    await act(async () => old({user: user({quota: {...user().quota, used_cost_micros: 900000}})})); expect(screen.getByLabelText('当前已用金额')).toHaveTextContent('200000');
+  });
   it('does not mount the workspace before authentication and preserves unrelated browser data', async () => {
     let release!: (value: unknown) => void;
     request.mockReturnValue(new Promise(resolve => {release = resolve;}));
@@ -160,9 +180,28 @@ describe('Account and administrator controls', () => {
   });
   it('protects a profile draft on account refresh and reads once after an explicit discard', async () => {
     const refresh = vi.fn().mockResolvedValue(undefined);
-    render(<AccountPanel user={user()} refresh={refresh} logout={vi.fn()} notify={vi.fn()}/>); fireEvent.change(screen.getByLabelText('称呼'), {target: {value: '未保存的小厨'}});
+    render(<AccountPanel user={user()} refresh={refresh} logout={vi.fn()} notify={vi.fn()}/>); await waitFor(() => expect(refresh).toHaveBeenCalledOnce()); refresh.mockClear(); fireEvent.change(screen.getByLabelText('称呼'), {target: {value: '未保存的小厨'}});
     fireEvent.click(screen.getByRole('button', {name: '刷新'})); fireEvent.click(screen.getByRole('button', {name: '继续编辑'})); expect(refresh).not.toHaveBeenCalled(); expect(screen.getByLabelText('称呼')).toHaveValue('未保存的小厨');
     fireEvent.click(screen.getByRole('button', {name: '刷新'})); fireEvent.click(screen.getByRole('button', {name: '放弃修改'})); await waitFor(() => expect(refresh).toHaveBeenCalledOnce()); expect(screen.getByLabelText('称呼')).toHaveValue('小晚');
+  });
+  it('keeps a local profile draft while a new wallet and remote profile arrive', () => {
+    const refresh = vi.fn().mockResolvedValue(undefined), view = render(<AccountPanel user={user()} refresh={refresh} logout={vi.fn()} notify={vi.fn()}/>);
+    fireEvent.change(screen.getByLabelText('称呼'), {target: {value: '未保存的小厨'}});
+    view.rerender(<AccountPanel user={user({display_name: '服务器新称呼', quota: {...user().quota, used_cost_micros: 500000}})} refresh={refresh} logout={vi.fn()} notify={vi.fn()}/>);
+    expect(screen.getByLabelText('称呼')).toHaveValue('未保存的小厨'); expect(screen.getByText('剩余额度 ¥4.50')).toBeVisible();
+  });
+  it('incorporates remote consent revocation while preserving an unrelated nickname draft', () => {
+    const first = user({profile: {...user().profile, use_for_ai: true}}), refresh = vi.fn().mockResolvedValue(undefined);
+    const view = render(<AccountPanel user={first} refresh={refresh} logout={vi.fn()} notify={vi.fn()}/>); fireEvent.change(screen.getByLabelText('称呼'), {target: {value: '未保存的小厨'}});
+    view.rerender(<AccountPanel user={{...first, profile: {...first.profile, use_for_ai: false}}} refresh={refresh} logout={vi.fn()} notify={vi.fn()}/>);
+    expect(screen.getByLabelText('称呼')).toHaveValue('未保存的小厨'); expect(screen.getByRole('switch', {name: '将厨房档案用于对话建议'})).not.toBeChecked();
+  });
+  it('marks an existing draft clean when a refreshed server profile has the same values', () => {
+    const refresh = vi.fn().mockResolvedValue(undefined), view = render(<AccountPanel user={user()} refresh={refresh} logout={vi.fn()} notify={vi.fn()}/>);
+    fireEvent.change(screen.getByLabelText('称呼'), {target: {value: '已经保存的小厨'}});
+    view.rerender(<AccountPanel user={user({display_name: '已经保存的小厨'})} refresh={refresh} logout={vi.fn()} notify={vi.fn()}/>);
+    let accepted = false; act(() => {accepted = window.dispatchEvent(new CustomEvent('chefmate:before-page-change', {cancelable: true, detail: {page: 'chat', resume: vi.fn()}}));});
+    expect(accepted).toBe(true); expect(screen.queryByRole('dialog', {name: '保留未保存的修改？'})).not.toBeInTheDocument();
   });
   it('lets the account owner turn profile sharing off without losing the saved kitchen profile', async () => {
     request.mockResolvedValue({user: user()}); const account = user(); account.profile = {...account.profile, use_for_ai: true, preferences: ['喜欢家常菜']};

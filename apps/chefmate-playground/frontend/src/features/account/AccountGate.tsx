@@ -46,7 +46,7 @@ type Props = {children: (user: AccountUser, refresh: () => Promise<void>, logout
 export function AccountGate({children}: Props) {
   const [session, setSession] = useState<AccountSession | null>(null), [error, setError] = useState(''), [expired, setExpired] = useState(false);
   const [checking, setChecking] = useState(true), [switching, setSwitching] = useState(false);
-  const alive = useRef(true), epoch = useRef(0), userRef = useRef<AccountUser | null>(null), verifyingSession = useRef(false);
+  const alive = useRef(true), epoch = useRef(0), refreshSequence = useRef(0), userRef = useRef<AccountUser | null>(null), verifyingSession = useRef(false);
   const accept = useCallback(async (next: AccountSession) => {
     const version = ++epoch.current;
     if (userRef.current?.id !== next.user?.id) {
@@ -58,34 +58,42 @@ export function AccountGate({children}: Props) {
     userRef.current = next.user; setSession(next); setError(''); setChecking(false); setSwitching(false); if (next.user) setExpired(false);
   }, []);
   const refresh = useCallback(async () => {
-    const version = epoch.current;
-    try {const next = await api<AccountSession>('/api/auth/me'); if (version === epoch.current && alive.current) await accept(next);}
-    catch (reason) {if (alive.current) {setError((reason as Error).message); setChecking(false);}}
+    const version = epoch.current, sequence = ++refreshSequence.current;
+    let accepting = false;
+    try {
+      const next = await api<AccountSession>('/api/auth/me');
+      if (!alive.current || version !== epoch.current || sequence !== refreshSequence.current) throw new DOMException('账号刷新已被新的读取替代。', 'AbortError');
+      accepting = true; await accept(next);
+    } catch (reason) {
+      if (!alive.current || sequence !== refreshSequence.current || !accepting && version !== epoch.current) throw new DOMException('账号刷新已被新的读取替代。', 'AbortError');
+      if ((reason as Error).name !== 'AbortError') {setError((reason as Error).message); setChecking(false);}
+      throw reason;
+    }
   }, [accept]);
   const logout = useCallback(async () => {
     await api('/api/auth/logout', {method: 'POST'});
     await accept({user: null, registration_enabled: false});
     history.replaceState({}, '', '/');
-    await refresh();
+    await refresh().catch(() => undefined);
   }, [accept, refresh]);
   useEffect(() => {
-    alive.current = true; void refresh();
+    alive.current = true; void refresh().catch(() => undefined);
     const invalid = () => {
       if (!userRef.current || verifyingSession.current) return;
       verifyingSession.current = true; epoch.current++; setExpired(true); setSession(null); setChecking(true);
-      void refresh().finally(() => {verifyingSession.current = false;});
+      void refresh().catch(() => undefined).finally(() => {verifyingSession.current = false;});
     };
     const storage = (event: StorageEvent) => {
       if (event.key !== ACCOUNT_KEY) return;
       epoch.current++; setSession(null); setChecking(true); userRef.current = null; chefStore.dispose();
-      void refresh();
+      void refresh().catch(() => undefined);
     };
-    const visible = () => {if (document.visibilityState !== 'hidden') void refresh();};
+    const visible = () => {if (document.visibilityState !== 'hidden') void refresh().catch(() => undefined);};
     window.addEventListener('chefmate:session-expired', invalid); window.addEventListener('storage', storage); window.addEventListener('focus', visible);
     return () => {alive.current = false; epoch.current++; window.removeEventListener('chefmate:session-expired', invalid); window.removeEventListener('storage', storage); window.removeEventListener('focus', visible);};
   }, [accept, refresh]);
   if (checking || switching) return <main className="account-loading" aria-label="正在打开 ChefMate"><Brand className="account-brand-mark"/><p role="status">{switching ? '正在整理你的厨房…' : '正在打开小锅搭子…'}</p></main>;
-  if (error && !session) return <main className="account-loading"><Brand className="account-brand-mark"/><h1>厨房暂时没有连上</h1><p role="alert">{error}</p><button className="primary-button" onClick={() => {setChecking(true); void refresh();}}>重新连接</button></main>;
+  if (error && !session) return <main className="account-loading"><Brand className="account-brand-mark"/><h1>厨房暂时没有连上</h1><p role="alert">{error}</p><button className="primary-button" onClick={() => {setChecking(true); void refresh().catch(() => undefined);}}>重新连接</button></main>;
   if (!session?.user) return <AuthScreen registrationEnabled={session?.registration_enabled !== false} expired={expired} onAccepted={async user => {setExpired(false); await accept({user, registration_enabled: session?.registration_enabled});}}/>;
   if (!session.user.onboarding_completed) return <Onboarding user={session.user} onComplete={user => void accept({...session, user})} onLogout={logout}/>;
   return <>{children(session.user, refresh, logout)}</>;

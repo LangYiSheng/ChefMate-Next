@@ -5,30 +5,44 @@ import {Select} from '../../components/ui/Select';
 import type {AccountUser} from './types';
 import {money, tokens, quotaAmounts, PROFILE_PREFERENCES} from './types';
 import {AccountLeavePrompt, useAccountLeaveGuard} from './leave-guard';
+const profileKey = (user: AccountUser) => JSON.stringify([user.display_name, user.profile.household_size || 1, user.profile.cooking_level || 'beginner', user.profile.preferences || [], user.profile.use_for_ai === true]);
 
 export function AccountPanel({user, refresh, logout, notify}: {user: AccountUser; refresh: () => Promise<void>; logout: () => Promise<void>; notify: (message: string) => void}) {
   const [name, setName] = useState(user.display_name), [household, setHousehold] = useState(user.profile.household_size || 1), [level, setLevel] = useState(user.profile.cooking_level || 'beginner');
   const [preferences, setPreferences] = useState(user.profile.preferences || []), [useForAi, setUseForAi] = useState(user.profile.use_for_ai === true);
-  const preferencesKey = JSON.stringify(user.profile.preferences || []);
+  const serverProfileKey = profileKey(user);
   const [currentPassword, setCurrentPassword] = useState(''), [password, setPassword] = useState(''), [confirm, setConfirm] = useState('');
   const [busy, setBusy] = useState(''), [error, setError] = useState(''), [message, setMessage] = useState('');
   const alive = useRef(true), working = useRef(false);
-  const profileDirty = name !== user.display_name || household !== (user.profile.household_size || 1) || level !== (user.profile.cooking_level || 'beginner') || JSON.stringify(preferences) !== preferencesKey || useForAi !== (user.profile.use_for_ai === true);
+  const [baseline, setBaseline] = useState(serverProfileKey);
+  const profileOwner = useRef(user.id), refreshRef = useRef(refresh); refreshRef.current = refresh;
+  const draftKey = JSON.stringify([name, household, level, preferences, useForAi]), profileDirty = draftKey !== baseline;
+  const adoptProfile = (next: AccountUser) => {setBaseline(profileKey(next)); profileOwner.current = next.id; setName(next.display_name); setHousehold(next.profile.household_size || 1); setLevel(next.profile.cooking_level || 'beginner'); setPreferences([...(next.profile.preferences || [])]); setUseForAi(next.profile.use_for_ai === true);};
   const {pendingLeave, setPendingLeave} = useAccountLeaveGuard(profileDirty, Boolean(busy), setError, 'account');
   useEffect(() => {alive.current = true; return () => {alive.current = false;};}, []);
-  useEffect(() => {setName(user.display_name); setHousehold(user.profile.household_size || 1); setLevel(user.profile.cooking_level || 'beginner');}, [user.id, user.display_name, user.profile.household_size, user.profile.cooking_level]);
-  useEffect(() => {setPreferences(JSON.parse(preferencesKey)); setUseForAi(user.profile.use_for_ai === true);}, [user.id, preferencesKey, user.profile.use_for_ai]);
+  useEffect(() => {
+    if (profileOwner.current !== user.id || !profileDirty || serverProfileKey === draftKey) {adoptProfile(user); return;}
+    // Keep edited fields, but incorporate server changes to untouched fields.
+    // In particular, a balance refresh must not re-enable revoked AI consent.
+    const previous = JSON.parse(baseline);
+    if (name === previous[0]) setName(user.display_name);
+    if (household === previous[1]) setHousehold(user.profile.household_size || 1);
+    if (level === previous[2]) setLevel(user.profile.cooking_level || 'beginner');
+    if (JSON.stringify(preferences) === JSON.stringify(previous[3])) setPreferences([...(user.profile.preferences || [])]);
+    if (useForAi === previous[4]) setUseForAi(user.profile.use_for_ai === true);
+    setBaseline(serverProfileKey);
+  }, [user.id, serverProfileKey]);
+  useEffect(() => {void (async () => {try {await refreshRef.current();} catch (problem) {if (alive.current && (problem as Error).name !== 'AbortError') setError((problem as Error).message);}})();}, [user.id]);
   async function run(kind: string, action: () => Promise<unknown>, text: string) {
     if (working.current) return;
     working.current = true; setBusy(kind); setError(''); setMessage('');
     try {await action(); if (alive.current && kind !== 'refresh') await refresh(); if (alive.current) {setMessage(text); notify(text);}}
-    catch (reason) {if (alive.current) setError((reason as Error).message);}
+    catch (reason) {if (alive.current && (reason as Error).name !== 'AbortError') setError((reason as Error).message);}
     finally {working.current = false; if (alive.current) setBusy('');}
   }
   const requestRefresh = () => {
     const resume = () => {
-      setName(user.display_name); setHousehold(user.profile.household_size || 1); setLevel(user.profile.cooking_level || 'beginner');
-      setPreferences([...(user.profile.preferences || [])]); setUseForAi(user.profile.use_for_ai === true);
+      adoptProfile(user);
       void run('refresh', refresh, '账号信息已更新。');
     };
     if (window.dispatchEvent(new CustomEvent('chefmate:before-page-change', {cancelable: true, detail: {page: 'account-refresh', resume}}))) resume();
@@ -42,7 +56,7 @@ export function AccountPanel({user, refresh, logout, notify}: {user: AccountUser
       {Boolean(quota.estimated_cost_micros) && <p className="account-notice">模型未完整报告的请求中，待核对的预估金额 {money(quota.estimated_cost_micros)} 已计入已用金额。管理员核对后会更新金额与余额，原用量报告保留。</p>}
       <p className="account-fineprint">金额按管理员设置的单价和模型用量计算。预留用于正在执行的请求，结束后会调整。累计已报告用量 {tokens(quota.used_tokens)} Token，仅作使用统计。</p>
     </section>
-    <section className="account-section" aria-labelledby="account-profile-heading"><div className="account-section-heading"><div><h2 id="account-profile-heading">个人资料</h2><p>你可以在对话里随时补充这顿饭的具体要求。</p></div><Icon name="user-round"/></div><form className="account-profile-form" onSubmit={event => {event.preventDefault(); void run('profile', () => api('/api/auth/onboarding', {method: 'PATCH', body: JSON.stringify({display_name: name.trim(), cooking_level: level, household_size: household, preferences, theme: user.profile.theme || 'system', use_for_ai: useForAi})}), '个人资料已保存。');}}>
+    <section className="account-section" aria-labelledby="account-profile-heading"><div className="account-section-heading"><div><h2 id="account-profile-heading">个人资料</h2><p>你可以在对话里随时补充这顿饭的具体要求。</p></div><Icon name="user-round"/></div><form className="account-profile-form" onSubmit={event => {event.preventDefault(); void run('profile', async () => {const result = await api<{user: AccountUser}>('/api/auth/onboarding', {method: 'PATCH', body: JSON.stringify({display_name: name.trim(), cooking_level: level, household_size: household, preferences, theme: user.profile.theme || 'system', use_for_ai: useForAi})}); if (alive.current) adoptProfile(result.user);}, '个人资料已保存。');}}>
       <label className="account-field"><span>称呼</span><input value={name} required maxLength={40} onChange={event => setName(event.target.value)} disabled={Boolean(busy)}/></label><div className="account-field"><label htmlFor="account-household">平时用餐人数</label><Select id="account-household" value={String(household)} onValueChange={value => setHousehold(Number(value))} options={Array.from({length: 20}, (_, index) => ({value: String(index + 1), label: `${index + 1} 人`}))} disabled={Boolean(busy)}/></div><div className="account-field"><label htmlFor="account-cooking-level">下厨经验</label><Select id="account-cooking-level" value={level} onValueChange={setLevel} options={[{value: 'beginner', label: '刚刚开始'}, {value: 'comfortable', label: '日常下厨'}, {value: 'confident', label: '厨房熟手'}]} disabled={Boolean(busy)}/></div><fieldset className="account-profile-preferences"><legend>厨房偏好 <small>可多选</small></legend><div>{PROFILE_PREFERENCES.map(choice => <button type="button" key={choice} disabled={Boolean(busy)} aria-pressed={preferences.includes(choice)} onClick={() => setPreferences(current => current.includes(choice) ? current.filter(item => item !== choice) : [...current, choice])}>{preferences.includes(choice) && <Icon name="check"/>}{choice}</button>)}</div></fieldset><label className="account-consent"><span><strong>将厨房档案用于对话建议</strong><small>开启后会发送给当前模型服务商。关闭并保存后，后续对话不再加入这份档案。</small></span><input type="checkbox" role="switch" aria-label="将厨房档案用于对话建议" checked={useForAi} disabled={Boolean(busy)} onChange={event => setUseForAi(event.target.checked)}/></label><div className="account-form-actions"><button className="primary-button" type="submit" disabled={Boolean(busy) || !name.trim()}>{busy === 'profile' ? '正在保存…' : '保存资料'}</button></div>
     </form></section>
     <section className="account-section" aria-labelledby="account-password-heading"><div className="account-section-heading"><div><h2 id="account-password-heading">账号安全</h2><p>更新密码后，其他设备需要重新登录。</p></div><Icon name="shield-check"/></div><form className="account-password-form" onSubmit={event => {event.preventDefault(); if (password !== confirm) {setError('两次新密码不一致，请重新核对。'); return;} void run('password', async () => {await api('/api/auth/password', {method: 'PATCH', body: JSON.stringify({current_password: currentPassword, new_password: password})}); setCurrentPassword(''); setPassword(''); setConfirm('');}, '密码已更新。');}}>
