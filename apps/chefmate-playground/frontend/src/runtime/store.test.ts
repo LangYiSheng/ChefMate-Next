@@ -40,6 +40,15 @@ function controlledStream() {
 }
 
 describe('React conversation store lifecycle', () => {
+  it('removes account-owned state and ignores late responses from the previous account', async () => {
+    const pending = deferred<Response>();
+    const {store} = harness(path => path === '/api/status' ? pending.promise : undefined);
+    const starting = store.start(); await flush(); await store.openSession('previous-private-chat'); store.setDraft('previous-private-draft');
+    expect(store.getSnapshot().currentId).toBe('previous-private-chat');
+    await store.resetForAccount('next-account');
+    pending.resolve(json({ready: true, model: 'previous-account-model'})); await starting;
+    expect(store.getSnapshot()).toMatchObject({currentId: null, status: null, session: null, sessions: [], cache: {}, drafts: {}, imageDrafts: {}, continuations: {}});
+  });
   it('keeps stable snapshots and does not mutate snapshots already rendered by React', async () => {
     const connection = controlledStream(); let requestId = '';
     const { store } = harness((path, options) => {

@@ -30,10 +30,13 @@ const sections = [
 ];
 const navigationGroups: Record<string, string> = {display: '偏好', model: '智能体', context: '高级设置', changelog: '产品信息'};
 const sectionTabs: Record<string, readonly string[]> = {display: ['配色与字体', '对话显示', '对话建议'], keyboard: ['发送消息', '浏览与返回'], cooking: ['计时规则', '声音提醒'], model: ['连接信息', '连接方式'], components: ['组件管理'], usage: ['用量概览', '按模型统计'], context: ['信息容量'], runtime: ['等待与重试', '操作预算'], developer: ['调试信息'], changelog: ['更新记录']};
-export type SettingsProps = {onClose: () => void; onSaved?: () => void; notify?: (message: string) => void};
+export type SettingsProps = {onClose: () => void; onSaved?: () => void; onAccount?: () => void; notify?: (message: string) => void; scope?: 'personal' | 'admin'; initialSection?: string; apiBase?: string; developerAllowed?: boolean};
 
-export function Settings({onClose, onSaved}: SettingsProps) {
-  const [current, setCurrent] = useState('display'), [loaded, setLoaded] = useState<Values | null>(null), [status, setStatus] = useState<Values>({});
+export function Settings({onClose, onSaved, onAccount, scope, initialSection = 'display', apiBase = '/api/settings', developerAllowed = true}: SettingsProps) {
+  const globalSections = ['model', 'components', 'context', 'runtime', 'data'];
+  const visibleSections = sections.filter(([id]) => (!scope || (scope === 'admin' ? globalSections.includes(id) : !globalSections.includes(id))) && (id !== 'developer' || developerAllowed));
+  const [sectionChoice, setCurrent] = useState(initialSection), [loaded, setLoaded] = useState<Values | null>(null), [status, setStatus] = useState<Values>({});
+  const current = visibleSections.some(([id]) => id === sectionChoice) ? sectionChoice : visibleSections[0][0];
   const currentRef = useRef(current); currentRef.current = current;
   const [drafts, setDrafts] = useState<Drafts>({}), [baselines, setBaselines] = useState<Drafts>({}), [revisions, setRevisions] = useState<Record<string, SettingsRevision>>({});
   const [displayRevision, setDisplayRevision] = useState('');
@@ -63,7 +66,7 @@ export function Settings({onClose, onSaved}: SettingsProps) {
     working.current = true; setBusy(true);
     const controller = new AbortController(), epoch = ++loadSequence.current; loadAbort.current = controller;
     try {
-      const [settings, service, initialPreferences] = await Promise.all([api('/api/settings', {signal: controller.signal}), api('/api/status', {signal: controller.signal}), readUiPreferences({signal: controller.signal})]);
+      const [settings, service, initialPreferences] = await Promise.all([api(apiBase, {signal: controller.signal}), api('/api/status', {signal: controller.signal}), readUiPreferences({signal: controller.signal})]);
       if (!alive.current || controller.signal.aborted || epoch !== loadSequence.current) return;
       let preferences = initialPreferences;
       // Revisions are opaque hashes: an event can arrive after a newer GET result.
@@ -86,7 +89,7 @@ export function Settings({onClose, onSaved}: SettingsProps) {
       say(!accepted.includes('display') && preferences.revision !== displayRevisionRef.current ? '已读取最新设置。外观与对话偏好在其他位置更新，当前草稿已保留；请重新读取外观页并核对。' : '');
     } catch (reason) {if (alive.current && !controller.signal.aborted && epoch === loadSequence.current) say((reason as Error).message, true);}
     finally {if (epoch === loadSequence.current) {working.current = false; loadAbort.current = null; pendingPreferences.current = null; if (alive.current) setBusy(false);}}
-  }, []);
+  }, [apiBase]);
   useEffect(() => {alive.current = true; void load(); return () => {alive.current = false; loadSequence.current++; loadAbort.current?.abort(); testAbort.current?.abort(); working.current = false;};}, [load]);
   useEffect(() => {
     const receive = (event: Event) => {
@@ -142,7 +145,7 @@ export function Settings({onClose, onSaved}: SettingsProps) {
       else {
         const payload: Values = section === 'components' ? {enabled_components: Object.keys(values).filter(key => values[key])} : {...values};
         if (section === 'cooking') delete payload.timer_sound;
-        if (section !== 'cooking' || isDirty(payload, loaded.cooking)) {result = await api('/api/settings', {method: 'PATCH', body: JSON.stringify({revision: previousRevision, section, values: payload})}); acceptRemote(result);}
+        if (section !== 'cooking' || isDirty(payload, loaded.cooking)) {result = await api(apiBase, {method: 'PATCH', body: JSON.stringify({revision: previousRevision, section, values: payload})}); acceptRemote(result);}
         if (section === 'cooking') localStorage.setItem('chefmate:kitchen-preferences', JSON.stringify({timer_sound: values.timer_sound !== false}));
       }
       if (!alive.current) return;
@@ -158,7 +161,7 @@ export function Settings({onClose, onSaved}: SettingsProps) {
   const test = async () => {
     if (locked || working.current || !form.current?.reportValidity()) return;
     const payload = JSON.stringify(drafts.model), controller = new AbortController(); testAbort.current = controller; working.current = true; setTesting(true); say('正在验证原生工具调用…');
-    try {const result = await api('/api/settings/test-model', {method: 'POST', body: payload, signal: controller.signal}); if (alive.current && !controller.signal.aborted) say(result.message, !result.ok);}
+    try {const result = await api(`${apiBase}/test-model`, {method: 'POST', body: payload, signal: controller.signal}); if (alive.current && !controller.signal.aborted) say(result.message, !result.ok);}
     catch (reason) {if (alive.current && !controller.signal.aborted) say((reason as Error).message, true);}
     finally {working.current = false; testAbort.current = null; if (alive.current) {setTesting(false); flushPreferences();}}
   };
@@ -172,7 +175,7 @@ export function Settings({onClose, onSaved}: SettingsProps) {
   const readOnly = !editableSections.includes(current);
   return <div className="settings-page react-settings" aria-label="ChefMate 设置">
     <nav className="settings-nav" aria-label="设置分类" onKeyDown={event => {if (!['ArrowRight', 'ArrowLeft', 'ArrowUp', 'ArrowDown', 'Home', 'End'].includes(event.key)) return; const buttons = Array.from(event.currentTarget.querySelectorAll<HTMLButtonElement>('[data-section]')); const index = buttons.indexOf(event.target as HTMLButtonElement); if (index < 0) return; event.preventDefault(); const next = event.key === 'Home' ? 0 : event.key === 'End' ? buttons.length - 1 : (index + (['ArrowRight', 'ArrowDown'].includes(event.key) ? 1 : -1) + buttons.length) % buttons.length; buttons[next].focus(); buttons[next].click();}}>
-      {sections.map(([id, title, icon]) => <Fragment key={id}>{navigationGroups[id] && <span className="settings-nav-label">{navigationGroups[id]}</span>}<button type="button" data-section={id} aria-current={current === id ? 'page' : undefined} onClick={() => {if (!locked) setCurrent(id);}} disabled={locked}><Icon name={icon}/><span>{title}</span>{dirtySections.includes(id) || id === 'memory' && memoryDirty ? <span aria-label="有未保存修改">•</span> : null}</button></Fragment>)}
+      {visibleSections.map(([id, title, icon]) => <Fragment key={id}>{navigationGroups[id] && <span className="settings-nav-label">{navigationGroups[id]}</span>}<button type="button" data-section={id} aria-current={current === id ? 'page' : undefined} onClick={() => {if (!locked) setCurrent(id);}} disabled={locked}><Icon name={icon}/><span>{title}</span>{dirtySections.includes(id) || id === 'memory' && memoryDirty ? <span aria-label="有未保存修改">•</span> : null}</button></Fragment>)}
     </nav>
     <section className="settings-workspace"><header className="settings-header"><div><h1>{selected[1]}</h1><p>{selected[3]}</p></div><button type="button" className="icon-button" aria-label="返回工作台" onClick={requestClose}><Icon name="x"/></button></header><div className="settings-content" ref={content}><div className="settings-reading-layout"><div className="settings-reading-main" data-settings-document>
       {notice && <p role="status" className={error ? 'settings-error' : 'settings-success'}>{notice}</p>}
@@ -192,10 +195,10 @@ export function Settings({onClose, onSaved}: SettingsProps) {
           <div><dt>菜谱数量</dt><dd>{Number.isFinite(status.database?.recipe_count) ? `${status.database.recipe_count} 道` : '尚未报告'}</dd></div>
           <div><dt>数据版本</dt><dd>{status.database?.data_version || '尚未报告'}</dd></div>
           <div><dt>进行中的对话</dt><dd>{Number.isFinite(status.active_sessions) ? `${status.active_sessions} 个` : '尚未报告'}</dd></div>
-        </dl></SettingsGroup><SettingsGroup title="本机保存"><p className="settings-note">会话、厨房进度和计时器随当前任务保存。模型与组件设置保存在本机，外观与对话偏好会在这个工作台的设置页与助手之间同步。</p></SettingsGroup></>}
+        </dl></SettingsGroup><SettingsGroup title="保存与隔离"><p className="settings-note">会话、厨房进度和计时器随账号保存。模型与系统组件由管理员统一设置，外观与对话偏好在当前账号内同步。</p></SettingsGroup></>}
         {['usage', 'changelog', 'about'].includes(current) && <SettingsInsights section={current} refresh={insightRefresh} usageDays={current === 'usage' ? usageDays : undefined}/>}
       </SettingsTabs></form>
-      <MemorySettings active={current === 'memory'} onDirty={setMemoryDirty} onBusy={setMemoryBusy}/>
+      <MemorySettings active={current === 'memory'} onDirty={setMemoryDirty} onBusy={setMemoryBusy} onAccount={onAccount}/>
       </>}
     </div><SettingsIndex container={content} section={current}/></div></div>{current !== 'memory' && <footer className="settings-footer"><span id="save-state" hidden={!locked && !dirtySections.includes(current) && !error} role="status" data-state={locked ? 'busy' : dirtySections.includes(current) ? 'dirty' : error ? 'error' : 'saved'}><Icon name={locked ? 'loader-circle' : dirtySections.includes(current) ? 'circle-alert' : error ? 'circle-x' : 'circle-check'}/><span>{locked ? testing ? '正在验证原生工具调用…' : '正在处理设置…' : dirtySections.includes(current) ? '当前页有未保存修改' : notice || '设置已同步'}</span></span><div><button type="button" className="text-button" disabled={locked} onClick={() => {if (['usage', 'changelog', 'about'].includes(current)) setInsightRefresh(value => value + 1); else if (dirtySections.includes(current)) setConfirmation({text: '放弃当前页未保存的修改，读取最新配置？其他分类的草稿会保留。', action: () => {void load(current);}}); else void load(current);}}>重新读取</button>{!readOnly && <button type="button" className="primary-button" disabled={!loaded || locked || !dirtySections.includes(current)} onClick={save}>保存修改</button>}</div></footer>}</section>
     {confirmation && <div className="react-confirm-backdrop" onKeyDown={event => {if (event.key === 'Escape') setConfirmation(null); if (event.key === 'Tab') {const targets = Array.from(event.currentTarget.querySelectorAll<HTMLButtonElement>('button:not(:disabled)')); const first = targets[0], last = targets.at(-1); if (event.shiftKey && document.activeElement === first || !event.shiftKey && document.activeElement === last) {event.preventDefault(); (event.shiftKey ? last : first)?.focus();}}}}><div className="react-confirm" role="alertdialog" aria-modal="true" aria-labelledby="settings-confirm-title"><h2 id="settings-confirm-title">保留未保存的修改？</h2><p>{confirmation.text}</p><div><button autoFocus type="button" className="secondary-button" onClick={() => setConfirmation(null)}>继续编辑</button><button type="button" className="primary-button" onClick={() => {const action = confirmation.action; setConfirmation(null); action();}}>放弃修改</button></div></div></div>}

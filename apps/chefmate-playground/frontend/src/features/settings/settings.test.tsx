@@ -19,6 +19,17 @@ beforeEach(() => {localStorage.clear(); request.mockReset(); readPreferences.moc
 afterEach(() => vi.unstubAllGlobals());
 
 describe('React settings transactions', () => {
+  it('keeps global controls and revoked developer settings outside the personal settings scope', async () => {
+    render(<Settings scope="personal" developerAllowed={false} initialSection="developer" onClose={vi.fn()}/>); await screen.findByLabelText('显示模式');
+    for (const name of ['模型连接', '系统组件', '上下文预算', '执行设置', '数据与状态', '开发者']) expect(screen.queryByRole('button', {name})).not.toBeInTheDocument();
+    expect(screen.queryByRole('switch', {name: '开发者模式'})).not.toBeInTheDocument(); expect(screen.getByRole('heading', {name: '外观与对话'})).toBeVisible();
+  });
+  it('writes global model changes exclusively through the administrator settings endpoint', async () => {
+    request.mockImplementation((path: string, options: RequestInit = {}) => Promise.resolve(path === '/api/admin/settings' ? options.method === 'PATCH' ? {...fixture(), revision: revision(2), model: {...fixture().model, model: 'admin-model'}} : fixture() : {ready: true}));
+    render(<Settings scope="admin" initialSection="model" apiBase="/api/admin/settings" onClose={vi.fn()}/>); fireEvent.change(await screen.findByLabelText('模型名称'), {target: {value: 'admin-model'}}); fireEvent.click(screen.getByRole('button', {name: '保存修改'}));
+    await waitFor(() => expect(request).toHaveBeenCalledWith('/api/admin/settings', expect.objectContaining({method: 'PATCH'})));
+    expect(request.mock.calls.some(([path, options]) => path === '/api/settings' && options?.method === 'PATCH')).toBe(false); expect(screen.queryByRole('button', {name: '长期记忆'})).not.toBeInTheDocument();
+  });
   it('clears a category error on navigation while retaining its draft and original revision', async () => {
     const writes: any[] = [];
     request.mockImplementation((path: string, options: RequestInit = {}) => {
@@ -76,12 +87,12 @@ describe('React settings transactions', () => {
   it('keeps the short about and data sections on one page instead of hiding each paragraph behind a tab', async () => {
     render(<Settings onClose={vi.fn()}/>); await screen.findByLabelText('显示模式');
     fireEvent.click(screen.getByRole('button', {name: '关于 ChefMate'}));
-    expect(await screen.findByText(/聊天、个人菜谱、饮食记录和长期记忆保存在本机/)).toBeVisible();
+    expect(await screen.findByText(/聊天、个人菜谱、饮食记录和长期记忆按账号隔离保存/)).toBeVisible();
     expect(screen.getByRole('heading', {name: '营养数据'})).toBeVisible();
     expect(screen.queryByRole('tablist')).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', {name: '数据与状态'}));
     expect(screen.getByRole('heading', {name: '当前连接'})).toBeVisible();
-    expect(screen.getByRole('heading', {name: '本机保存'})).toBeVisible();
+    expect(screen.getByRole('heading', {name: '保存与隔离'})).toBeVisible();
     expect(screen.queryByRole('tablist')).not.toBeInTheDocument();
   });
 
@@ -114,6 +125,7 @@ describe('React settings transactions', () => {
     await screen.findByLabelText('显示模式'); fireEvent.click(screen.getByRole('button', {name: '模型连接'}));
     fireEvent.change(screen.getByLabelText('模型名称'), {target: {value: 'my-draft'}}); fireEvent.click(screen.getByRole('button', {name: '保存修改'}));
     await screen.findAllByText('设置已在另一页面更新；当前草稿保留。');
+    await waitFor(() => expect(screen.getByRole('button', {name: '保存修改'})).toBeEnabled());
     expect(screen.getByLabelText('模型名称')).toHaveValue('my-draft');
     const resume = vi.fn(), event = new CustomEvent('chefmate:before-page-change', {cancelable: true, detail: {page: 'recipes', resume}});
     act(() => {window.dispatchEvent(event);}); expect(event.defaultPrevented).toBe(true); expect(resume).not.toHaveBeenCalled();

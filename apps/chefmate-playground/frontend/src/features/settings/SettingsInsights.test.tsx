@@ -96,7 +96,7 @@ describe('product information and release notes', () => {
     expect(within(product).getByText('本地工作台')).toBeVisible();
     expect(within(product).getByText('358')).toBeVisible();
     expect(within(product).getByText('7')).toBeVisible();
-    expect(view.container).toHaveTextContent('聊天、个人菜谱、饮食记录和长期记忆保存在本机。');
+    expect(view.container).toHaveTextContent('聊天、个人菜谱、饮食记录和长期记忆按账号隔离保存。');
     expect(view.container).toHaveTextContent('调用模型时，会发送本次对话需要的内容与图片。API Key 不回显。');
     expect(view.container).toHaveTextContent('多人餐先确认本人份额。');
     expect(view.container).toHaveTextContent('照片记餐需核对后保存，未知营养留空。');

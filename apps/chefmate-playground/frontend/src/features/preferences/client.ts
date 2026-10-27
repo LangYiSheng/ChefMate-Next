@@ -6,13 +6,22 @@ export type UiPreferencesSnapshot = { revision: string; initialized: boolean; va
 const appearanceKeys = ['theme', 'light_palette', 'dark_palette', 'font_pairing', 'font_size', 'density', 'inline_limit', 'show_estimates'] as const;
 const preferenceKeys = [...appearanceKeys, 'reply_suggestions', 'reply_suggestion_count'];
 let lastApplied = '';
-let writeGeneration = 0, writes = 0;
+let writeGeneration = 0, accountGeneration = 0, writes = 0;
 let writeTail: Promise<void> = Promise.resolve();
 const refreshers = new Set<() => void>();
 const readGenerations = new WeakMap<UiPreferencesSnapshot, number>();
+export function resetUiPreferenceCache() {
+  lastApplied = ''; writeGeneration++; accountGeneration++;
+  writes = 0; writeTail = Promise.resolve();
+}
 
 function checkAbort(signal?: AbortSignal) {
   if (signal?.aborted) throw new DOMException('Preference synchronization cancelled', 'AbortError');
+}
+
+function checkAccount(generation: number, signal?: AbortSignal) {
+  checkAbort(signal);
+  if (generation !== accountGeneration) throw new DOMException('Preference account changed', 'AbortError');
 }
 
 async function waitForWrites(signal?: AbortSignal) {
@@ -33,15 +42,17 @@ async function waitForWrites(signal?: AbortSignal) {
 function writePreferences(changes: Record<string, unknown>, revision: string, signal?: AbortSignal) {
   if (Object.keys(changes).some(key => !preferenceKeys.includes(key))) return Promise.reject(new Error('只能修改普通外观与对话偏好。'));
   checkAbort(signal);
+  const account = accountGeneration;
   const body = JSON.stringify({ revision, changes });
   // Invalidate reads as soon as a write is queued, not only after it reaches HTTP.
   writeGeneration++; writes++;
   const task = writeTail.then(async () => {
-    checkAbort(signal);
+    checkAccount(account, signal);
     const result = snapshot(await api('/api/ui-preferences', { method: 'PATCH', signal, body }));
-    checkAbort(signal);
+    checkAccount(account, signal);
     apply(result); return result;
   }).finally(() => {
+    if (account !== accountGeneration) return;
     writes--; writeGeneration++;
     // Also reconcile uncertain/aborted writes. A response can be lost after commit.
     if (!writes) for (const refresh of refreshers) refresh();
@@ -68,11 +79,13 @@ function apply(data: UiPreferencesSnapshot) {
 }
 
 export async function readUiPreferences(options: { signal?: AbortSignal } = {}) {
+  const account = accountGeneration;
   for (;;) {
     await waitForWrites(options.signal);
+    checkAccount(account, options.signal);
     const generation = writeGeneration;
     const result = snapshot(await api('/api/ui-preferences', options));
-    checkAbort(options.signal);
+    checkAccount(account, options.signal);
     if (writes || generation !== writeGeneration) continue;
     readGenerations.set(result, generation);
     return result;
@@ -86,10 +99,11 @@ export async function saveUiPreferences(changes: Record<string, unknown>, revisi
 /** Only current live tool completions trigger reads; historical tool snapshots never replace preferences. */
 export function initializeUiPreferences() {
   const abort = new AbortController(), seen = new Set<string>();
+  const account = accountGeneration;
   const observedRuns = new Map<string, string>();
   let pending: Promise<void> | null = null, queued = false, seedAttempted = false;
   const refresh = () => {
-    if (abort.signal.aborted || document.visibilityState === 'hidden') return Promise.resolve();
+    if (abort.signal.aborted || account !== accountGeneration || document.visibilityState === 'hidden') return Promise.resolve();
     if (writes) { queued = true; return Promise.resolve(); }
     if (pending) { queued = true; return pending; }
     queued = false;

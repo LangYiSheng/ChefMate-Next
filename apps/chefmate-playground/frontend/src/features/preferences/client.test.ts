@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { HttpError } from '../../runtime/http';
-import { initializeUiPreferences, readUiPreferences, saveUiPreferences } from './client';
+import { initializeUiPreferences, readUiPreferences, resetUiPreferenceCache, saveUiPreferences } from './client';
 
 const fixture = vi.hoisted(() => ({ api: vi.fn(), appearance: vi.fn(), listener: null as null | (() => void), listeners: new Set<() => void>(), state: { runs: {} as Record<string, any>, cache: {} as Record<string, any> }, loadStatus: vi.fn(async () => {}) }));
 vi.mock('../../runtime/http', async () => ({ ...await vi.importActual('../../runtime/http'), api: fixture.api }));
@@ -10,10 +10,69 @@ const prefs = (revision: string, extra: Record<string, unknown> = {}) => ({ revi
 async function settled() { for (let i = 0; i < 30; i++) await Promise.resolve(); }
 const cleanups: Array<() => void> = [];
 function start() { const cleanup = initializeUiPreferences(); cleanups.push(cleanup); return cleanup; }
-beforeEach(() => { fixture.api.mockReset(); fixture.appearance.mockClear(); fixture.loadStatus.mockClear(); fixture.listeners.clear(); fixture.state = { runs: {}, cache: {} }; localStorage.clear(); });
+beforeEach(() => { resetUiPreferenceCache(); fixture.api.mockReset(); fixture.appearance.mockClear(); fixture.loadStatus.mockClear(); fixture.listeners.clear(); fixture.state = { runs: {}, cache: {} }; localStorage.clear(); });
 afterEach(async () => { cleanups.splice(0).forEach(cleanup => cleanup()); await settled(); });
 
 describe('safe application preference synchronization', () => {
+  it('lets the next account read and save before a hung old account write finishes', async () => {
+    let finishOld!: (data: unknown) => void;
+    fixture.api.mockImplementationOnce(() => new Promise(resolve => {finishOld = resolve;}))
+      .mockResolvedValue(prefs('new-account-ready', {theme: 'light'}));
+    const old = saveUiPreferences({theme: 'dark'}, 'shared-base');
+    const queuedOld = saveUiPreferences({font_pairing: 'serif'}, 'shared-base');
+    const oldRejected = expect(old).rejects.toMatchObject({name: 'AbortError'});
+    const queuedRejected = expect(queuedOld).rejects.toMatchObject({name: 'AbortError'});
+    await settled(); resetUiPreferenceCache();
+    expect((await readUiPreferences()).revision).toBe('new-account-ready');
+    await saveUiPreferences({theme: 'light'}, 'new-base');
+    expect(fixture.api).toHaveBeenCalledTimes(3);
+    expect(fixture.appearance).toHaveBeenCalledOnce();
+    finishOld(prefs('old-account-late', {theme: 'dark'}));
+    await oldRejected; await queuedRejected;
+    expect(fixture.api).toHaveBeenCalledTimes(3);
+    expect(fixture.appearance).toHaveBeenLastCalledWith(expect.objectContaining({theme: 'light'}));
+  });
+  it('discards an old account response and never dispatches its queued write under the next cookie', async () => {
+    let finishOld!: (data: unknown) => void;
+    fixture.api.mockImplementationOnce(() => new Promise(resolve => {finishOld = resolve;}))
+      .mockResolvedValue(prefs('new-account-save', {theme: 'light'}));
+    const inFlight = saveUiPreferences({theme: 'dark'}, 'same-default-revision');
+    const queued = saveUiPreferences({font_pairing: 'serif'}, 'same-default-revision');
+    const oldRejected = expect(inFlight).rejects.toMatchObject({name: 'AbortError'});
+    const queuedRejected = expect(queued).rejects.toMatchObject({name: 'AbortError'});
+    await settled(); expect(fixture.api).toHaveBeenCalledOnce();
+    resetUiPreferenceCache();
+    const newAccount = saveUiPreferences({theme: 'light'}, 'new-account-base');
+    finishOld(prefs('old-account-dark', {theme: 'dark'}));
+    await oldRejected; await queuedRejected; await newAccount;
+    expect(fixture.api).toHaveBeenCalledTimes(2);
+    expect(fixture.api.mock.calls.map(([, options]) => JSON.parse(options.body).changes)).toEqual([
+      {theme: 'dark'}, {theme: 'light'},
+    ]);
+    expect(fixture.appearance).toHaveBeenCalledOnce();
+    expect(fixture.appearance).toHaveBeenLastCalledWith(expect.objectContaining({theme: 'light'}));
+    expect(JSON.parse(localStorage.getItem('chefmate:ui-settings')!).theme).toBe('light');
+  });
+  it('does not let an old account read waiting for writes fetch preferences for the next account', async () => {
+    let finishOld!: (data: unknown) => void;
+    fixture.api.mockImplementationOnce(() => new Promise(resolve => {finishOld = resolve;}));
+    const writing = saveUiPreferences({theme: 'dark'}, 'old-base');
+    const reading = readUiPreferences();
+    const writeRejected = expect(writing).rejects.toMatchObject({name: 'AbortError'});
+    const readRejected = expect(reading).rejects.toMatchObject({name: 'AbortError'});
+    await settled(); resetUiPreferenceCache(); finishOld(prefs('old-result'));
+    await writeRejected; await readRejected;
+    expect(fixture.api).toHaveBeenCalledOnce(); expect(fixture.appearance).not.toHaveBeenCalled();
+  });
+  it('does not seed or apply a disposed account initializer even before React cleanup runs', async () => {
+    let finishOldRead!: (data: unknown) => void;
+    fixture.api.mockImplementationOnce(() => new Promise(resolve => {finishOldRead = resolve;}));
+    start(); await settled(); resetUiPreferenceCache();
+    finishOldRead({...prefs('old-uninitialized'), initialized: false}); await settled();
+    window.dispatchEvent(new Event('focus')); await settled();
+    expect(fixture.api).toHaveBeenCalledOnce(); expect(fixture.appearance).not.toHaveBeenCalled();
+    expect(localStorage.getItem('chefmate:ui-settings')).toBeNull();
+  });
   it('seeds only appearance on first use and retains existing interaction preferences', async () => {
     fixture.api.mockResolvedValueOnce({ ...prefs('uninitialized'), initialized: false }).mockResolvedValue(prefs('seeded'));
     const cleanup = start(); await settled();

@@ -3,6 +3,7 @@ import { act, cleanup, fireEvent, render, screen, within } from '@testing-librar
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { RuntimeState } from './runtime/types';
 import App from './App';
+import type {AccountUser} from './features/account/types';
 
 const fixture = vi.hoisted(() => {
   const runtimeListeners = new Set<() => void>(), workspaceListeners = new Set<() => void>();
@@ -72,6 +73,16 @@ function capture(handle: HTMLElement) {
 }
 
 describe('App surface coordination', () => {
+  it('distinguishes a configured model from a missing recipe service for ordinary accounts', () => {
+    fixture.data.runtime!.status = {ready: false, configured: false, model_configured: true, database: {ready: false}};
+    render(<App account={{id: 'user-a', role: 'user', developer_allowed: false} as AccountUser}/>);
+    expect(screen.getByText('菜谱服务尚未连接，请联系管理员。')).toBeInTheDocument(); expect(screen.queryByText('管理员尚未配置模型连接。')).not.toBeInTheDocument(); expect(screen.queryByRole('button', {name: '管理平台'})).not.toBeInTheDocument();
+  });
+  it('requires the server account permission even if developer mode was enabled in browser storage', () => {
+    localStorage.setItem('chefmate:developer-settings', JSON.stringify({enabled: true}));
+    render(<App account={{id: 'user-a', role: 'user', developer_allowed: false} as AccountUser}/>);
+    fireEvent.click(screen.getByRole('button', {name: '展开右侧栏'})); expect(screen.queryByRole('tab', {name: '调试', hidden: true})).not.toBeInTheDocument(); expect(screen.queryByText('开发请求诊断')).not.toBeInTheDocument();
+  });
   it('drags the left separator by pointer distance without snapping to a viewport coordinate', () => {
     const view = render(<App />), app = view.container.querySelector('.app')!;
     const handle = screen.getByRole('separator', { name: '调整侧栏宽度' }), release = capture(handle);

@@ -1,4 +1,4 @@
-import { HttpError, normalizeSession, normalizeToolCall, readEvents, requestJson, safeText } from './http';
+import { accountHeaders, HttpError, normalizeSession, normalizeToolCall, notifyAccountBoundary, readEvents, requestJson, safeText } from './http';
 import { BrowserAttachments, imageMetadata, prepareImage, releaseImages } from './attachments';
 import type { ApiData, AttachmentPersistence, Continuation, ImageDraft, Message, RunState, RuntimeState, SendOptions, Session, StorageLike, StoreOptions, WorkspaceAdapter } from './types';
 
@@ -198,6 +198,20 @@ export class ChefStore {
       item.stage === 'sending' ? { ...item, stage: 'queued' as const } : item]));
     this.emit({ runs: {}, imageUploads: {}, preparing: false, loading: false, sessionsLoading: false, sessionLoading: {}, continuations });
     this.saveContinuations();
+  };
+
+  /** Account switches are a stronger boundary than detaching a mounted view. */
+  resetForAccount = async (accountId?: string | null): Promise<void> => {
+    this.dispose();
+    await this.persistQueue.catch(() => undefined);
+    for (const images of Object.values(this.state.imageDrafts)) releaseImages(images);
+    await this.attachments.save({}).catch(() => undefined);
+    if (this.attachments instanceof BrowserAttachments) this.attachments = new BrowserAttachments(accountId);
+    const fresh = new ChefStore({fetch: this.fetcher, storage: null, attachments: this.attachments, prepareImage: this.prepareImage, pollInterval: this.pollInterval});
+    this.state = fresh.state; this.submissions = {}; this.hydratedImages = false; this.adapter = null;
+    this.sessionEpoch.clear(); this.deleted.clear(); this.touchedImages.clear(); this.metadata.clear(); this.displayActions.clear();
+    this.continuationScheduled = false;
+    this.emit();
   };
 
   loadStatus = async (): Promise<void> => {
@@ -554,14 +568,15 @@ export class ChefStore {
     }
     try {
       const response = await this.fetcher(`${url(id)}/turn`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json', Accept: 'text/event-stream' }, signal: run.controller.signal,
+        method: 'POST', headers: accountHeaders(`${url(id)}/turn`, { 'Content-Type': 'application/json', Accept: 'text/event-stream' }), signal: run.controller.signal,
         body: JSON.stringify({ message: input, images: metadata.map(image => image.id), retry: Boolean(options.retry), request_id: run.requestId, ui_snapshot: snapshot }),
       });
       if (!this.valid(lifecycle)) return { error: '页面已关闭，请重新打开对话。' };
       if (!response.ok) {
         run.httpRejected = true;
         const payload = await response.json().catch(() => null);
-        throw new HttpError(safeText(typeof payload?.detail === 'string' ? payload.detail : payload?.message || `请求失败（${response.status}）。`), response.status, payload);
+        notifyAccountBoundary(response.status, payload, `${url(id)}/turn`);
+        throw new HttpError(safeText(typeof payload?.detail === 'string' ? payload.detail : payload?.detail?.message || payload?.message || `请求失败（${response.status}）。`), response.status, payload);
       }
       run.accepted = true;
       this.acceptContinuation(id, run.requestId);

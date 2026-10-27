@@ -23,6 +23,11 @@ export class WorkspaceStore {
   constructor(private request = api, private continueTurn = (id: string, message: string, requestId: string) => { void chefStore.enqueueContinuation(id, message, requestId); }) {}
   getSnapshot = () => this.state;
   subscribe = (listener: () => void) => { this.listeners.add(listener); return () => this.listeners.delete(listener); };
+  resetForAccount = () => {
+    for (const id of new Set([...Object.keys(this.state.entries), ...this.loads.keys()])) this.removed.add(id);
+    this.loads.clear(); this.refreshAfterLoad.clear(); this.notify = () => {};
+    this.state = {entries: {}, reminders: [], tick: 0, timerEvent: null}; this.emit();
+  };
   entry(id: string) { if (this.removed.has(id)) return defaultEntry(id); if (!this.state.entries[id]) this.state = { ...this.state, entries: { ...this.state.entries, [id]: defaultEntry(id) } }; return this.state.entries[id]; }
   private emit(id?: string) {
     if (id && this.removed.has(id)) return;

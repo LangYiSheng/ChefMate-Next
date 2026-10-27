@@ -20,7 +20,7 @@ describe('settings grouped navigation', () => {
   it('keeps product, privacy and nutrition information visible together on the about page', async () => {
     request.mockResolvedValue({ name: 'ChefMate', version: '0.2.1', recipe_count: 358 });
     render(<SettingsInsights section="about" refresh={0} />);
-    expect(await screen.findByText(/聊天、个人菜谱、饮食记录和长期记忆保存在本机/)).toBeVisible();
+    expect(await screen.findByText(/聊天、个人菜谱、饮食记录和长期记忆按账号隔离保存/)).toBeVisible();
     expect(screen.getByRole('heading', { name: 'ChefMate' })).toBeVisible();
     expect(screen.getByRole('heading', { name: '营养数据' })).toBeVisible();
   });
