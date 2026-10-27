@@ -1,8 +1,10 @@
 import {useEffect, useId, useRef, useState, type CSSProperties} from 'react';
 import {api} from '../../runtime/http';
 import {Select} from '../../components/ui/Select';
+import {Brand, Icon} from '../../components/Icon';
 import {SettingsGroup} from './SettingsFields';
 import './usage-insights.css';
+import './product-info.css';
 
 export function UsageTimeRange({value, onChange}: {value: string; onChange: (value: string) => void}) {
   const id = useId();
@@ -37,18 +39,49 @@ function UsageCalendar({data}: {data: any}) {
   return <section className="usage-calendar"><div className="usage-calendar-heading"><h2>每日用量</h2><span>{calendar.days[0]?.date} — {calendar.days.at(-1)?.date}</span></div><div className="usage-calendar-scroll" ref={scroller}><div className="usage-calendar-plot" style={{'--heatmap-columns': calendar.columns} as CSSProperties}><div className="usage-calendar-months" aria-hidden="true">{months.map(month => <span key={month.column} style={{gridColumn: month.column}}>{month.label}</span>)}</div><div className="usage-calendar-weekdays" aria-hidden="true">{[['一', 1], ['三', 3], ['五', 5]].map(([label, row]) => <span key={label} style={{gridRow: row}}>{label}</span>)}</div><div className="usage-calendar-grid" role="group" aria-label="每日Token用量，方向键切换日期">{Array.from({length: calendar.offset}, (_, index) => <span key={`blank-${index}`} aria-hidden="true"/>)}{calendar.days.map((day, index) => <button type="button" key={day.date} ref={node => {refs.current[index] = node;}} className={`usage-calendar-cell level-${day.level} is-${day.status}`} title={usageDayLabel(day)} aria-label={usageDayLabel(day)} aria-pressed={selected === index} tabIndex={selected === index ? 0 : -1} onFocus={() => setSelected(index)} onClick={() => setSelected(index)} onKeyDown={event => {const delta: Record<string, number> = {ArrowLeft: -7, ArrowRight: 7, ArrowUp: -1, ArrowDown: 1}; const next = event.key === 'Home' ? 0 : event.key === 'End' ? calendar.days.length - 1 : delta[event.key] ? Math.max(0, Math.min(calendar.days.length - 1, index + delta[event.key])) : null; if (next !== null) {event.preventDefault(); refs.current[next]?.focus();}}}/>)}</div></div></div><p className="usage-calendar-day" role="status">{calendar.days[selected] ? usageDayLabel(calendar.days[selected]) : '还没有模型请求记录。'}</p><div className="usage-calendar-legend"><span>少</span>{[0, 1, 2, 3, 4].map(level => <i key={level} className={`usage-calendar-cell level-${level}`}/>)}<span>多</span><i className="usage-calendar-cell is-unknown" aria-hidden="true"/><span>未报告</span><i className="usage-calendar-cell level-2 is-partial" aria-hidden="true"/><span>部分报告</span></div>{calendar.clipped && <p className="settings-note">热力图显示最近 366 天，汇总仍包含所选范围的全部记录。</p>}</section>;
 }
 function Row({label, value}: {label: string; value: any}) { return <div className="status-row"><span>{label}</span><span>{value}</span></div>; }
+
+function ReleaseSources({release}: {release: any}) {
+  const sources = [release.source && {...release.source, label: '原始实现'}, ...(release.includes || []).map((source: any) => ({...source, label: '后续实现'}))]
+    .filter(source => source && (source.branch || source.commit));
+  if (!sources.length) return null;
+  return <details className="product-release-sources"><summary><Icon name="git-branch"/><span>更新来源</span><small>{sources.length} 条提交</small><Icon name="chevron-down"/></summary><dl>{sources.map((source, index) => <div key={`${source.commit || source.branch}-${index}`}><dt>{source.label}</dt><dd>{source.branch && <span>{source.branch}</span>}{source.commit && <code title={source.commit}>{String(source.commit).slice(0, 7)}</code>}</dd></div>)}</dl></details>;
+}
+
+function ReleaseNotes({data}: {data: any}) {
+  const titleId = useId();
+  return <section className="product-release-log" id={`${titleId}-releases`} data-settings-index="更新记录" aria-labelledby={titleId}><h2 className="visually-hidden" id={titleId}>更新记录</h2>
+    {(data.releases || []).map((release: any, index: number) => <article className="product-release" id={`settings-release-${index}`} data-settings-index={`${release.version} · ${release.title}`} key={`${release.version}-${index}`} aria-label={`${release.version} 版本更新`}>
+      <header className="product-release-meta"><h2>{release.version}</h2>{release.version === data.current_version && <span className="product-current-version">当前版本</span>}{release.date && <time dateTime={release.date}>{release.date}</time>}</header>
+      <h3 className="product-release-title">{release.title}</h3>{release.summary && <p className="product-release-summary">{release.summary}</p>}
+      <div className="product-release-sections">{(release.sections || []).map((group: any, groupIndex: number) => <section className="product-release-section" id={index === 0 ? `settings-release-${index}-group-${groupIndex}` : undefined} data-settings-index={index === 0 ? group.title : undefined} key={`${group.title}-${groupIndex}`}><h4>{group.title}</h4><ul>{(group.items || []).map((item: string, itemIndex: number) => <li key={itemIndex}>{item}</li>)}</ul></section>)}</div>
+      <ReleaseSources release={release}/>
+    </article>)}
+    {!data.releases?.length && <p className="settings-note">还没有发布更新记录。</p>}
+  </section>;
+}
+
+function ProductAbout({data}: {data: any}) {
+  const titleId = useId();
+  const count = (value: unknown) => typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value.toLocaleString('zh-CN') : null;
+  return <>
+    <section className="product-about" id={`${titleId}-product`} data-settings-index="产品信息" aria-labelledby={titleId}>
+      <header className="product-about-identity"><Brand className="product-brand-mark"/><div><div className="product-about-name"><h2 id={titleId}>{data.name || 'ChefMate'}</h2><span className="product-version">版本 {data.version || '未提供'}</span></div><p>{data.subtitle || '您的个性化烹饪助手'}</p></div></header>
+      <dl className="product-build-meta"><div><dt>运行方式</dt><dd><Icon name="monitor"/>{data.runtime || '未提供'}</dd></div>{data.commit && <div><dt>构建</dt><dd><code title={data.commit}>{data.commit}</code></dd></div>}</dl>
+      <dl className="product-facts">{[['基础菜谱', data.recipe_count, '道'], ['系统组件', data.component_count, '个']].map(([label, value, unit]) => <div key={String(label)}><dt>{label}</dt><dd>{count(value) === null ? <span className="product-count-unknown">未提供</span> : <><strong>{count(value)}</strong><span>{unit}</span></>}</dd></div>)}</dl>
+    </section>
+    <SettingsGroup title="数据与隐私"><div className="product-boundary-copy"><p>聊天、个人菜谱、饮食记录和长期记忆保存在本机。</p><p>调用模型时，会发送本次对话需要的内容与图片。API Key 不回显。</p></div></SettingsGroup>
+    <SettingsGroup title="营养数据"><div className="product-boundary-copy"><p>制作量与个人摄入分别记录。单人餐完成后按配方自动登记，多人餐先确认本人份额。</p><p>照片记餐需核对后保存，未知营养留空。</p></div></SettingsGroup>
+  </>;
+}
+
 export function SettingsInsights({section, refresh, usageDays}: {section: string; refresh: number; usageDays?: string}) {
   const [localDays, setLocalDays] = useState('365'), [data, setData] = useState<any>(null), [error, setError] = useState('');
   const days = usageDays ?? localDays;
   const range = section === 'usage' && usageDays === undefined ? <UsageTimeRange value={localDays} onChange={setLocalDays}/> : null;
   useEffect(() => {const controller = new AbortController(); setData(null); setError(''); api(section === 'usage' ? `/api/usage?days=${days}` : section === 'changelog' ? '/api/changelog' : '/api/about', {signal: controller.signal}).then(value => {if (!controller.signal.aborted) setData(value);}).catch(reason => {if (!controller.signal.aborted) setError(reason.message);}); return () => controller.abort();}, [section, days, refresh]);
   if (!data) return <>{range}<p role="status" className={error ? 'settings-error' : 'settings-note'}>{error || '正在读取…'}</p></>;
-  if (section === 'changelog') return <SettingsGroup title="更新记录">{(data.releases || []).map((release: any, index: number) => <article className="changelog-release" id={`settings-release-${index}`} data-settings-index={`${release.version} · ${release.title}`} key={`${release.version}-${index}`} aria-label={`${release.version} 版本更新`}><header className="changelog-header"><h2 className="changelog-version">{release.version}</h2>{release.version === data.current_version && <span className="changelog-current">当前版本</span>}<time className="changelog-date" dateTime={release.date}>{release.date}</time></header>{release.source?.branch && <p className="changelog-source">分支 {release.source.branch} · 提交 <code title={release.source.commit}>{release.source.commit?.slice(0, 7)}</code></p>}<p className="changelog-title">{release.title}</p><p className="changelog-summary">{release.summary}</p>{(release.sections || []).map((group: any, groupIndex: number) => <section className="changelog-group" id={index === 0 ? `settings-release-${index}-group-${groupIndex}` : undefined} data-settings-index={index === 0 ? group.title : undefined} key={group.title}><h3>{group.title}</h3><ul>{group.items.map((item: string, index: number) => <li key={index}>{item}</li>)}</ul></section>)}</article>)}{!data.releases?.length && <p>还没有发布更新记录。</p>}</SettingsGroup>;
-  if (section === 'about') return <>
-    <SettingsGroup title="产品信息"><div className="about-intro"><span className="settings-brand-mark about-brand-icon" aria-hidden="true"/><h2>{data.name || 'ChefMate'}</h2><p>{data.subtitle || '您的个性化烹饪助手'}</p></div><Row label="版本" value={`${data.version || '未提供'}${data.commit ? ` (${data.commit})` : ''}`}/><Row label="运行方式" value={data.runtime || '本地工作台'}/><Row label="基础菜谱" value={`${data.recipe_count ?? '—'} 道`}/><Row label="系统组件" value={`${data.component_count ?? '—'} 个`}/></SettingsGroup>
-    <SettingsGroup title="数据与隐私"><p className="settings-note">聊天、个人菜谱、饮食记录和长期记忆保存在本机。调用模型时，会发送本次对话需要的内容与图片。API Key 不回显。</p></SettingsGroup>
-    <SettingsGroup title="营养数据"><p className="settings-note">制作量与个人摄入分别记录。单人餐完成后按配方自动登记，多人餐先确认本人份额；照片记餐需核对后保存，未知营养留空。</p></SettingsGroup>
-  </>;
+  if (section === 'changelog') return <ReleaseNotes data={data}/>;
+  if (section === 'about') return <ProductAbout data={data}/>;
   const summary = data.summary || {}, totals = summary.known_totals || summary;
   const caption = (key: string) => {const report = summary.coverage?.[key], known = report?.known ?? report?.reported; return `${report && known < report.calls ? `已知小计 · ${known}/${report.calls} 次请求` : ''}${key === 'cached_tokens' ? ' · 包含在输入中' : ''}`;};
   return <>{range}

@@ -1,6 +1,6 @@
 import {act, fireEvent, render, screen, waitFor} from '@testing-library/react';
 import {StrictMode} from 'react';
-import {beforeEach, describe, expect, it, vi} from 'vitest';
+import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest';
 import {Settings} from './Settings';
 import {MemorySettings} from './MemorySettings';
 import {advanceRevisions, createDrafts} from './settings-state';
@@ -16,8 +16,44 @@ const fixture = () => ({revision: revision(1), api_key_set: true, model: {base_u
 const preferences = () => ({revision: revision(100), initialized: true, values: {...normalizeAppearance(), reply_suggestions: true, reply_suggestion_count: 3}});
 const choose = (label: string, option: string) => {fireEvent.click(screen.getByRole('combobox', {name: label})); fireEvent.click(screen.getByRole('option', {name: option}));};
 beforeEach(() => {localStorage.clear(); request.mockReset(); readPreferences.mockReset(); savePreferences.mockReset(); readPreferences.mockResolvedValue(preferences()); savePreferences.mockImplementation(async changes => ({...preferences(), revision: revision(101), values: {...preferences().values, ...changes}})); request.mockImplementation((path: string) => Promise.resolve(path === '/api/settings' ? fixture() : {ready: true, model: 'test-model', database: {ready: true}}));});
+afterEach(() => vi.unstubAllGlobals());
 
 describe('React settings transactions', () => {
+  it('clears a category error on navigation while retaining its draft and original revision', async () => {
+    const writes: any[] = [];
+    request.mockImplementation((path: string, options: RequestInit = {}) => {
+      if (options.method === 'PATCH') {writes.push(JSON.parse(options.body as string)); return Promise.reject(new Error('当前连接无法保存'));}
+      return Promise.resolve(path === '/api/settings' ? fixture() : {ready: true});
+    });
+    render(<Settings onClose={vi.fn()}/>); await screen.findByLabelText('显示模式'); fireEvent.click(screen.getByRole('button', {name: '模型连接'}));
+    fireEvent.change(screen.getByLabelText('模型名称'), {target: {value: 'keep-after-error'}}); fireEvent.click(screen.getByRole('button', {name: '保存修改'}));
+    await screen.findAllByText('当前连接无法保存'); await waitFor(() => expect(screen.getByRole('button', {name: '上下文预算'})).toBeEnabled());
+    fireEvent.click(screen.getByRole('button', {name: '上下文预算'})); expect(screen.queryByText('当前连接无法保存')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', {name: /模型连接/})); expect(screen.getByLabelText('模型名称')).toHaveValue('keep-after-error');
+    fireEvent.click(screen.getByRole('button', {name: '保存修改'})); await waitFor(() => expect(writes).toHaveLength(2));
+    expect(writes.map(write => write.revision)).toEqual([revision(1), revision(1)]);
+  });
+
+  it('keeps sound preview feedback on its own category and ignores a late audio resume', async () => {
+    let resume!: () => void;
+    const close = vi.fn().mockResolvedValue(undefined), audio = {resume: vi.fn(() => new Promise<void>(resolve => {resume = resolve;})), close};
+    vi.stubGlobal('AudioContext', vi.fn(function () {return audio;}));
+    render(<Settings onClose={vi.fn()}/>); await screen.findByLabelText('显示模式'); fireEvent.click(screen.getByRole('button', {name: '烹饪与计时'}));
+    fireEvent.click(screen.getByRole('tab', {name: '声音提醒'})); fireEvent.click(screen.getByRole('button', {name: '试听提醒声'}));
+    fireEvent.click(screen.getByRole('button', {name: '上下文预算'})); await act(async () => {resume();});
+    expect(close).toHaveBeenCalledOnce(); expect(screen.queryByText('已播放提醒声。')).not.toBeInTheDocument();
+    expect(screen.queryByText(/createOscillator/)).not.toBeInTheDocument();
+  });
+
+  it('reports connection status as semantic rows and distinguishes a zero count from missing data', async () => {
+    request.mockImplementation((path: string) => Promise.resolve(path === '/api/settings' ? fixture() : {model: 'observed-model', configured: true, database: {ready: true, recipe_count: 0}, active_sessions: 0}));
+    const view = render(<Settings onClose={vi.fn()}/>); await screen.findByLabelText('显示模式'); fireEvent.click(screen.getByRole('button', {name: '数据与状态'}));
+    const status = view.container.querySelector('dl.settings-status-grid')!;
+    expect(status.querySelectorAll('dt')).toHaveLength(5); expect(status.querySelectorAll('dd')).toHaveLength(5);
+    expect(screen.getByText('observed-model')).toBeVisible(); expect(screen.getByText('0 道')).toBeVisible(); expect(screen.getByText('0 个')).toBeVisible();
+    expect(screen.getByText('已连接')).toBeVisible(); expect(screen.getByText('尚未报告')).toBeVisible();
+  });
+
   it('previews the three-step font size draft and saves only that field without applying unsaved size globally', async () => {
     const view = render(<Settings onClose={vi.fn()}/>); await screen.findByLabelText('显示模式');
     const slider = screen.getByRole('slider', {name: '字号'}), initialRootSize = document.documentElement.style.fontSize;

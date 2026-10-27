@@ -61,3 +61,55 @@ describe('usage summary and daily trend', () => {
     expect(screen.queryByText('9,999', {selector: '.insight-metric dd'})).not.toBeInTheDocument();
   });
 });
+
+describe('product information and release notes', () => {
+  it('keeps release versions, dates and original plus subsequent implementation sources distinct', async () => {
+    const original = 'bd242d99ddee51f0e760dd52cfd4736f7fc68a89';
+    const included = '6694b5190ad83647a4f108a15fff0830b3849ccb';
+    request.mockResolvedValue({current_version: '0.2.1', releases: [{version: '0.2.1', date: '2026-10-24', title: '界面与交互改进', summary: '已经发布的具体变化。',
+      source: {branch: 'master', commit: original}, includes: [{branch: 'master', commit: included}],
+      sections: [{title: '界面', items: ['更清楚的页面层次。']}]}]});
+    const view = render(<SettingsInsights section="changelog" refresh={0}/>);
+    const release = await screen.findByRole('article', {name: '0.2.1 版本更新'});
+    expect(within(release).getByRole('heading', {name: '0.2.1'})).toBeVisible();
+    expect(within(release).getByText('当前版本')).toBeVisible();
+    expect(within(release).getByText('2026-10-24')).toHaveAttribute('datetime', '2026-10-24');
+    const sources = release.querySelector('details')!;
+    expect(sources.open).toBe(false);
+    const sourceCommit = within(release).getByText('bd242d9');
+    expect(sourceCommit).toHaveAttribute('title', original);
+    expect(sourceCommit).not.toBeVisible();
+    fireEvent.click(within(release).getByText('更新来源'));
+    expect(sources.open).toBe(true);
+    expect(within(sources).getByText('原始实现')).toBeVisible();
+    expect(within(sources).getByText('后续实现')).toBeVisible();
+    expect(within(sources).getByText('6694b51')).toHaveAttribute('title', included);
+    expect(view.container.querySelector('#settings-release-0-group-0')).toHaveAttribute('data-settings-index', '界面');
+  });
+
+  it('shows the API build identity and real counts alongside the full privacy and nutrition boundaries', async () => {
+    request.mockResolvedValue({name: 'ChefMate', subtitle: '您的个性化烹饪助手', version: '0.2.1', commit: 'd8cafce', runtime: '本地工作台', recipe_count: 358, component_count: 7});
+    const view = render(<SettingsInsights section="about" refresh={0}/>);
+    const product = await screen.findByRole('region', {name: 'ChefMate'});
+    expect(within(product).getByText('版本 0.2.1')).toBeVisible();
+    expect(within(product).getByText('d8cafce')).toHaveAttribute('title', 'd8cafce');
+    expect(within(product).getByText('本地工作台')).toBeVisible();
+    expect(within(product).getByText('358')).toBeVisible();
+    expect(within(product).getByText('7')).toBeVisible();
+    expect(view.container).toHaveTextContent('聊天、个人菜谱、饮食记录和长期记忆保存在本机。');
+    expect(view.container).toHaveTextContent('调用模型时，会发送本次对话需要的内容与图片。API Key 不回显。');
+    expect(view.container).toHaveTextContent('多人餐先确认本人份额。');
+    expect(view.container).toHaveTextContent('照片记餐需核对后保存，未知营养留空。');
+  });
+
+  it('leaves unknown product counts unreported while retaining a real reported zero', async () => {
+    request.mockResolvedValue({name: 'ChefMate', version: '0.2.1', recipe_count: null, component_count: 0});
+    const view = render(<SettingsInsights section="about" refresh={0}/>);
+    await screen.findByRole('region', {name: 'ChefMate'});
+    const facts = view.container.querySelector('.product-facts')!;
+    expect(within(facts as HTMLElement).getByText('未提供')).toBeVisible();
+    expect(within(facts as HTMLElement).getByText('0')).toBeVisible();
+    expect(view.container.querySelector('.product-build-meta')).toHaveTextContent('运行方式未提供');
+    expect(view.container.querySelector('.product-build-meta code')).toBeNull();
+  });
+});

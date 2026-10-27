@@ -34,6 +34,7 @@ export type SettingsProps = {onClose: () => void; onSaved?: () => void; notify?:
 
 export function Settings({onClose, onSaved}: SettingsProps) {
   const [current, setCurrent] = useState('display'), [loaded, setLoaded] = useState<Values | null>(null), [status, setStatus] = useState<Values>({});
+  const currentRef = useRef(current); currentRef.current = current;
   const [drafts, setDrafts] = useState<Drafts>({}), [baselines, setBaselines] = useState<Drafts>({}), [revisions, setRevisions] = useState<Record<string, SettingsRevision>>({});
   const [displayRevision, setDisplayRevision] = useState('');
   const [usageDays, setUsageDays] = useState('365');
@@ -116,7 +117,7 @@ export function Settings({onClose, onSaved}: SettingsProps) {
     window.addEventListener('chefmate:before-page-change', navigate);
     return () => window.removeEventListener('chefmate:before-page-change', navigate);
   }, [dirty, locked]);
-  useEffect(() => {content.current?.scrollTo?.({top: 0});}, [current]);
+  useEffect(() => {content.current?.scrollTo?.({top: 0}); setNotice(''); setError(false);}, [current]);
   const change = (key: string, value: any) => {setDrafts(previous => ({...previous, [current]: {...previous[current], [key]: value}})); say('');};
   const save = async () => {
     if (locked || working.current || !loaded || !form.current?.reportValidity()) return;
@@ -162,8 +163,9 @@ export function Settings({onClose, onSaved}: SettingsProps) {
     finally {working.current = false; testAbort.current = null; if (alive.current) {setTesting(false); flushPreferences();}}
   };
   const previewChime = async () => {
-    try {const Audio = window.AudioContext || (window as any).webkitAudioContext; if (!Audio) throw new Error('浏览器暂不支持声音提醒。'); const audio = new Audio(); await audio.resume(); [660, 880].forEach((frequency, index) => {const sound = audio.createOscillator(), gain = audio.createGain(), at = audio.currentTime + index * .22; sound.frequency.value = frequency; gain.gain.setValueAtTime(.12, at); gain.gain.exponentialRampToValueAtTime(.001, at + .4); sound.connect(gain); gain.connect(audio.destination); sound.start(at); sound.stop(at + .42); sound.onended = () => {sound.disconnect(); gain.disconnect();};}); setTimeout(() => {void audio.close();}, 1200); say('已播放提醒声。');}
-    catch (reason) {say((reason as Error).message, true);}
+    const startedPage = current;
+    try {const Audio = window.AudioContext || (window as any).webkitAudioContext; if (!Audio) throw new Error('浏览器暂不支持声音提醒。'); const audio = new Audio(); await audio.resume(); if (currentRef.current !== startedPage || !alive.current) {void audio.close(); return;} [660, 880].forEach((frequency, index) => {const sound = audio.createOscillator(), gain = audio.createGain(), at = audio.currentTime + index * .22; sound.frequency.value = frequency; gain.gain.setValueAtTime(.12, at); gain.gain.exponentialRampToValueAtTime(.001, at + .4); sound.connect(gain); gain.connect(audio.destination); sound.start(at); sound.stop(at + .42); sound.onended = () => {sound.disconnect(); gain.disconnect();};}); setTimeout(() => {void audio.close();}, 1200); say('已播放提醒声。');}
+    catch (reason) {if (currentRef.current === startedPage && alive.current) say((reason as Error).message, true);}
   };
   const values = drafts[current] || {}, selected = sections.find(section => section[0] === current)!;
   const field = (label: string, key: string, props: any = {}) => <Field key={key} label={label} value={values[key]} onChange={value => change(key, value)} disabled={locked} {...props}/>;
@@ -184,7 +186,13 @@ export function Settings({onClose, onSaved}: SettingsProps) {
         {current === 'context' && <SettingsGroup title="信息容量">{field('会话上下文上限', 'max_history_chars', {type: 'number', min: 4000, max: 2000000, hint: '字符，包含对话历史与本轮工具信息。默认 400,000。'})}{field('单次工具结果上限', 'max_tool_result_chars', {type: 'number', min: 2000, max: 200000, hint: '字符，控制每次查询送给模型的信息量。默认 60,000。'})}<p className="settings-note">这里按字符计量，和模型的 token 上限不同。提高预算可以容纳更多结果，也会增加每轮发送的信息量。</p></SettingsGroup>}
         {current === 'runtime' && <><SettingsGroup title="等待与重试">{field('单轮任务时限', 'turn_timeout_s', {type: 'number', min: 10, max: 300, hint: '秒，10–300'})}{field('单次模型等待', 'model_timeout_s', {type: 'number', min: 10, max: 300, hint: '秒，10–300'})}{field('模型请求重试', 'model_max_retries', {type: 'number', min: 0, max: 2})}</SettingsGroup><SettingsGroup title="操作预算">{field('模型调用上限', 'max_model_rounds', {type: 'number', min: 2, max: 30})}{field('工具调用上限', 'max_tool_calls', {type: 'number', min: 2, max: 50})}</SettingsGroup></>}
         {current === 'developer' && <SettingsGroup title="调试信息">{field('开发者模式', 'enabled', {type: 'checkbox', hint: '显示上下文占用、系统组件、工具和脱敏请求记录。'})}{field('记录展示方式', 'trace_mode', {options: [['compact', '收起记录 · 按需展开'], ['detailed', '展开公开执行轨迹']]})}<p className="settings-note">只展示公开操作与工具状态。Token 分解为估算；实际用量以服务端报告为准。</p></SettingsGroup>}
-        {current === 'data' && <><SettingsGroup title="当前连接">{[['模型', status.model || '尚未配置'], ['菜谱库', status.database?.ready ? '已连接' : '暂未连接'], ['菜谱数量', `${status.database?.recipe_count || 0} 道`], ['数据版本', status.database?.data_version || '未知'], ['进行中的对话', String(status.active_sessions || 0)]].map(([label, value]) => <div className="status-row" key={label}><span>{label}</span><span>{value}</span></div>)}</SettingsGroup><SettingsGroup title="本机保存"><p className="settings-note">会话、厨房进度和计时器随当前任务保存。模型与组件设置保存在本机，外观与对话偏好会在这个工作台的设置页与助手之间同步。</p></SettingsGroup></>}
+        {current === 'data' && <><SettingsGroup title="当前连接"><dl className="settings-status-grid">
+          <div><dt><Icon name="plug"/>模型</dt><dd><span>{status.model || '尚未提供'}</span><small className="settings-status-tag" data-state={status.configured === true ? 'ready' : 'unknown'}>{status.configured === true ? '已配置' : status.configured === false ? '待配置' : '状态未报告'}</small></dd></div>
+          <div><dt><Icon name="database"/>菜谱库</dt><dd><small className="settings-status-tag" data-state={status.database?.ready === true ? 'ready' : 'unknown'}>{status.database?.ready === true ? '已连接' : status.database?.ready === false ? '暂未连接' : '状态未报告'}</small></dd></div>
+          <div><dt>菜谱数量</dt><dd>{Number.isFinite(status.database?.recipe_count) ? `${status.database.recipe_count} 道` : '尚未报告'}</dd></div>
+          <div><dt>数据版本</dt><dd>{status.database?.data_version || '尚未报告'}</dd></div>
+          <div><dt>进行中的对话</dt><dd>{Number.isFinite(status.active_sessions) ? `${status.active_sessions} 个` : '尚未报告'}</dd></div>
+        </dl></SettingsGroup><SettingsGroup title="本机保存"><p className="settings-note">会话、厨房进度和计时器随当前任务保存。模型与组件设置保存在本机，外观与对话偏好会在这个工作台的设置页与助手之间同步。</p></SettingsGroup></>}
         {['usage', 'changelog', 'about'].includes(current) && <SettingsInsights section={current} refresh={insightRefresh} usageDays={current === 'usage' ? usageDays : undefined}/>}
       </SettingsTabs></form>
       <MemorySettings active={current === 'memory'} onDirty={setMemoryDirty} onBusy={setMemoryBusy}/>

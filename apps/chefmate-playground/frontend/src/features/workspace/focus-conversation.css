@@ -1,19 +1,63 @@
-.react-cooking-focus .focus-reply{display:flex;flex-direction:column;flex:0 1 auto;width:100%;max-width:900px;min-height:0}
-.react-cooking-focus .focus-reply-toggle{display:flex;justify-content:flex-start;flex:none;gap:7px;min-height:30px;width:100%;padding:3px 4px;border:0;border-radius:7px;background:transparent;color:var(--color-muted);font:0.8125rem/1.6 var(--font-ui);text-align:left}
+/* The dock shares the reading canvas; only its input has a quiet raised surface. */
+.react-cooking-focus{--focus-dock-max:min(42dvh,340px)}
+.react-cooking-focus .focus-footer{display:flex;flex:0 1 auto;flex-direction:column;width:100%;min-height:0;max-height:var(--focus-dock-max);background:transparent;overflow:hidden}
+.react-cooking-focus .focus-footer-inner{display:flex;flex:0 1 auto;flex-direction:column;gap:6px;width:100%;min-height:0;max-width:var(--focus-content-max);margin-inline:auto;padding:0 var(--focus-gutter) 16px}
+.react-cooking-focus .focus-reply{display:flex;flex:0 1 auto;flex-direction:column;width:100%;min-height:32px}
+.react-cooking-focus .focus-reply-toggle{display:flex;align-items:center;justify-content:flex-start;gap:7px;flex:none;width:100%;min-height:32px;padding:5px 8px;border:0;border-radius:8px;background:transparent;color:var(--color-muted);font:0.875rem/1.6 var(--font-ui);text-align:left;transition:background var(--motion-fast) var(--ease-settle),color var(--motion-fast) var(--ease-settle)}
+.react-cooking-focus .focus-reply-toggle:hover{background:var(--surface-inset);color:var(--color-text)}
 .focus-reply-toggle .icon{width:15px;height:15px}.focus-reply-toggle .icon:last-child{margin-left:auto}
-.react-cooking-focus .focus-assistant{width:100%;max-height:clamp(80px,22vh,240px);min-height:0;overflow:auto;overscroll-behavior:contain;padding:5px 4px;scrollbar-gutter:stable}
-.react-cooking-focus .focus-reply.is-expanded,.react-cooking-focus .focus-assistant.is-expanded{max-height:none;height:100%}
+.react-cooking-focus .focus-assistant{flex:0 1 auto;width:100%;min-height:0;max-height:clamp(56px,12dvh,140px);padding:4px 8px 7px;overflow:auto;overscroll-behavior:contain;scrollbar-gutter:stable}
 .focus-exchange+.focus-exchange{margin-top:8px}
-.focus-user-message{margin:0 0 6px auto;width:fit-content;max-width:90%;padding:7px 12px;border:0;border-radius:14px 14px 4px 14px;background:var(--surface-inset);font:0.9375rem/1.7 var(--font-reading);white-space:pre-wrap;overflow-wrap:anywhere}
-.focus-assistant .markdown{font-size:0.9375rem;line-height:1.8}.focus-assistant .assistant-progress{margin:5px 0}
-.react-cooking-focus .focus-footer{max-height:48%;display:flex;flex-direction:column;align-items:center;min-height:0}
-.react-cooking-focus .focus-composer-slot{flex:none;width:100%;min-height:0}
-.react-cooking-focus .focus-chat-surface{display:flex;flex-direction:column;height:100%;min-height:0;min-width:0}
+.focus-user-message{width:fit-content;max-width:90%;margin:0 0 6px auto;padding:7px 12px;border:0;border-radius:14px 14px 4px 14px;background:var(--surface-inset);font:1rem/1.7 var(--font-reading);white-space:pre-wrap;overflow-wrap:anywhere}
+.focus-assistant .markdown{font-size:1rem;line-height:1.75}.focus-assistant .assistant-progress{margin:5px 0}
+.focus-reply>.error-box{flex:none;max-height:100px;margin:5px 0;overflow:auto;overscroll-behavior:contain}
+.focus-reply>.message-meta{flex:none;margin:5px 8px}
+.react-cooking-focus .focus-reply:has(>.error-box,>.message-meta){overflow-y:auto;overscroll-behavior:contain}
+.react-cooking-focus .focus-composer-slot{flex:none;width:100%;min-width:0;min-height:0;max-height:calc(var(--focus-dock-max) - 38px);margin:0;padding:3px;overflow:auto;overscroll-behavior:contain;scrollbar-width:thin}
+.react-cooking-focus .focus-composer-slot .composer-area{width:100%;max-width:none;margin:0;padding:0}
+.react-cooking-focus .focus-composer-slot .reply-suggestions{gap:6px;margin:0;padding:0 2px 7px}
+.react-cooking-focus .focus-composer-slot .reply-suggestions button{max-width:240px;background:var(--surface-inset)}
+.react-cooking-focus .focus-composer-slot .reply-suggestions button:hover{background:var(--color-accent-soft)}
+.react-cooking-focus .focus-composer-slot .composer{display:flex;align-items:flex-end;gap:12px;width:100%;max-width:none;margin:0;padding:12px 14px;border-radius:16px;box-shadow:none}
+.react-cooking-focus .focus-composer-slot .composer:hover:not(:focus-within){box-shadow:0 3px 12px var(--color-shadow)}
+.react-cooking-focus .focus-composer-slot .composer:focus-within{box-shadow:0 0 0 2px color-mix(in srgb,var(--color-accent) 22%,transparent)}
+.react-cooking-focus .focus-composer-slot .composer textarea{flex:1;min-width:0;width:0;min-height:30px;max-height:88px;resize:none;font:1rem/1.7 var(--font-ui);box-sizing:border-box}
+.react-cooking-focus .focus-composer-slot .composer-bottom{display:flex;align-items:center;gap:8px;flex:none;min-height:30px;margin:0}
+.react-cooking-focus .focus-composer-slot .image-drafts{max-height:90px;overflow:auto}
+.react-cooking-focus .focus-composer-slot .resume-draft{margin-bottom:5px}
+/* Pending questions stay scrollable inside the dock instead of displacing the task. */
+.react-cooking-focus .focus-footer:has(>.focus-footer-inner .react-question.question-form){max-height:var(--focus-dock-max);overflow:hidden}
+.react-cooking-focus .focus-composer-slot .react-question.question-form{margin-bottom:0}
+.react-cooking-focus .focus-composer-slot .react-question .question-body{max-height:min(240px,24dvh)}
+.react-cooking-focus .focus-chat-surface{display:flex;flex-direction:column;height:100%;min-width:0;min-height:0}
 .react-cooking-focus .focus-chat-surface .conversation{padding:18px 16px 12px}
 .react-cooking-focus[data-active-view=conversation] .focus-content{overflow:hidden}
-.react-cooking-focus .focus-chat-surface .user-bubble{font-size:1rem;padding:11px 17px;max-width:85%;border-radius:16px 16px 4px 16px}
-@media(max-height:540px){.react-cooking-focus .focus-assistant{max-height:90px}.react-cooking-focus .focus-footer{max-height:48%}.react-cooking-focus .focus-reply-toggle{min-height:24px;font-size:0.75rem}.focus-user-message{max-height:3.4em;overflow:auto}}
-@media(max-width:600px){.react-cooking-focus .focus-assistant{max-height:22vh}.react-cooking-focus .focus-chat-surface .conversation{padding:12px 0}}
-
-.react-cooking-focus .focus-reply-toggle{transition:background var(--motion-fast) var(--ease-settle),color var(--motion-fast) var(--ease-settle)}
-.react-cooking-focus .focus-reply-toggle:hover{background:var(--surface-hover)}
+.react-cooking-focus[data-active-view=conversation] .focus-footer-inner{max-width:914px}
+.react-cooking-focus .focus-reply.is-expanded{flex:1;min-height:0;height:100%;max-height:none}
+.react-cooking-focus .focus-assistant.is-expanded{flex:1;min-height:0;height:100%;max-height:none}
+.react-cooking-focus .focus-chat-surface .user-bubble{max-width:85%;padding:11px 17px;border-radius:16px 16px 4px 16px;font-size:1rem}
+@media(min-width:1000px){.react-cooking-focus[data-active-view=cooking_guide] .focus-footer-inner{padding-left:calc(var(--focus-gutter) + 246px)}}
+@media(max-width:600px){
+ .react-cooking-focus .focus-footer-inner{gap:4px;padding-bottom:max(10px,env(safe-area-inset-bottom))}
+ .react-cooking-focus .focus-assistant{max-height:14dvh}
+ .react-cooking-focus .focus-composer-slot .composer{gap:9px;padding:10px 12px}
+ .react-cooking-focus .focus-chat-surface .conversation{padding:12px 0}
+}
+@media(max-height:520px){
+ .react-cooking-focus{--focus-dock-max:min(42dvh,180px)}
+ .react-cooking-focus .focus-footer-inner{gap:4px;padding-bottom:8px}
+ .react-cooking-focus .focus-assistant{max-height:44px;padding-block:2px 4px}
+ .react-cooking-focus .focus-composer-slot .composer{gap:9px;padding:9px 12px}
+ .react-cooking-focus .focus-composer-slot .composer textarea{max-height:48px}
+ .focus-user-message{max-height:3.4em;overflow:auto}
+}
+@media(max-height:520px) and (min-width:700px){
+ .react-cooking-focus{--focus-dock-max:126px}
+ .react-cooking-focus .focus-footer-inner{display:grid;grid-template-columns:minmax(0,.85fr) minmax(0,1.15fr);align-items:end;gap:16px;padding-left:var(--focus-gutter)}
+ .react-cooking-focus .focus-reply{max-height:106px;min-width:0}
+ .react-cooking-focus .focus-assistant{max-height:70px}
+ .react-cooking-focus .focus-composer-slot{max-height:106px}
+ .react-cooking-focus[data-active-view=cooking_guide] .focus-footer-inner{padding-left:var(--focus-gutter)}
+ .react-cooking-focus[data-active-view=conversation] .focus-footer-inner{display:flex;max-width:914px}
+}
+@media(prefers-reduced-motion:reduce){.react-cooking-focus .focus-reply-toggle{transition:none}}

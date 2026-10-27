@@ -13,6 +13,7 @@ describe('settings grouped navigation', () => {
     render(<SettingsTabs items={['更新记录']} label="更新日志内容"><SettingsGroup title="更新记录"><p>本次更新</p></SettingsGroup></SettingsTabs>);
     expect(screen.queryByRole('tablist')).not.toBeInTheDocument();
     expect(screen.getByRole('heading', { name: '更新记录' })).toBeInTheDocument();
+    expect(screen.getByRole('region', {name: '更新记录'})).toHaveAttribute('aria-labelledby', screen.getByRole('heading', {name: '更新记录'}).id);
     expect(screen.getByText('本次更新')).toBeVisible();
   });
 
@@ -20,7 +21,7 @@ describe('settings grouped navigation', () => {
     request.mockResolvedValue({ name: 'ChefMate', version: '0.2.1', recipe_count: 358 });
     render(<SettingsInsights section="about" refresh={0} />);
     expect(await screen.findByText(/聊天、个人菜谱、饮食记录和长期记忆保存在本机/)).toBeVisible();
-    expect(screen.getByRole('heading', { name: '产品信息' })).toBeVisible();
+    expect(screen.getByRole('heading', { name: 'ChefMate' })).toBeVisible();
     expect(screen.getByRole('heading', { name: '营养数据' })).toBeVisible();
   });
 

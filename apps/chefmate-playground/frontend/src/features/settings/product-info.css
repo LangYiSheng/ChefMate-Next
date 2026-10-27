@@ -1,0 +1,50 @@
+.react-settings .product-release-log{container:product-releases / inline-size;min-width:0}
+.react-settings .product-release{padding:0;margin:0;background:transparent;min-width:0}
+.react-settings .product-release+.product-release{margin-top:40px;padding-top:28px}
+.react-settings .product-release-meta{display:flex;align-items:center;flex-wrap:wrap;gap:10px 12px}
+.react-settings .product-release-meta h2{margin:0;font:600 1.25rem/1.5 var(--font-numeric);font-variant-numeric:tabular-nums lining-nums}
+.react-settings .product-current-version,.react-settings .product-version{display:inline-flex;align-items:center;min-height:25px;padding:2px 9px;border-radius:7px;background:var(--color-accent-soft);color:var(--color-accent);font:0.75rem/1.7 var(--font-ui);font-variant-numeric:tabular-nums lining-nums}
+.react-settings .product-release-meta time{margin-left:auto;color:var(--color-muted);font:0.8125rem/1.7 var(--font-numeric);font-variant-numeric:tabular-nums lining-nums}
+.react-settings .product-release-title{margin:14px 0 8px;font:var(--font-title-weight) 1.375rem/1.6 var(--font-title)}
+.react-settings .product-release-summary{max-width:72ch;margin:0 0 28px;color:var(--color-muted);font:0.9375rem/1.95 var(--font-reading)}
+.react-settings .product-release-sections{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:28px 32px;align-items:start}
+.react-settings .product-release-section{min-width:0;scroll-margin-top:18px}
+.react-settings .product-release-section h4{margin:0 0 10px;font:600 0.9375rem/1.7 var(--font-ui)}
+.react-settings .product-release-section ul{display:grid;gap:9px;margin:0;padding-left:18px;color:var(--color-muted);font:0.9375rem/1.85 var(--font-reading)}
+.react-settings .product-release-section li{padding-left:2px;overflow-wrap:anywhere}
+.react-settings .product-release-section li::marker{color:var(--color-accent)}
+.react-settings .product-release-sources{margin-top:26px;color:var(--color-muted);font:0.8125rem/1.8 var(--font-ui)}
+.react-settings .product-release-sources summary{display:flex;align-items:center;gap:8px;width:fit-content;max-width:100%;padding:5px 0;cursor:pointer;list-style:none}
+.react-settings .product-release-sources summary::-webkit-details-marker{display:none}
+.react-settings .product-release-sources summary .icon{width:15px;height:15px;flex:none}
+.react-settings .product-release-sources summary small{font-size:0.75rem;color:var(--color-muted)}
+.react-settings .product-release-sources summary>.icon:last-child{transition:transform var(--motion-normal) var(--ease-settle)}
+.react-settings .product-release-sources[open] summary>.icon:last-child{transform:rotate(180deg)}
+.react-settings .product-release-sources dl{display:grid;gap:9px;margin:12px 0 0;padding:16px;border-radius:10px;background:var(--surface-inset)}
+.react-settings .product-release-sources dl>div{display:flex;align-items:baseline;flex-wrap:wrap;gap:6px 18px}
+.react-settings .product-release-sources dt{min-width:4.5em;color:var(--color-muted)}
+.react-settings .product-release-sources dd{display:flex;flex-wrap:wrap;gap:8px 14px;margin:0;color:var(--color-text)}
+.react-settings .product-release-sources code,.react-settings .product-build-meta code{font:0.8125rem/1.8 var(--font-numeric);font-variant-numeric:tabular-nums lining-nums;overflow-wrap:anywhere}
+.react-settings .product-about{margin-bottom:32px;padding:4px 0 0}
+.react-settings .product-about-identity{display:flex;align-items:center;gap:18px;min-width:0}
+.react-settings .product-brand-mark{width:56px;height:56px;flex:none}
+.react-settings .product-about-identity>div{min-width:0}
+.react-settings .product-about-name{display:flex;align-items:center;flex-wrap:wrap;gap:7px 12px}
+.react-settings .product-about-name h2{margin:0;font:var(--font-title-weight) 1.75rem/1.4 var(--font-title)}
+.react-settings .product-about-identity p{margin:5px 0 0;color:var(--color-muted);font:0.9375rem/1.7 var(--font-ui)}
+.react-settings .product-build-meta{display:flex;flex-wrap:wrap;gap:10px 28px;margin:24px 0 0;font:0.8125rem/1.8 var(--font-ui)}
+.react-settings .product-build-meta>div{display:flex;align-items:baseline;gap:10px;min-width:0}
+.react-settings .product-build-meta dt{color:var(--color-muted);flex:none}
+.react-settings .product-build-meta dd{display:flex;align-items:center;gap:7px;margin:0;min-width:0;overflow-wrap:anywhere}
+.react-settings .product-build-meta .icon{width:15px;height:15px;flex:none;color:var(--color-muted)}
+.react-settings .product-facts{display:flex;flex-wrap:wrap;gap:22px 56px;margin:28px 0 0}
+.react-settings .product-facts dt{color:var(--color-muted);font:0.8125rem/1.8 var(--font-ui)}
+.react-settings .product-facts dd{display:flex;align-items:baseline;gap:7px;margin:6px 0 0;font-variant-numeric:tabular-nums lining-nums}
+.react-settings .product-facts strong{font:600 2rem/1.3 var(--font-numeric);font-variant-numeric:tabular-nums lining-nums}
+.react-settings .product-facts dd>span{color:var(--color-muted);font:0.8125rem/1.7 var(--font-ui)}
+.react-settings .product-facts .product-count-unknown{color:var(--color-text);font-size:1rem}
+.react-settings .product-boundary-copy{max-width:70ch;color:var(--color-muted);font:0.9375rem/1.95 var(--font-reading)}
+.react-settings .product-boundary-copy p{margin:0}
+.react-settings .product-boundary-copy p+p{margin-top:10px}
+@container product-releases (max-width:680px){.react-settings .product-release-sections{grid-template-columns:1fr;gap:24px}}
+@media(max-width:560px){.react-settings .product-release-title{font-size:1.25rem}.react-settings .product-release-meta{gap:8px}.react-settings .product-release-meta time{font-size:0.75rem}.react-settings .product-about-identity{align-items:flex-start;gap:14px}.react-settings .product-brand-mark{width:48px;height:48px}.react-settings .product-about-name h2{font-size:1.5rem}.react-settings .product-version{font-size:0.6875rem}.react-settings .product-build-meta{gap:9px 20px;margin-top:20px}.react-settings .product-facts{gap:20px 40px;margin-top:24px}}

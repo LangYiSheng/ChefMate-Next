@@ -6,7 +6,7 @@
 历史验收只覆盖记录中的版本、环境与场景，不能当作今天重新测试的结果。
 历史计划里的未勾选任务不自动成为当前待办，已勾选项目也不替代现行代码和最新验收。本文按记录日期整理；跨日期补充会单独说明。
 
-最近一轮：[浏览器批注：控件与设置布局](records/2026-10-27-ui-feedback.md)。前轮见[微明度层次与界面动效](records/2026-10-27-tonal-motion.md)、[近期对话问题与真实模型迭代](records/2026-10-24-conversation-quality.md)、[三档字号、步骤与专注回复验收](records/2026-10-24-readable-cooking-ui.md)、[厨房卡片与专注对话交互验收](records/2026-10-24-kitchen-interaction-feedback.md)，当前版本见[0.2.1 工作台与对话内操作验收](records/2026-10-24-release-0.2.1.md)。早期结构整理见[代码与文档整理验收](records/2026-10-22-code-organization.md)，首次版本日志页面见[0.2.0 发布记录](records/2026-10-22-release-0.2.0.md)。
+最近一轮：[剩余设置页与专注底栏统一](records/2026-10-27-settings-completion-focus.md)。前轮见[浏览器批注：控件与设置布局](records/2026-10-27-ui-feedback.md)、[微明度层次与界面动效](records/2026-10-27-tonal-motion.md)、[近期对话问题与真实模型迭代](records/2026-10-24-conversation-quality.md)、[三档字号、步骤与专注回复验收](records/2026-10-24-readable-cooking-ui.md)、[厨房卡片与专注对话交互验收](records/2026-10-24-kitchen-interaction-feedback.md)，当前版本见[0.2.1 工作台与对话内操作验收](records/2026-10-24-release-0.2.1.md)。早期结构整理见[代码与文档整理验收](records/2026-10-22-code-organization.md)，首次版本日志页面见[0.2.0 发布记录](records/2026-10-22-release-0.2.0.md)。
 
 ## 验收与实现记录
 
@@ -14,6 +14,7 @@
 
 | 记录 | 关注点 |
 | --- | --- |
+| [剩余设置页与专注底栏统一](records/2026-10-27-settings-completion-focus.md) | 通用分组平铺、日志与关于、跨页提示、专注底栏融合及宽窄屏验证 |
 | [浏览器批注：控件与设置布局](records/2026-10-27-ui-feedback.md) | 11 条批注、快捷键、居中拖动条、勾选对比、设置分组、图形组件、用量合并与间距 |
 | [微明度层次与界面动效](records/2026-10-27-tonal-motion.md) | 无描边表面、柔和选中、逐字入场、数字等宽、减少动态效果和浏览器链路验证 |
 

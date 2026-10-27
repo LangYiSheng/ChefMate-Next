@@ -21,7 +21,8 @@ export function Field({label, value, onChange, hint, type = 'text', options, min
 export function SettingsGroup({title, children}: {title: string; children: ReactNode}) {
   const tabs = useContext(GroupTabs), unique = useId(), index = tabs?.items.indexOf(title) ?? -1;
   const grouped = Boolean(tabs && tabs.items.length > 1 && index >= 0), panelId = grouped ? `${tabs!.prefix}-panel-${index}` : `${unique}-group`;
-  return <section className="settings-group" id={panelId} data-settings-index={title} role={grouped ? 'tabpanel' : undefined} aria-labelledby={grouped ? `${tabs!.prefix}-tab-${index}` : undefined} hidden={grouped && tabs!.active !== title}>{!grouped && <h2>{title}</h2>}{children}</section>;
+  const titleId = `${unique}-title`;
+  return <section className="settings-group" id={panelId} data-settings-index={title} role={grouped ? 'tabpanel' : undefined} aria-labelledby={grouped ? `${tabs!.prefix}-tab-${index}` : titleId} hidden={grouped && tabs!.active !== title}>{!grouped && <h2 className="settings-group-title" id={titleId}>{title}</h2>}{children}</section>;
 }
 
 export function SettingsTabs({items, label, children}: {items: readonly string[]; label: string; children: ReactNode}) {

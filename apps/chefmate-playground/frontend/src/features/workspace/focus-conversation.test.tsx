@@ -92,4 +92,33 @@ describe('focus conversation alongside the task', () => {
     expect(screen.getByText('先把葱洗干净。')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '备菜' })).toHaveAttribute('aria-pressed', 'true');
   });
+
+  it('keeps one input dock and its draft while collapsing context and switching to the full conversation', () => {
+    vi.spyOn(workspaceStore, 'load').mockResolvedValue(null);
+    workspaceStore.receive(id, { workspace: { revision: 1, stage: 'cooking' }, views: [{ id: 'guide', kind: 'cooking_guide', revision: 1,
+      data: { recipe_id: 'soup', recipe_name: '番茄蛋汤', active_step_id: 'one', steps: [{ id: 'one', ordinal: 0, instruction: '把番茄切成小块。', status: 'pending' }] } }] });
+    const base = chefStore.getSnapshot();
+    vi.spyOn(chefStore, 'getSnapshot').mockReturnValue({ ...base, cache: { [id]: { id, title: '本餐', messages: [
+      { role: 'user', content: '番茄怎么处理' }, { role: 'assistant', content: '切成小块后，先炒出汁。' },
+    ] } } });
+    const rendered = render(<CookingFocus sessionId={id} onClose={() => {}} onContinue={() => {}}>
+      <div className="composer-area"><div className="reply-suggestions"><button type="button">继续这一步</button></div>
+        <form className="composer"><textarea aria-label="专注输入" defaultValue="我只有一口锅" /><div className="composer-bottom"><button type="button">发送</button></div></form></div>
+    </CookingFocus>);
+    const footer = rendered.container.querySelector('.focus-footer')!, input = screen.getByRole('textbox', { name: '专注输入' });
+    expect(footer.querySelector('.focus-footer-inner>.focus-reply')).toBeInTheDocument();
+    expect(footer.querySelector('.focus-footer-inner>.focus-composer-slot')).toContainElement(input);
+    fireEvent.click(screen.getByRole('button', { name: '收起助手回复' }));
+    expect(screen.getByText('切成小块后，先炒出汁。')).not.toBeVisible();
+    expect(input).toHaveValue('我只有一口锅');
+    fireEvent.click(screen.getByRole('button', { name: '和助手聊聊' }));
+    expect(footer.querySelector('.focus-reply')).toBeNull();
+    expect(rendered.container.querySelector('.focus-content .focus-reply.is-expanded')).toBeInTheDocument();
+    expect(screen.getByRole('textbox', { name: '专注输入' })).toBe(input);
+    fireEvent.click(screen.getByRole('button', { name: '做法' }));
+    expect(footer.querySelector('.focus-reply')).toBeInTheDocument();
+    expect(screen.getByRole('textbox', { name: '专注输入' })).toBe(input);
+    expect(input).toHaveValue('我只有一口锅');
+    expect(screen.getByRole('button', { name: '完成这一步' })).toBeInTheDocument();
+  });
 });

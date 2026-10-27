@@ -128,7 +128,7 @@
 :is(.react-workspace,.react-cooking-focus) .workspace-completion{display:flex;align-items:flex-start;gap:8px;padding:12px;background:var(--color-accent-soft);border-radius:9px;margin:12px 0;font:400 0.9375rem/1.75 var(--font-ui)}
 :is(.react-workspace,.react-cooking-focus) .workspace-completion .icon{flex:none;margin-top:2px}
 /* App moves this ordinary scene beside the main conversation. */
-.react-cooking-focus{position:fixed;inset:12px;display:flex;flex-direction:column;min-width:0;min-height:0;margin:0;padding:0;border:0;border-radius:20px;background:var(--surface-raised);color:var(--color-text);overflow:hidden;box-shadow:0 12px 56px var(--color-shadow)}
+.react-cooking-focus{--focus-content-max:1160px;--focus-gutter:32px;position:fixed;inset:12px;display:flex;flex-direction:column;min-width:0;min-height:0;margin:0;padding:0;border:0;border-radius:20px;background:var(--color-canvas);color:var(--color-text);overflow:hidden;box-shadow:0 12px 56px var(--color-shadow)}
 .react-cooking-focus .focus-header{display:flex;align-items:center;justify-content:space-between;gap:16px;flex:none;padding:14px 24px 10px}
 .react-cooking-focus .focus-heading{display:flex;align-items:baseline;gap:14px;flex:1;min-width:0}
 .react-cooking-focus .focus-heading h2{font:var(--font-title-weight,700) 1.375rem/1.5 var(--font-title);overflow:hidden;white-space:nowrap;text-overflow:ellipsis;min-width:0}
@@ -139,7 +139,7 @@
 .react-cooking-focus .focus-modes button{border:0;border-radius:0;border-bottom:2px solid transparent;padding:8px 0;background:transparent;color:var(--color-muted);white-space:nowrap;flex:none}
 .react-cooking-focus .focus-modes button[aria-pressed=true]{border-bottom-color:var(--color-accent);color:var(--color-accent)}
 .react-cooking-focus .focus-body{display:flex;flex:1;min-height:0;min-width:0;overflow:hidden}
-.react-cooking-focus .focus-deck{display:flex;flex:1;flex-direction:column;min-height:0;min-width:0;width:100%;max-width:1160px;margin:0 auto;padding:20px 32px 16px}
+.react-cooking-focus .focus-deck{display:flex;flex:1;flex-direction:column;min-height:0;min-width:0;width:100%;max-width:var(--focus-content-max);margin:0 auto;padding:20px var(--focus-gutter) 16px}
 .react-cooking-focus .focus-content{flex:1;min-height:0;overflow:auto;overscroll-behavior:contain;scrollbar-gutter:stable}
 .react-cooking-focus .focus-content>.ui-component{border:0;padding:0;min-height:100%;display:flex;flex-direction:column}
 .react-cooking-focus .focus-content>.ui-component>.ui-component-heading{display:none}
@@ -148,14 +148,6 @@
 .react-cooking-focus .focus-content .ui-cooking-guide{display:flex;flex:1;min-height:0;flex-direction:column}
 .react-cooking-focus .cooking-guide-tools{flex:none}
 .react-cooking-focus .focus-message-copy{white-space:pre-wrap;font:400 1rem/1.9 var(--font-reading)}
-.react-cooking-focus .focus-footer{flex:none;width:100%;max-height:42dvh;padding:0 24px 16px;background:var(--color-canvas);overflow:auto}
-.react-cooking-focus .focus-composer-slot{max-width:960px;margin:auto}
-.react-cooking-focus .focus-composer-slot .composer-area{margin:0;padding:0;width:100%;max-width:none}
-.react-cooking-focus .focus-composer-slot .composer{display:block;width:100%;margin:0;max-width:none}
-.react-cooking-focus .focus-composer-slot .composer textarea{width:100%;min-height:38px;max-height:110px;resize:none;box-sizing:border-box;font:400 1rem/1.7 var(--font-ui)}
-.react-cooking-focus .focus-composer-slot .composer-bottom{display:flex;align-items:center;gap:8px;margin-top:8px}
-.react-cooking-focus .focus-composer-slot .composer-bottom .composer-hint{flex:1;font:400 0.75rem/1.6 var(--font-ui);color:var(--color-muted)}
-.react-cooking-focus .focus-composer-slot .composer-bottom>.send-button{margin-left:auto}
 @media(min-width:1000px){
 }
 /* One timer service has independent app and modal popover hosts. */
@@ -194,17 +186,16 @@
   :is(.react-workspace,.react-cooking-focus,.react-timer-popover) button:not(:where(.composer-area *)):where(:not(.focus-chat-surface .conversation *),.focus-chat-surface .react-workspace *){min-height:40px}
   :is(.react-workspace,.react-cooking-focus) .ui-component{padding:14px 0}
   :is(.react-workspace,.react-cooking-focus) .ui-nutrition{grid-template-columns:repeat(2,minmax(0,1fr))}
-  .react-cooking-focus{inset:0;border:0;border-radius:0}
+  .react-cooking-focus{--focus-gutter:16px;inset:0;border:0;border-radius:0}
   .react-cooking-focus .focus-header{padding:12px 14px 8px;gap:10px}
   .react-cooking-focus .focus-heading{gap:6px;display:block}
   .react-cooking-focus .focus-heading h2{font-size:1.1875rem}
   .react-cooking-focus .focus-header-progress{font-size:0.75rem}
   .react-cooking-focus .focus-header-actions{gap:6px}
   .react-cooking-focus .focus-modes{padding:0 14px;gap:18px}
-  .react-cooking-focus .focus-deck{padding:16px 16px 12px}
+  .react-cooking-focus .focus-deck{padding:16px var(--focus-gutter) 12px}
   :is(.react-workspace,.react-cooking-focus) .ui-cooking-guide .ui-step-instruction{font-size:1.375rem}
   .react-cooking-focus:where(:not([data-active-view=conversation])) .focus-content .ui-step-instruction{font-size:1.375rem;line-height:1.85}
-  .react-cooking-focus .focus-footer{padding:0 12px max(12px,env(safe-area-inset-bottom));max-height:44dvh}
   .react-cooking-focus .focus-content .ui-recipe-name{font-size:1.1875rem}
 }
 @media(max-height:520px){
@@ -213,10 +204,6 @@
   .react-cooking-focus .focus-header-progress{display:none}
   .react-cooking-focus .focus-modes button{min-height:32px;padding:5px 0;font-size:0.875rem}
   .react-cooking-focus .focus-deck{padding-top:10px;padding-bottom:8px}
-  .react-cooking-focus .focus-footer{max-height:35dvh;padding-bottom:8px}
-  .react-cooking-focus .focus-footer :is(.resume-draft,.reply-suggestions){display:none}
-  .react-cooking-focus .focus-composer-slot .composer{padding:10px 12px 8px}
-  .react-cooking-focus .focus-composer-slot .composer textarea{max-height:48px;min-height:28px}
   .react-cooking-focus:where(:not([data-active-view=conversation])) .focus-content .ui-step-instruction{font-size:1.375rem;line-height:1.8}
   .react-timer-popover{padding:12px}
 }
@@ -299,7 +286,8 @@
   .react-cooking-focus .focus-cooking-layout{display:grid;grid-template-columns:160px minmax(0,1fr);grid-template-rows:minmax(0,1fr);gap:18px}
   .react-cooking-focus .focus-step-outline{height:100%;max-height:none;border-right:0;padding-right:10px}
   .react-cooking-focus .focus-step-outline-body{max-height:calc(100% - 36px)}
-  .react-cooking-focus .focus-deck{padding:6px 24px}
+  .react-cooking-focus{--focus-gutter:24px}
+  .react-cooking-focus .focus-deck{padding:6px var(--focus-gutter)}
   .react-cooking-focus .cooking-guide-tools{gap:4px 12px;margin-bottom:4px}
   .react-cooking-focus .cooking-guide-tools .workflow-mode-tab{min-height:28px;padding:4px 0;font-size:.875rem}
   .react-cooking-focus .cooking-step-nav{padding-top:6px;margin-top:5px}
