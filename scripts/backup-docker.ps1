@@ -1,4 +1,4 @@
-param(
+﻿param(
     [string]$EnvFile = '.env',
     [string]$ProjectName = 'chefmate-next',
     [string]$OutputDirectory = '',

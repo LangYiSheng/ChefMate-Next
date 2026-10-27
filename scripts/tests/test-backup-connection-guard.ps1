@@ -1,4 +1,4 @@
-# Standalone regression; Docker is stubbed and no files/containers are created.
+﻿# Standalone regression; Docker is stubbed and no files/containers are created.
 $ErrorActionPreference='Stop'
 $repoRoot = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
 $testId = [Guid]::NewGuid().ToString('N')

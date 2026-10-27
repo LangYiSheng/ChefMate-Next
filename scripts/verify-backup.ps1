@@ -1,4 +1,4 @@
-param([Parameter(Mandatory = $true)][string]$BackupDirectory)
+﻿param([Parameter(Mandatory = $true)][string]$BackupDirectory)
 
 $ErrorActionPreference = 'Stop'
 $backupPath = (Resolve-Path -LiteralPath $BackupDirectory).Path.TrimEnd([char[]]'\/')
