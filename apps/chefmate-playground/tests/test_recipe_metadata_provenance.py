@@ -138,7 +138,7 @@ def test_repeated_ingredient_name_does_not_discard_explicit_amount_or_invent_wei
 
 def test_raw_http_cannot_invent_conversation_provenance_or_relabel_an_old_value(tmp_path):
     flow = PublicationFlow(tmp_path)
-    app = create_app(PlaygroundConfig(sessions_database=flow.repository.path), service=Service(), agent=Agent())
+    app = create_app(PlaygroundConfig(auth_enabled=False, sessions_database=flow.repository.path), service=Service(), agent=Agent())
     uri = "/api/cookbook/" + flow.record["recipe_id"]
     with TestClient(app) as client:
         forged = metadata_recipe("普通、1人份、30分钟", kind="user_confirmed", question_id="not-a-real-question")

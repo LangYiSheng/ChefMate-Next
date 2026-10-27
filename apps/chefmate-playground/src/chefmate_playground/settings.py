@@ -17,6 +17,7 @@ from .components import ComponentRegistry, DEFAULT_COMPONENTS, RETRIEVAL_TOOLS, 
 PERSISTED = {"model", "base_url", "api_key", "api_format", "stream_tool_calls", "supports_images", "max_images", "enabled_components",
              "turn_timeout_s", "model_timeout_s", "model_max_retries", "max_model_rounds", "max_tool_calls",
              "max_history_chars", "max_tool_result_chars", "reply_suggestions", "reply_suggestion_count", "timer_limit", "clear_timer_on_step_change", "ui_preferences"}
+PERSONAL_PERSISTED = {"ui_preferences", "reply_suggestions", "reply_suggestion_count", "timer_limit", "clear_timer_on_step_change"}
 
 
 class ModelSettings(BaseModel):
@@ -87,6 +88,8 @@ def load_overrides(config):
     values = json.loads(path.read_text(encoding="utf-8"))
     if not isinstance(values, dict) or set(values) - PERSISTED:
         raise ValueError("本地设置文件无效")
+    if config.managed_user and set(values) - PERSONAL_PERSISTED:
+        raise ValueError("用户设置不能覆盖管理员配置")
     model_values = {key: values.get(key, getattr(config, key)) for key in
                     ("model", "base_url", "api_key", "api_format", "stream_tool_calls", "supports_images", "max_images")}
     model_name = model_values["model"]
@@ -148,7 +151,7 @@ def public_settings(config, *, components=None):
 def persist_settings(config):
     path = settings_path(config)
     path.parent.mkdir(parents=True, exist_ok=True)
-    data = {name: getattr(config, name) for name in PERSISTED}
+    data = {name: getattr(config, name) for name in (PERSONAL_PERSISTED if config.managed_user else PERSISTED)}
     temporary = None
     try:
         with NamedTemporaryFile("w", encoding="utf-8", dir=path.parent, delete=False, suffix=".tmp") as handle:
@@ -187,32 +190,47 @@ def build_agent(config, service, *, memory=None, cookbook=None, journal=None, pr
     return agent, components
 
 
-async def probe_model(config):
+async def probe_model(config, *, on_usage=None):
     """验证原生工具请求、结果回传和最终回答；不把文本中的工具指令当成功。"""
     from chefmate_agent.provider import IntegrityChatOpenAI
     from langchain_core.messages import HumanMessage, ToolMessage
+    from chefmate_agent.telemetry import usage_record, usage_summary
 
     model = IntegrityChatOpenAI(model=config.model, api_key=config.api_key, base_url=config.base_url,
                        use_responses_api=config.api_format == "responses", timeout=35, max_retries=0,
-                       streaming=config.stream_tool_calls, stream_usage=False)
+                       streaming=config.stream_tool_calls, stream_usage=True, max_tokens=256)
+    usage_calls, attempts = [], 0
+    def report():
+        if on_usage is not None:
+            on_usage(usage_summary(usage_calls, attempted_calls=attempts))
     tool = {"type": "function", "function": {"name": "connection_echo", "description": "连接测试，无副作用",
             "parameters": {"type": "object", "properties": {"value": {"type": "string"}},
                            "required": ["value"], "additionalProperties": False}}}
     request = HumanMessage(content="调用connection_echo，value必须是chefmate。得到工具结果后只回复OK。")
     async def run():
+        nonlocal attempts
         bound = model.bind_tools([tool], tool_choice="connection_echo")
+        attempts += 1
+        report()
         if config.stream_tool_calls:
             reply = None
             async for chunk in bound.astream([request]):
                 reply = chunk if reply is None else reply + chunk
         else:
             reply = await bound.ainvoke([request])
+        if reply is not None:
+            usage_calls.append(usage_record(reply, 1, model=config.model))
+            report()
         calls = reply.tool_calls if reply is not None else []
         if (len(calls) != 1 or calls[0].get("name") != "connection_echo"
                 or calls[0].get("args") != {"value": "chefmate"} or not calls[0].get("id")
                 or reply.invalid_tool_calls):
             return {"ok": False, "message": "端点有响应，但没有返回正确的原生工具调用。"}
-        final = await model.ainvoke([request, reply, ToolMessage(content="chefmate", tool_call_id=calls[0]["id"])])
+        attempts += 1
+        report()
+        final = await model.ainvoke([request, reply, ToolMessage(content="chefmate", tool_call_id=reply.tool_calls[0]["id"])])
+        usage_calls.append(usage_record(final, 2, model=config.model))
+        report()
         if final.tool_calls or not final.content:
             return {"ok": False, "message": "工具调用成功，但结果回传后的回答未完成。"}
         return {"ok": True, "message": "连接、原生工具调用和结果回传均通过。",
@@ -223,3 +241,5 @@ async def probe_model(config):
         code = getattr(error, "status_code", None)
         return {"ok": False, "message": "连接测试未通过，请检查端点、专用密钥、模型和协议。",
                 "http_status": code if isinstance(code, int) else None}
+    finally:
+        report()

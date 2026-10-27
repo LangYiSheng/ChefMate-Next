@@ -36,6 +36,7 @@ class ActiveTurn:
     created_at: str = field(default_factory=now)
     debug_trace: list = field(default_factory=list)
     skill_events: list = field(default_factory=list)
+    kitchen_profile: dict | None = None
 
     def emit(self, event: dict) -> None:
         # A browser can detach while generation continues. Never block the agent on an absent reader.
@@ -58,7 +59,8 @@ class TurnManager:
         self.debug_secrets = debug_secrets
         self.memory = memory
         self.memory_enabled = memory_enabled or (lambda: False)
-        self.usage = usage or UsageRepository(repository.path)
+        self.usage = usage or UsageRepository(repository.database)
+        self.account_usage = None
         self.usage.backfill(repository)
         self.active: dict[str, ActiveTurn] = {}
         self._lock = asyncio.Lock()
@@ -124,13 +126,38 @@ class TurnManager:
                 pending = [{key: item[key] for key in ("role", "content", "ui_context", "images") if key in item}
                            for item in current["messages"][last_assistant + 1:] if item.get("role") == "user"]
                 return copy.deepcopy([*current["history"], *pending]), snapshot
-            history, turn.ui_context = self.repository.mutate(session_id, prepare)
+            if self.account_usage is not None:
+                self.account_usage.begin(turn)
+            try:
+                history, turn.ui_context = self.repository.mutate(session_id, prepare)
+            except BaseException:
+                if self.account_usage is not None:
+                    self.account_usage.abort(turn)
+                raise
             if self.workspace_binding:
                 turn.host_context = self.workspace_binding.for_turn(session_id, turn.id, turn.cancel,
                                                                    turn.ui_context["revision"])
             self.active[session_id] = turn
-            turn.task = asyncio.create_task(self._run(turn, history), name=f"chefmate-turn-{turn.id}")
+            turn.task = asyncio.create_task(self._run_owned(turn, history), name=f"chefmate-turn-{turn.id}")
             return turn, None
+
+    async def _run_owned(self, turn, history):
+        try:
+            await self._run(turn, history)
+        except Exception:
+            # Storage failures must terminate subscribers as well. Leave the
+            # account reservation intact for conservative restart recovery.
+            error = {"code": "persistence_failed", "message": "本轮保存未完成，请稍后同步状态后重试。", "retryable": False}
+            async with self._lock:
+                self.active.pop(turn.session_id, None)
+                try:
+                    def fail(state):
+                        state.update(running=False, active_turn=None, last_status="error", last_error=error)
+                    self.repository.mutate(turn.session_id, fail)
+                except Exception:
+                    pass
+            turn.emit({"type": "error", **error})
+            turn.emit({"type": "done", "status": "error"})
 
     async def _run(self, turn: ActiveTurn, history: list[dict]) -> None:
         turn.started = True
@@ -155,6 +182,10 @@ class TurnManager:
                               created_at=turn.created_at, status=status)
         async def on_event(event):
             payload = copy.deepcopy(event)
+            if payload.get("type") == "context_usage" and self.account_usage is not None:
+                self.account_usage.before_model(turn, payload.get("context_usage") or {})
+            if payload.get("type") == "model_usage" and self.account_usage is not None:
+                self.account_usage.observe(turn, payload.get("usage") or {})
             if payload.get("type") == "debug_context":
                 trace = redact_debug(payload["context"], self.debug_secrets)
                 # Parameter verification enriches the same request after the
@@ -222,7 +253,8 @@ class TurnManager:
                 arguments.update(ui_context=turn.ui_context, tool_context=turn.host_context)
             if self.memory is not None and self.memory_enabled():
                 context = self.memory.context()
-                if context.get("user_notes") or context.get("summary"):
+                if context.get("user_notes") or context.get("summary") or context.get("kitchen_profile"):
+                    turn.kitchen_profile = copy.deepcopy(context.get("kitchen_profile") or None)
                     arguments["memory_context"] = context
             result = await self.agent.run_turn(history, **arguments)
             data = result.model_dump(mode="json") if hasattr(result, "model_dump") else dict(result)
@@ -274,6 +306,12 @@ class TurnManager:
             self.repository.mutate(turn.session_id, finish)
             save_debug("waiting_for_user" if visible.get("awaiting_user") else status, data)
             record_usage(status, {"usage": visible["usage"], "context_usage": visible["context_usage"]})
+            if self.account_usage is not None:
+                accounting = dict(visible["usage"])
+                accounting["attempted_calls"] = max(accounting.get("attempted_calls", 0),
+                    (visible["context_usage"] or {}).get("round", 0))
+                self.account_usage.finish(turn, accounting,
+                    model=getattr(getattr(self.agent, "config", None), "model", ""), status=status)
             self.active.pop(turn.session_id, None)
         if self.workspace_binding:
             self.workspace_binding.record_journal(turn.session_id)

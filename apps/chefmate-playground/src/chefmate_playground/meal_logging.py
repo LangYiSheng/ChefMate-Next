@@ -1,12 +1,13 @@
 """Personal intake persistence with revision and turn guards.
 
 Models, source evidence, and agent tools have dedicated modules; the repository
-owns SQLite transactions and never publishes an unconfirmed draft implicitly.
+owns database transactions and never publishes an unconfirmed draft implicitly.
 """
 
 import hashlib
 import json
 import sqlite3
+from .database import Database
 from datetime import date as Day, datetime, timedelta, timezone
 from pathlib import Path
 from uuid import uuid4
@@ -33,8 +34,9 @@ from .food_log_tools import make_meal_logging_tools as make_meal_logging_tools
 
 
 class FoodLogRepository:
-    def __init__(self, path: Path | str, *, now=None):
-        self.path = Path(path)
+    def __init__(self, path: Path | str | Database, *, now=None):
+        self.database = Database.coerce(path)
+        self.path = self.database.path
         self.path.parent.mkdir(parents=True, exist_ok=True)
         self._now = now or (lambda: datetime.now(timezone.utc))
         with self._connect() as db:
@@ -47,9 +49,7 @@ class FoodLogRepository:
             db.execute("CREATE INDEX IF NOT EXISTS personal_food_logs_day ON personal_food_logs(day,status)")
 
     def _connect(self):
-        db = sqlite3.connect(self.path, timeout=10)
-        db.row_factory = sqlite3.Row
-        return db
+        return self.database.connect(row_factory=sqlite3.Row, timeout=10)
 
     @staticmethod
     def _public(row):

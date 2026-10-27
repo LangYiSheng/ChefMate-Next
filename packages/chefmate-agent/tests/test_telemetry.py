@@ -117,3 +117,17 @@ def test_provider_totals_take_priority_and_zero_operands_are_complete():
     assert result["calls"][0]["total_tokens_source"] == "reported"
     assert result["calls"][1]["total_tokens_source"] == "input_output_sum"
     assert result["total_reported_calls"] == result["total_derived_calls"] == 1
+
+
+@pytest.mark.parametrize("attempts,expected", [(None, None), (0, None), (-1, None), (True, None),
+                                             (1.5, None), ("2", None), (1, 1), (3, 3)])
+def test_provider_attempts_only_accepts_observed_positive_integer_metadata(attempts, expected):
+    response = AIMessage(content="ok", response_metadata={"provider_attempts": attempts})
+    record = usage_record(response, 1)
+    assert record["provider_attempts"] == expected
+    assert usage_summary([record])["calls"][0]["provider_attempts"] == expected
+
+
+def test_absent_provider_attempt_metadata_is_unknown_instead_of_one():
+    record = usage_record(AIMessage(content="ok"), 1)
+    assert record["provider_attempts"] is None

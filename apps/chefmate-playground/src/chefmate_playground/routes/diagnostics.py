@@ -25,7 +25,7 @@ def build_router(context: AppContext) -> APIRouter:
                 "components": context.components.metadata() if context.components else [],
                 "stage": (snapshot or {}).get("stage", "idea"),
             },
-            (context.config.api_key, context.config.database_url),
+            (context.config.api_key, context.config.database_url, context.config.app_database_url),
         )
 
     @router.get("/api/debug/catalog")
@@ -63,7 +63,7 @@ def build_router(context: AppContext) -> APIRouter:
                 "retained_turns": 20,
                 "running": state.get("running", False),
             },
-            (context.config.api_key, context.config.database_url),
+            (context.config.api_key, context.config.database_url, context.config.app_database_url),
         )
 
     return router

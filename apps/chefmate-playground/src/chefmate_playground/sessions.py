@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import base64
 import binascii
-import sqlite3
+from .database import Database
 import threading
 import zlib
 from collections.abc import Callable
@@ -22,8 +22,9 @@ def now() -> str:
 
 
 class SessionRepository:
-    def __init__(self, path: Path):
-        self.path = path
+    def __init__(self, path: Path | Database):
+        self.database = Database.coerce(path)
+        self.path = self.database.path
         self.path.parent.mkdir(parents=True, exist_ok=True)
         self._lock = threading.RLock()
         with self._connect() as connection:
@@ -36,10 +37,11 @@ class SessionRepository:
                 "(session_id TEXT NOT NULL, turn_id TEXT NOT NULL, created_at TEXT NOT NULL, "
                 "summary TEXT NOT NULL, body BLOB NOT NULL, PRIMARY KEY(session_id,turn_id))"
             )
+            pin = self.database.json_boolean("state", "pinned")
+            messages = self.database.json_array_length("state", "messages")
             connection.execute(
                 "CREATE INDEX IF NOT EXISTS sessions_sidebar ON sessions "
-                "(COALESCE(json_extract(state,'$.pinned'),0) DESC, updated_at DESC, id) "
-                "WHERE json_array_length(state,'$.messages') > 0"
+                f"(({pin}) DESC, updated_at DESC, id) WHERE {messages} > 0"
             )
         # A process restart cannot preserve a pending provider call.
         for session in self.list():
@@ -54,7 +56,7 @@ class SessionRepository:
                 self.save(session)
 
     def _connect(self):
-        return sqlite3.connect(self.path, timeout=5)
+        return self.database.connect(timeout=5)
 
     def list(self) -> list[dict]:
         with self._lock, self._connect() as connection:
@@ -69,8 +71,8 @@ class SessionRepository:
 
     def page(self, *, limit: int = 20, cursor: str | None = None) -> tuple[list[dict], str | None]:
         """Read only one sidebar page; the cursor follows stable pin/activity/id order."""
-        pin = "COALESCE(json_extract(state,'$.pinned'),0)"
-        condition = "json_array_length(state,'$.messages') > 0"
+        pin = self.database.json_boolean("state", "pinned")
+        condition = self.database.json_array_length("state", "messages") + " > 0"
         arguments = []
         if cursor:
             try:

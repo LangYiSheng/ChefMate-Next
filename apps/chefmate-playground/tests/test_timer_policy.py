@@ -20,7 +20,7 @@ def kitchen(tmp_path, monkeypatch):
     app_module = importlib.import_module("chefmate_playground.app")
     monkeypatch.setattr(app_module, "build_agent", lambda config, source, **kwargs: (
         SimpleNamespace(), ComponentRegistry(config.enabled_components, instruction_root=APP_ROOT / "skills")))
-    config = PlaygroundConfig(sessions_database=tmp_path / "timer-policy.db")
+    config = PlaygroundConfig(auth_enabled=False, sessions_database=tmp_path / "timer-policy.db")
     repository = SessionRepository(config.sessions_database)
     app = app_module.create_app(config, service=CookingSource(), repository=repository)
     session_id = repository.create()["id"]

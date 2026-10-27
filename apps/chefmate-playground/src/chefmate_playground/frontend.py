@@ -20,7 +20,7 @@ def mount_frontend(app: FastAPI, root: Path) -> None:
             )
         return FileResponse(document)
 
-    for path in ("/", "/settings", "/recipes", "/journal"):
+    for path in ("/", "/settings", "/recipes", "/journal", "/account", "/admin"):
         app.add_api_route(path, index, methods=["GET"], include_in_schema=False)
 
     if root.is_dir():

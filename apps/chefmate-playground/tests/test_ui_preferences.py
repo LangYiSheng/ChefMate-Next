@@ -17,7 +17,7 @@ from test_app import Agent, Service
 
 
 def application(tmp_path):
-    return create_app(PlaygroundConfig(sessions_database=tmp_path / "preferences.db", api_key="private-test-key",
+    return create_app(PlaygroundConfig(auth_enabled=False, sessions_database=tmp_path / "preferences.db", api_key="private-test-key",
         model="fixture-model", base_url="https://private.example/v1", reply_suggestion_count=5), service=Service(), agent=Agent())
 
 
@@ -41,7 +41,7 @@ def test_appearance_seed_preserves_interaction_and_delta_persists_during_a_run(t
         assert client.get("/api/settings").json()["ui_preferences"] == current
         assert client.patch("/api/ui-preferences", json={"revision": current["revision"],
             "changes": {"font_pairing": "wenkai"}}).status_code == 200
-        restored = load_overrides(PlaygroundConfig(sessions_database=tmp_path / "preferences.db"))
+        restored = load_overrides(PlaygroundConfig(auth_enabled=False, sessions_database=tmp_path / "preferences.db"))
         assert restored.ui_preferences["theme"] == "dark" and restored.ui_preferences["font_pairing"] == "wenkai"
         assert restored.reply_suggestion_count == 5 and restored.api_key == "private-test-key"
 
@@ -113,7 +113,7 @@ def test_font_size_defaults_and_round_trips_without_overwriting_other_preference
             assert response.status_code == 200
             current = response.json()
             assert current["values"] == {**before["values"], "font_size": size}
-            assert load_overrides(PlaygroundConfig(sessions_database=tmp_path / "preferences.db")).ui_preferences["font_size"] == size
+            assert load_overrides(PlaygroundConfig(auth_enabled=False, sessions_database=tmp_path / "preferences.db")).ui_preferences["font_size"] == size
             conflict = client.patch("/api/ui-preferences", json={"revision": before["revision"],
                 "changes": {"font_size": "small"}})
             assert conflict.status_code == 409
@@ -149,6 +149,42 @@ def test_reply_policy_update_preserves_model_config_and_updates_future_turns(tmp
         assert app.state.manager.agent.config.model == "fixture-model"
         assert app.state.manager.reply_suggestions is False
         assert load_overrides(app.state.config).reply_suggestion_count == 2
+
+
+def test_appearance_keeps_agent_and_live_tools_but_reply_policy_rebuilds(tmp_path, monkeypatch):
+    app = application(tmp_path)
+    context = app.state.context
+    original_agent, original_components = context.agent, context.components
+    reads = {tool.name: tool for tool in make_preferences_tools(context.preferences)}
+    builds = []
+
+    def tracked_build(config, *args, **kwargs):
+        builds.append(config)
+        assert kwargs["preferences"] is context.preferences
+        return build_agent(config, *args, **kwargs)
+
+    monkeypatch.setattr("chefmate_playground.settings.build_agent", tracked_build)
+    with TestClient(app) as client:
+        before = client.get("/api/ui-preferences").json()
+        appearance = client.patch("/api/ui-preferences", json={"revision": before["revision"], "changes": {
+            "theme": "dark", "font_size": "large", "density": "compact"}})
+        assert appearance.status_code == 200
+        assert builds == []
+        assert context.agent is original_agent and context.manager.agent is original_agent
+        assert context.components is original_components
+        live = reads["get_app_preferences"].handler({}, ToolExecutionContext({}, None, []))
+        assert live["preferences"] == appearance.json()
+        assert live["preferences"]["values"]["theme"] == "dark"
+
+        for changes in ({"reply_suggestions": False}, {"reply_suggestion_count": 2}):
+            current = context.preferences.read()
+            previous = context.agent
+            saved = client.patch("/api/ui-preferences", json={"revision": current["revision"], "changes": changes})
+            assert saved.status_code == 200 and context.agent is not previous
+            assert context.manager.agent is context.agent
+            assert context.preferences.read()["values"]["density"] == "compact"
+        assert len(builds) == 2
+        assert context.manager.reply_suggestions is False and context.manager.reply_suggestion_count == 2
 
 
 def test_native_tool_patch_keeps_unsupplied_preferences_and_revision_ignores_secrets(tmp_path):

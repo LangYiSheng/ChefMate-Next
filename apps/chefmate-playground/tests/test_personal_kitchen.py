@@ -62,7 +62,7 @@ def begin_meal(app, client, uri, *, ids=("r1", "r2", "r3", "r4")):
 
 
 def test_four_shared_dishes_complete_to_journal_and_survive_chat_deletion(tmp_path):
-    app = create_app(PlaygroundConfig(sessions_database=tmp_path / "personal.db"), service=Source(), agent=Agent())
+    app = create_app(PlaygroundConfig(auth_enabled=False, sessions_database=tmp_path / "personal.db"), service=Source(), agent=Agent())
     with TestClient(app) as client:
         uri = "/api/sessions/" + client.post("/api/sessions").json()["id"]
         service = begin_meal(app, client, uri)
@@ -96,7 +96,7 @@ def test_four_shared_dishes_complete_to_journal_and_survive_chat_deletion(tmp_pa
 
 
 def test_complete_meal_rejects_stale_revision_without_false_completion(tmp_path):
-    app = create_app(PlaygroundConfig(sessions_database=tmp_path / "cas.db"), service=Source(), agent=Agent())
+    app = create_app(PlaygroundConfig(auth_enabled=False, sessions_database=tmp_path / "cas.db"), service=Source(), agent=Agent())
     with TestClient(app) as client:
         uri = "/api/sessions/" + client.post("/api/sessions").json()["id"]
         service = begin_meal(app, client, uri, ids=("r1",))
@@ -111,7 +111,7 @@ def test_complete_meal_rejects_stale_revision_without_false_completion(tmp_path)
 
 
 def test_personal_features_enabled_by_default_and_settings_skill_cas(tmp_path):
-    app = create_app(PlaygroundConfig(sessions_database=tmp_path / "skills.db"), service=Source(), agent=Agent())
+    app = create_app(PlaygroundConfig(auth_enabled=False, sessions_database=tmp_path / "skills.db"), service=Source(), agent=Agent())
     with TestClient(app) as client:
         settings = client.get("/api/settings").json()
         assert {"recipe-authoring", "personal-memory"} <= set(settings["enabled_components"])

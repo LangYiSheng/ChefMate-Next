@@ -1,6 +1,7 @@
 """Read-only build identity; source archives can omit Git metadata."""
 
 import json
+import os
 import re
 import subprocess
 import tomllib
@@ -19,6 +20,9 @@ def release_history(root: Path) -> dict:
 
 
 def current_commit(root: Path) -> str | None:
+    build_commit = os.environ.get("CHEFMATE_BUILD_COMMIT", "")
+    if re.fullmatch(r"[0-9a-f]{7,40}", build_commit):
+        return build_commit
     try:
         result = subprocess.run(
             ["git", "-C", str(root), "rev-parse", "--short", "HEAD"],

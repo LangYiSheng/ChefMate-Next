@@ -1,6 +1,7 @@
 """Application-owned config; shared libraries never read the cleaning app's env."""
 
 import os
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -14,6 +15,8 @@ APP_ROOT = Path(__file__).resolve().parents[2]
 
 @dataclass(frozen=True)
 class PlaygroundConfig:
+    app_database_url: str = field(default="", repr=False)
+    app_database_schema: str = "chefmate"
     database_url: str = field(default="", repr=False)
     database_schema: str = "chefmate"
     usda_database: Path | None = None
@@ -39,8 +42,24 @@ class PlaygroundConfig:
     port: int = 18765
     sessions_database: Path = APP_ROOT / ".runtime" / "sessions.db"
     enabled_components: tuple[str, ...] = DEFAULT_COMPONENTS
+    # Authentication is always enabled by the CLI. The explicit constructor
+    # switch exists for isolated package/HTTP fixtures, never for an env bypass.
+    auth_enabled: bool = True
+    managed_user: bool = False
+    host: str = "127.0.0.1"
+    allowed_hosts: tuple[str, ...] = ("127.0.0.1", "localhost", "::1", "testserver")
+    cookie_secure: bool = False
+    admin_username: str = ""
+    admin_password: str = field(default="", repr=False)
+    new_user_cost_limit_micros: int = 5_000_000
 
     def __post_init__(self):
+        if type(self.new_user_cost_limit_micros) is not int or not 0 <= self.new_user_cost_limit_micros <= 10**15:
+            raise ValueError("新用户初始金额额度必须是非负整数微元。")
+        if not isinstance(self.app_database_schema, str) or not re.fullmatch(r"[a-z][a-z0-9_]{0,62}", self.app_database_schema):
+            raise ValueError("应用数据库 schema 名称无效。")
+        if self.auth_enabled and not self.managed_user and len(self.app_database_schema) > 25:
+            raise ValueError("应用数据库 schema 前缀最多 25 位，需为用户命名空间预留长度。")
         from .ui_preferences import AppearancePreferences
         AppearancePreferences.model_validate(self.ui_preferences)
         if (not isinstance(self.enabled_components, tuple)
@@ -75,7 +94,12 @@ class PlaygroundConfig:
         if (len(component_names) != len(set(component_names))
                 or any(name not in DEFAULT_COMPONENTS for name in component_names)):
             raise ValueError("系统组件配置无效")
+        runtime_dir = Path(values.get("CHEFMATE_RUNTIME_DIR") or APP_ROOT / ".runtime").expanduser()
+        if not runtime_dir.is_absolute():
+            runtime_dir = (source.parent / runtime_dir).resolve()
         config = cls(
+            app_database_url=values.get("CHEFMATE_APP_DATABASE_URL", "") or "",
+            app_database_schema=values.get("CHEFMATE_APP_DATABASE_SCHEMA", "chefmate") or "chefmate",
             database_url=values.get("CHEFMATE_DATABASE_URL", "") or "",
             database_schema=values.get("CHEFMATE_DATABASE_SCHEMA", "chefmate") or "chefmate",
             usda_database=database,
@@ -95,6 +119,14 @@ class PlaygroundConfig:
             timer_limit=int(values.get("CHEFMATE_TIMER_LIMIT", "3")),
             clear_timer_on_step_change=(values.get("CHEFMATE_CLEAR_TIMER_ON_STEP_CHANGE", "false") or "false").lower() == "true",
             port=int(values.get("CHEFMATE_PLAYGROUND_PORT", "18765")),
+            host=values.get("CHEFMATE_PLAYGROUND_HOST", "127.0.0.1") or "127.0.0.1",
+            sessions_database=runtime_dir / "sessions.db",
+            allowed_hosts=tuple(value.strip().lower() for value in values.get(
+                "CHEFMATE_ALLOWED_HOSTS", "127.0.0.1,localhost,::1,testserver").split(",") if value.strip()),
+            cookie_secure=(values.get("CHEFMATE_COOKIE_SECURE", "false") or "false").lower() == "true",
+            admin_username=values.get("CHEFMATE_ADMIN_USERNAME", "") or "",
+            admin_password=values.get("CHEFMATE_ADMIN_PASSWORD", "") or "",
+            new_user_cost_limit_micros=int(values.get("CHEFMATE_NEW_USER_COST_LIMIT_MICROS", "5000000")),
             enabled_components=component_names,
         )
         from .settings import load_overrides

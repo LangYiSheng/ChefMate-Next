@@ -61,10 +61,12 @@ def request_measurement(round_number, system, messages, tools, *, model=""):
     for key, parts in texts.items():
         categories.append({"key": key, "label": CATEGORY_LABELS[key],
                            "chars": sum(len(part) for part in parts),
+                           "utf8_bytes": sum(len(part.encode("utf-8")) for part in parts),
                            "estimated_tokens": sum(_estimate(part) for part in parts)})
     return {"round": round_number, "model": model, "capture": "model_request",
             "scope": "captured_text_and_compact_json", "estimated": True,
             "chars": sum(item["chars"] for item in categories),
+            "utf8_bytes": sum(item["utf8_bytes"] for item in categories),
             "estimated_tokens": sum(item["estimated_tokens"] for item in categories),
             "categories": categories, "images": images, "image_tokens_included": False,
             "estimate_method": "ascii_4_chars_other_1_char_per_token",
@@ -101,7 +103,9 @@ def usage_record(response, round_number, *, model=""):
     cache_values = [number(value) for key, value in inputs.items() if key.endswith("cache_read")]
     cache = sum(cache_values) if cache_values and all(value is not None for value in cache_values) else None
     actual_model = response.response_metadata.get("model_name") or response.response_metadata.get("model") or model
+    attempts = number(response.response_metadata.get("provider_attempts"))
     return normalize_usage_call({"round": round_number, "model": actual_model if isinstance(actual_model, str) else "",
+            "provider_attempts": attempts if attempts else None,
             "input_tokens": number(metadata.get("input_tokens")), "output_tokens": number(metadata.get("output_tokens")),
             "total_tokens": number(metadata.get("total_tokens")), "cached_tokens": cache,
             "reasoning_tokens": number((metadata.get("output_token_details") or {}).get("reasoning"))})

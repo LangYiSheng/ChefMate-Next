@@ -18,7 +18,7 @@ def timer(status="running"):
 
 def test_background_timer_chats_discoverable_without_loading_or_mutating_them(tmp_path):
     repo = SessionRepository(tmp_path / "timers.db")
-    app = create_app(PlaygroundConfig(sessions_database=repo.path), service=Service(), agent=Agent(), repository=repo)
+    app = create_app(PlaygroundConfig(auth_enabled=False, sessions_database=repo.path), service=Service(), agent=Agent(), repository=repo)
     current, background, paused, finished = [repo.create() for _ in range(4)]
     background.update(title="另一段对话的汤", workspace={"timers": [timer()]})
     paused.update(title="稍后继续蒸", workspace={"timers": [timer("paused")]})
@@ -39,7 +39,7 @@ def test_background_timer_chats_discoverable_without_loading_or_mutating_them(tm
 
 def test_cancelled_empty_stale_finished_or_invalid_workspaces_are_not_reported(tmp_path):
     repo = SessionRepository(tmp_path / "excluded.db")
-    app = create_app(PlaygroundConfig(sessions_database=repo.path), service=Service(), agent=Agent(), repository=repo)
+    app = create_app(PlaygroundConfig(auth_enabled=False, sessions_database=repo.path), service=Service(), agent=Agent(), repository=repo)
     cancelled, empty, stale, invalid = [repo.create() for _ in range(4)]
     cancelled["workspace"] = {"timers": [timer("cancelled")]}
     empty["workspace"] = {"timers": []}

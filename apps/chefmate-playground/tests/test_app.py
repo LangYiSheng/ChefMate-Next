@@ -48,7 +48,7 @@ def events(response):
 
 
 def build(tmp_path, agent=None):
-    config = PlaygroundConfig(sessions_database=tmp_path / "sessions.db")
+    config = PlaygroundConfig(auth_enabled=False, sessions_database=tmp_path / "sessions.db")
     return create_app(config, service=Service(), agent=agent or Agent())
 
 
@@ -99,7 +99,7 @@ def test_empty_sessions_stay_out_of_navigation_until_first_message(tmp_path):
 
 def test_selected_reply_count_survives_http_persistence_and_replay(tmp_path):
     for count in (1, 6):
-        config = PlaygroundConfig(sessions_database=tmp_path / str(count) / "sessions.db", reply_suggestion_count=count)
+        config = PlaygroundConfig(auth_enabled=False, sessions_database=tmp_path / str(count) / "sessions.db", reply_suggestion_count=count)
         with TestClient(create_app(config, service=Service(), agent=Agent())) as client:
             session = client.post("/api/sessions").json()
             uri = f"/api/sessions/{session['id']}"
@@ -136,7 +136,7 @@ def test_suggestions_are_final_only_persist_replay_and_hide_when_disabled(tmp_pa
         assert client.get(uri).json()["messages"][-1]["suggested_replies"] == replies
         assert events(client.post(uri + "/turn", json=body))[0]["suggested_replies"] == replies
         assert agent.calls == 1
-    disabled = create_app(PlaygroundConfig(sessions_database=tmp_path / "sessions.db", reply_suggestions=False),
+    disabled = create_app(PlaygroundConfig(auth_enabled=False, sessions_database=tmp_path / "sessions.db", reply_suggestions=False),
                           service=Service(), agent=agent)
     with TestClient(disabled) as client:
         saved = client.get(uri).json()

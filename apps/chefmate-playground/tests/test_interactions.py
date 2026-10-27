@@ -37,7 +37,7 @@ class FormAgent(Agent):
 
 
 def form_app(tmp_path, agent):
-    return create_app(PlaygroundConfig(sessions_database=tmp_path / "ui.db"), service=Service(), agent=agent)
+    return create_app(PlaygroundConfig(auth_enabled=False, sessions_database=tmp_path / "ui.db"), service=Service(), agent=agent)
 
 
 def test_model_presentation_user_edits_and_next_turn_trusted_snapshot(tmp_path):

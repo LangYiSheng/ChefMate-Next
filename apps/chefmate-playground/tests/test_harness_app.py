@@ -33,7 +33,7 @@ class DebugAgent(Agent):
 
 @pytest.mark.parametrize("message,status", [("你好", "completed"), ("失败", "error")])
 def test_debug_captures_are_opt_in_redacted_durable_and_never_ordinary_sse(tmp_path, message, status):
-    config = PlaygroundConfig(sessions_database=tmp_path / "debug.db")
+    config = PlaygroundConfig(auth_enabled=False, sessions_database=tmp_path / "debug.db")
     with TestClient(create_app(config, service=Service(), agent=DebugAgent())) as client:
         uri = "/api/sessions/" + client.post("/api/sessions").json()["id"]
         stream = client.post(uri + "/turn", json={"message": message})
@@ -63,7 +63,7 @@ def test_parameter_integrity_update_enriches_one_request_instead_of_counting_twi
             # Exercise the interrupted/failure fallback that uses emitted records.
             raise RuntimeError("test interruption")
 
-    app = create_app(PlaygroundConfig(sessions_database=tmp_path / "boundary.db"), service=Service(), agent=BoundaryAgent())
+    app = create_app(PlaygroundConfig(auth_enabled=False, sessions_database=tmp_path / "boundary.db"), service=Service(), agent=BoundaryAgent())
     with TestClient(app) as client:
         uri = "/api/sessions/" + client.post("/api/sessions").json()["id"]
         response = client.post(uri + "/turn", json={"message": "边界记录"})
@@ -93,7 +93,7 @@ class QuestionAgent(Agent):
 
 def test_waiting_question_blocks_turn_until_atomic_answer_then_continues_once(tmp_path):
     agent = QuestionAgent()
-    app = create_app(PlaygroundConfig(sessions_database=tmp_path / "questions.db"), service=Service(), agent=agent)
+    app = create_app(PlaygroundConfig(auth_enabled=False, sessions_database=tmp_path / "questions.db"), service=Service(), agent=agent)
     with TestClient(app) as client:
         uri = "/api/sessions/" + client.post("/api/sessions").json()["id"]
         final = next(item for item in events(client.post(uri + "/turn", json={"message": "先问我厨具"})) if item["type"] == "result")

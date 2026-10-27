@@ -6,7 +6,7 @@ agent tool behavior are defined separately from storage transactions.
 """
 
 import json
-import sqlite3
+from .database import Database
 from pathlib import Path
 from uuid import uuid4
 
@@ -37,8 +37,9 @@ def _draft_nutrition(document, draft):
 
 
 class CookbookRepository:
-    def __init__(self, path: Path):
-        self.path = Path(path)
+    def __init__(self, path: Path | Database):
+        self.database = Database.coerce(path)
+        self.path = self.database.path
         self.path.parent.mkdir(parents=True, exist_ok=True)
         with self._connect() as db:
             db.execute("""CREATE TABLE IF NOT EXISTS personal_recipes (
@@ -55,7 +56,7 @@ class CookbookRepository:
         self.publication = RecipePublicationRepository(self)
 
     def _connect(self):
-        return sqlite3.connect(self.path, timeout=10)
+        return self.database.connect(timeout=10)
 
     @staticmethod
     def _public(row):

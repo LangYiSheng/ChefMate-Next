@@ -27,7 +27,7 @@ def picture(size=(2800,1400), fmt="PNG"):
 
 def make_app(tmp_path, supports=True, max_images=3):
     agent=ImageAgent()
-    return create_app(PlaygroundConfig(supports_images=supports,max_images=max_images,
+    return create_app(PlaygroundConfig(auth_enabled=False, supports_images=supports,max_images=max_images,
                                       sessions_database=tmp_path/"sessions.db"),agent=agent),agent
 
 

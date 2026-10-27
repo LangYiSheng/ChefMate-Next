@@ -223,7 +223,7 @@ def test_recipe_center_http_catalog_confirmation_and_favorites(tmp_path):
     from chefmate_playground import PlaygroundConfig, create_app
     from test_app import Agent, Service
 
-    app = create_app(PlaygroundConfig(sessions_database=tmp_path / "http.db"), service=Service(), agent=Agent())
+    app = create_app(PlaygroundConfig(auth_enabled=False, sessions_database=tmp_path / "http.db"), service=Service(), agent=Agent())
     cookbook = app.state.cookbook
     pending = cookbook.create_draft(draft())
     with TestClient(app) as client:

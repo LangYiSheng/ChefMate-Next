@@ -47,7 +47,7 @@ def test_soft_delete_filters_references_and_restores_original_status(tmp_path, s
 
 
 def test_http_delete_restore_cas_and_official_recipe_boundary(tmp_path):
-    app = create_app(PlaygroundConfig(sessions_database=tmp_path / "http.db"), service=Service(), agent=Agent())
+    app = create_app(PlaygroundConfig(auth_enabled=False, sessions_database=tmp_path / "http.db"), service=Service(), agent=Agent())
     cookbook = app.state.cookbook
     record = cookbook.create_draft(draft())
     uri = "/api/cookbook/" + record["recipe_id"]
@@ -207,7 +207,7 @@ def test_http_runtime_waits_for_clicked_answer_before_recipe_mutation(tmp_path, 
                     "actions": result.get("actions", []), "tool_calls": []}
 
     agent = DeletionAgent()
-    app = create_app(PlaygroundConfig(sessions_database=tmp_path / "runtime.db"), service=Service(), agent=agent)
+    app = create_app(PlaygroundConfig(auth_enabled=False, sessions_database=tmp_path / "runtime.db"), service=Service(), agent=agent)
     cookbook = app.state.cookbook
     record = cookbook.create_draft(draft())
     tools = {tool.name: tool for tool in make_recipe_tools(cookbook)}
@@ -232,7 +232,7 @@ def test_http_runtime_waits_for_clicked_answer_before_recipe_mutation(tmp_path, 
 def test_deleted_personal_recipe_keeps_frozen_cooking_and_journal(tmp_path):
     from test_personal_kitchen import apply
 
-    app = create_app(PlaygroundConfig(sessions_database=tmp_path / "frozen.db"), service=Service(), agent=Agent())
+    app = create_app(PlaygroundConfig(auth_enabled=False, sessions_database=tmp_path / "frozen.db"), service=Service(), agent=Agent())
     values = draft()
     values.update(source_text=values["source_text"] + "2人份。", servings=2.0, servings_evidence="2人份")
     pending = app.state.cookbook.create_draft(values)
