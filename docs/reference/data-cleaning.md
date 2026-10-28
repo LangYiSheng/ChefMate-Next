@@ -147,7 +147,7 @@ USDA_DB_PATH=database/usda.db
 .\.venv\Scripts\ruff.exe check --no-cache app models schemas services scripts tests config.py
 ```
 
-测试使用隔离数据库，合成营养数据不写入日常库。历史实测见[清洗工程记录](../engineering/README.md#2026-09-24)，自动化覆盖见[测试目录](../../data_cleaning/tests/)。
+测试使用隔离数据库，合成营养数据不写入日常库。历史实测见[清洗工程记录](../engineering/records/README.md#2026-09-24)，自动化覆盖见[测试目录](../../data_cleaning/tests/)。
 
 ## 标准食材汇总展示
 

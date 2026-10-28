@@ -1,28 +1,28 @@
 # ChefMate 文档
 
-先从用户手里的一顿饭认识系统，再沿着工具、状态和数据往里走。
+当前 App 版本为 **0.3.0**。账号、会员额度、管理平台、Docker/PostgreSQL 和交互改进见 [0.3.0 发布记录](engineering/records/2026-10-28-release-0.3.0.md)；设置中的“版本更新日志”保留各版本与提交来源。
 
-当前 App 版本为 **0.3.0**。账号、会员额度、管理平台、Docker/PostgreSQL 与本轮交互改进见[0.3.0 发布记录](engineering/records/2026-10-28-release-0.3.0.md)。历史版本及提交来源保留在设置中的“版本更新日志”。
+## 按要做的事情开始
 
-## 第一次来到项目
-
-| 阅读顺序 | 可以回答的问题 |
+| 现在要做什么 | 从这里读 |
 | --- | --- |
-| [1. 从一顿饭开始](guide/overview.md) | App 能做什么，一次完整请求怎么走完？ |
-| [2. 智能体的核心技术](guide/agent.md) | 模型怎么使用工具，程序又怎么管住关键事实？ |
-| [3. 数据的一生](guide/data.md) | 菜谱和营养从哪里来，为什么值得信任？ |
-| [4. 模块地图与开发指南](guide/development.md) | 改功能该去哪里，怎样运行和验证？ |
+| 第一次了解 ChefMate | [从一顿饭开始](guide/overview.md) → [智能体的核心技术](guide/agent.md) → [数据的一生](guide/data.md) |
+| 注册、管理偏好、查看额度，或管理站点 | [账号与管理员操作](guide/accounts.md) |
+| 启动、升级或备份服务 | [Docker 部署与备份](guide/deployment.md) |
+| 迁移已有 SQLite 个人数据 | [显式迁入 PostgreSQL](guide/migrate-sqlite.md) |
+| 修改代码和运行检查 | [模块地图与开发指南](guide/development.md) |
+| 查规则、字段或接口 | [设计规范](design/README.md) · [接口与数据参考](reference/README.md) |
+| 追溯某次改动和实测范围 | [工程档案](engineering/README.md) |
 
-## 已经准备动手
+## 目录怎样分工
 
-- [设计规范](design/README.md)：领域边界、交互协议、视觉和工程约定，以及选择背后的理由。
-- [接口参考](reference/README.md)：App、各独立包、清洗工具和字段细节。
-- [Docker 部署与备份](guide/deployment.md)：账号初始化、应用 PostgreSQL、模型配置、持久数据和升级。
-- [账号与管理员设计](design/accounts-admin.md)：登录、用户隔离、额度、成本和厨房档案的授权边界。
-- [账号与管理员操作](guide/accounts.md)：注册引导、金额余额、价格确认、费用核对和开发者授权。
-- [旧 SQLite 迁移](guide/migrate-sqlite.md)：只读源、明确归属、全新 PostgreSQL 目标和内容核对。
-- [工程档案](engineering/README.md)：历史计划、工程记录与本轮验收，按记录时点阅读。
+| 目录 | 内容 |
+| --- | --- |
+| [指南](guide/README.md) | 从产品流程到使用、部署、迁移与开发，说明如何完成一件事 |
+| [设计规范](design/README.md) | 现行领域边界、交互与视觉、工程约定及选择理由 |
+| [接口与数据参考](reference/README.md) | App 配置和端点、独立模块 API、数据字段与协议 |
+| [工程档案](engineering/README.md) | [实现与验收记录](engineering/records/README.md)及[历史计划](engineering/plans/README.md)，按记录时点阅读 |
 
-当前行为优先看源码、当前指南和最新验收。档案保留当时的事实与未完成事项，旧测试数量、旧模型表现和旧功能限制不会自动延伸到今天。
+当前行为以源码、现行指南和参考为核对入口。历史档案保留当时的事实与限制，旧测试数量、模型表现、部署状态和计划勾选不会自动延伸到今天。
 
-相对源码链接可以直接跟到实现，测试链接说明规则如何被检查。外部引用解释框架、协议或数据的原始来源，项目自己的工程选择另行说明。
+文中的源码和测试链接用于追到实现；外部引用解释框架、协议或数据的原始来源。产品描述与设计收益不等同于未开展的量化效果承诺。

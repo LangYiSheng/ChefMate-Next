@@ -10,7 +10,7 @@
 | 检索 | 四个只读工具、真实候选、查询条件、营养标记与数据快照 | [retrieval/service.py](../../packages/chefmate-retrieval/src/chefmate_retrieval/service.py) |
 | 工作流 | 冻结原件、餐单、份量、备料、步骤、计时与版本 | [workflow/service.py](../../packages/chefmate-workflow/src/chefmate_workflow/service.py) |
 | Agent | 标准运行时、动态工具、证据与预算、完整历史与事件 | [agent/core.py](../../packages/chefmate-agent/src/chefmate_agent/core.py) |
-| Web 应用 | 依赖组装、单会话轮次、SQLite、HTTP/SSE 与个人资料 | [App](../../apps/chefmate-playground/src/chefmate_playground/app.py) · [routes](../../apps/chefmate-playground/src/chefmate_playground/routes/) |
+| Web 应用 | 依赖组装、账号与用户隔离、单会话轮次、HTTP/SSE 和个人数据持久化 | [App](../../apps/chefmate-playground/src/chefmate_playground/app.py) · [routes](../../apps/chefmate-playground/src/chefmate_playground/routes/) |
 | 浏览器 | 草稿、流式显示、受控操作、导航与焦点 | [App.tsx](../../apps/chefmate-playground/frontend/src/App.tsx) · [会话状态](../../apps/chefmate-playground/frontend/src/runtime/store.ts) · [厨房组件](../../apps/chefmate-playground/frontend/src/features/workspace/views.tsx) |
 
 入口负责组装；拆分后的领域规则仍各有唯一归属：
@@ -119,7 +119,7 @@ SSE 活跃事件带 `session_id/turn_id/sequence`。离开视图只断开订阅�
 不可变 `ComponentSpec` 统一声明组件 ID、中文名称、指引、工具归属、目标阶段、UI 类型与页面、依赖和工厂。
 设置、调试、构建和执行权限从同一清单派生；新增工具漏归属、重复归属、阶段冲突或工厂漏工具会由构建与合同测试拒绝。
 
-0.2.2 当前有七个系统组件：[组件清单](../../apps/chefmate-playground/src/chefmate_playground/components.py)。
+当前有七个系统组件：[组件清单](../../apps/chefmate-playground/src/chefmate_playground/components.py)。
 
 | 组件 ID | 能力 |
 | --- | --- |
@@ -135,7 +135,7 @@ SSE 活跃事件带 `session_id/turn_id/sequence`。离开视图只断开订阅�
 指南正文提供指导，执行权限由组件启用状态、阶段与业务条件核对。共用阶段工具按请求的目标阶段检查所属技能。
 新能力建立自己的请求、工具、记录和 UI 边界，先用隔离依赖验证，再进行真实模型验收。[组件合同测试](../../apps/chefmate-playground/tests/test_components.py)
 
-个人菜谱、收藏、制作历史、个人饮食和长期记忆保存在应用独立表，基础 PostgreSQL 库保持只读。
+Docker 中的个人菜谱、收藏、制作历史、个人饮食和长期记忆保存在应用 PostgreSQL 的用户独立 schema 中，与只读查询的公共菜谱库分开；图片和设置使用持久卷。存储与授权边界见[账号设计](accounts-admin.md)。
 个人菜谱先生成带来源依据的草稿，用户核对发布后进入相同的检索引用和冻结流程。
 长期记忆分为用户原文与助手摘要，当前明确需求优先，助手不能覆盖用户原文；按预算注入本轮，历史按需检索。
 
@@ -164,11 +164,11 @@ SSE 活跃事件带 `session_id/turn_id/sequence`。离开视图只断开订阅�
 设置、菜谱中心和食光手记切换时保持对话与输入草稿；所有离开路径先经过未保存修改保护。
 中心中的发起聊天动作创建新会话，原会话草稿可恢复；查看、收藏和编辑保持所属中心行为。
 
-设置内容使用顶部页签，宽内容区按当前可见节点生成右侧索引；设置、个人中心和诊断的选择控件共用 [Select](../../apps/chefmate-playground/frontend/src/components/ui/Select.tsx)，普通输入由共享样式管理。[视觉与控件规范](ui.md#控件和保存反馈)
+设置和管理平台使用分类导航；宽内容区可按当前可见节点生成右侧索引，较窄时隐藏，不移到正文顶部。设置、个人中心和诊断的选择控件共用 [Select](../../apps/chefmate-playground/frontend/src/components/ui/Select.tsx)，普通输入由共享样式管理。[视觉与控件规范](ui.md#控件和保存反馈)
 
-模型、组件与运行设置核对完整配置版本，校验、构建新 Agent 并原子写入后应用；活跃对话限制相关配置修改，计时策略允许实时保存。
+管理员维护全局模型、组件与运行设置，核对完整配置版本，校验、构建新 Agent 并原子写入后应用；活跃对话限制相关配置修改，计时策略允许实时保存。
 密钥不可回读，同端点可沿用，更换端点必须明确提供；分类分别保留草稿与读取版本，其他分类刷新不能解除已发生的冲突。
-普通偏好走独立 `/api/ui-preferences` 版本协议，服务端保存并由浏览器投影到本地外观；本机开发者设置继续单独保留。[设置参考](../reference/workbench.md#配置来源与默认值)
+普通偏好走独立 `/api/ui-preferences` 版本协议，服务端保存并由浏览器投影到本地外观；本机开发者设置继续单独保留，使用权限由管理员授予。[设置参考](../reference/workbench.md#配置来源与默认值)
 
 `app-preferences` 提供 `get_app_preferences/update_app_preferences` 和独立的 `set_kitchen_display`。普通偏好修改白名单为 `theme/light_palette/dark_palette/font_pairing/font_size/density/inline_limit/show_estimates/reply_suggestions/reply_suggestion_count`。字号 `small/medium/large` 对应根字号 14 / 15 / 16px，默认中；大档保持调整前大小，浏览器文字通过 `rem` 跟随缩放。
 修改只应用明确传入字段并检查版本，未知字段拒绝；不能通过这个工具读取或修改模型、密钥、组件、开发者、系统或运行参数。前端对当前执行与服务恢复重新 GET 权威值，历史工具快照不能覆盖当前偏好。[偏好合同与服务](../../apps/chefmate-playground/src/chefmate_playground/ui_preferences.py) · [浏览器同步](../../apps/chefmate-playground/frontend/src/features/preferences/client.ts)
@@ -194,5 +194,5 @@ SSE 活跃事件带 `session_id/turn_id/sequence`。离开视图只断开订阅�
 ## 来源与验证
 
 旧版厨房任务经验与迁移范围保留在[迁移考察](../engineering/records/legacy-feature-matrix.md)，当前规则以这里的源码与回归为准。
-账号和语音仍属扩展方向，现有图片能力来自配置的外部多模态模型。
+账号、欢迎引导、独立用户工作区和管理平台已经实现，具体边界见[账号设计](accounts-admin.md)。语音仍属扩展方向，现有图片能力来自配置的外部多模态模型。
 工作流、Agent、宿主交互和个人记录分别有测试入口；完整浏览器与真实模型验收按日期记录在[工程档案](../engineering/README.md)。

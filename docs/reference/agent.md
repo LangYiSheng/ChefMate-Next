@@ -1,6 +1,6 @@
 # ChefMate Agent
 
-独立、可注入的智能体核心。LangChain 标准 `create_agent` 承担模型循环、ToolNode 并行工具执行与流式生命周期；一个 middleware 和 JSON/事件适配器负责业务边界。四个菜谱检索工具保持只读；界面与工作流工具由应用显式注入。Web 会话、SQLite、HTTP、业务工作区与界面属于应用。
+独立、可注入的智能体核心。LangChain 标准 `create_agent` 承担模型循环、ToolNode 并行工具执行与流式生命周期；一个 middleware 和 JSON/事件适配器负责业务边界。四个菜谱检索工具保持只读；界面与工作流工具由应用显式注入。Web 会话、数据库持久化、HTTP、业务工作区与界面属于宿主应用；ChefMate 的 Docker 部署以 PostgreSQL 保存账号和个人业务数据。
 
 先读[智能体导览](../guide/agent.md)了解完整任务，再用本页查注入接口、数据边界和事件字段。当前入口见[核心源码](../../packages/chefmate-agent/src/chefmate_agent/core.py)。
 

@@ -14,7 +14,7 @@ ChefMate 把“今天吃什么”接到“这一餐做完了”：理解食材�
 前端使用 React 19.3.1、TypeScript 7 和 Vite 8，界面组件通过独立状态服务处理流式对话、草稿和厨房交互。[前端入口](../../apps/chefmate-playground/frontend/src/App.tsx)
 业务规则放在应用服务与独立 Python 包中，入口文件负责把它们接起来。[应用组装源码](../../apps/chefmate-playground/src/chefmate_playground/app.py) · [路由目录](../../apps/chefmate-playground/src/chefmate_playground/routes/)
 
-可以把界面理解为两位搭档：
+从这些入口认识界面：
 
 | 所在位置 | 解决的问题 | 典型动作 |
 |---|---|---|
@@ -22,12 +22,13 @@ ChefMate 把“今天吃什么”接到“这一餐做完了”：理解食材�
 | 厨房工作区 | 把已确认的任务推进 | 选菜、调整份量、勾备料、确认步骤、开计时 |
 | 菜谱中心 | 留住可重复使用的做法 | 从文字或图片整理草稿，核对后保存 |
 | 食光手记与饮食记录 | 分清做过什么、本人吃了什么 | 看制作历史、确认本人逐菜份额、修正记录 |
-| 长期记忆与设置 | 让上下文和能力可管理 | 自写偏好、查看助手摘要、启停系统组件 |
+| 个人偏好与设置 | 管理自己的称呼、偏好和对话体验 | 编辑厨房档案、手写偏好、查看长期记忆 |
+| 管理平台 | 维护站点能力和用户权限 | 管理模型、组件、价格、会员与金额额度 |
 
 这些能力由[组件清单](../../apps/chefmate-playground/src/chefmate_playground/components.py)绑定指引、工具、页面与依赖。
 关闭一个组件会同时影响对应工具的可执行性；配置并非只改变界面上的一个开关。
-当前 0.2.2 的七个系统组件是选菜与餐单、备菜与准备、烹饪引导、个人菜谱、应用偏好、长期记忆和饮食记录。
-其中“应用偏好”让用户通过对话调整主题、配色、字体、显示密度和推荐回复等普通设置；模型连接、密钥、开发者选项和运行参数仍由设置界面管理。[普通偏好边界](../../apps/chefmate-playground/src/chefmate_playground/ui_preferences.py)
+当前七个系统组件是选菜与餐单、备菜与准备、烹饪引导、个人菜谱、应用偏好、长期记忆和饮食记录。
+其中“应用偏好”让用户通过对话调整主题、配色、字体、显示密度和推荐回复等普通设置；模型连接、密钥、组件和运行参数由管理员维护，个人设置中的开发者模式也需管理员授权。[普通偏好边界](../../apps/chefmate-playground/src/chefmate_playground/ui_preferences.py)
 
 ## 跟着小林做一顿饭
 
@@ -102,7 +103,7 @@ flowchart TD
     UI --> Workflow
     Retrieval --> Store[Storage：PostgreSQL 菜谱库]
     Retrieval --> FoodData[Food Data：本地 USDA 参考]
-    Workflow --> Local[本地会话与个人资料存储]
+    Workflow --> Local[(PostgreSQL 账号与个人数据)]
     App --> Local
     Cleaning[清洗平台：转换、审核与导出] --> Store
 ```
@@ -124,7 +125,7 @@ flowchart TD
 | `chefmate-recipe-processing` | 可注入 AI 的结构化处理与计算 | 处理算法脱离管理界面独立使用 |
 | `data_cleaning` | 审核工作台、处理任务与导出 | 在数据进入正式查询之前完成核对 |
 
-包之间的职责从[模块索引](../../packages/README.md)继续展开；具体约束保留在[参考文档](../reference/)。
+包之间的职责从[模块索引](../../packages/README.md)继续展开；具体约束保留在[参考文档](../reference/README.md)。
 
 ## 一次对话到底经过了什么
 
@@ -153,7 +154,7 @@ flowchart TD
 
 - 想知道智能体怎么“想一步、做一步”：读[智能体如何可靠地帮忙](agent.md)。
 - 想知道虾、份量、营养和来源怎么对应：读[数据如何走到餐桌](data.md)。
-- 想开始修改代码：读[开发指南](development.md)与[设计规范](../design/)。
-- 想看当时做过哪些验证：读[工程记录](../engineering/records/)，留意记录日期与当时的验证范围。
+- 想开始修改代码：读[开发指南](development.md)与[设计规范](../design/README.md)。
+- 想看当时做过哪些验证：读[工程记录](../engineering/records/README.md)，留意记录日期与当时的验证范围。
 
 核心 Agent 使用方式对应 [LangChain Agents 官方文档](https://docs.langchain.com/oss/python/langchain/agents)；本项目的额外业务边界由前述源码和测试定义。
