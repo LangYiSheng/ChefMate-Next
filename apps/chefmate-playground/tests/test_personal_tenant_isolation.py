@@ -1,12 +1,14 @@
 """Every personal repository remains private through the authenticated HTTP API."""
 
 import os
+from datetime import datetime
 from uuid import uuid4
 
 import pytest
 from fastapi.testclient import TestClient
 
 from chefmate_playground import PlaygroundConfig, create_app
+from chefmate_playground.journal import LOCAL_ZONE
 from test_cookbook import draft
 from test_journal import cooking_state
 from test_meal_logging import text_record
@@ -51,7 +53,10 @@ def test_cookbook_favorites_memory_food_logs_and_journal_are_user_scoped(isolate
         state = cooking_state(completed=True)
         state["id"] = session["id"]
         context.journal.sync_session(state)
-        entries = alice.get("/api/journal").json()["entries"]
+        # Test ownership, not whether the fixed fixture happens to be inside
+        # today's default seven-day journal window.
+        day = datetime.fromisoformat(state["workspace"]["completed_at"]).astimezone(LOCAL_ZONE).date().isoformat()
+        entries = alice.get("/api/journal", params={"date": day}).json()["entries"]
         assert len(entries) == 1
         assert alice.get(recipe_uri).json()["document"]["name"] == "番茄炒蛋"
         assert bob.get(recipe_uri).status_code == 404
@@ -70,7 +75,7 @@ def test_cookbook_favorites_memory_food_logs_and_journal_are_user_scoped(isolate
         assert bob.put(food_uri, json={"revision": 2, "record": text_record()}).status_code == 404
         assert bob.delete(food_uri, params={"revision": 2}).status_code == 404
         assert bob.post(food_uri + "/restore", json={"revision": 2}).status_code == 404
-        assert bob.get("/api/journal").json()["entries"] == []
+        assert bob.get("/api/journal", params={"date": day}).json()["entries"] == []
         assert bob.patch("/api/journal/" + entries[0]["id"], json={"notes": "篡改"}).status_code == 404
         assert alice.get("/api/memory").json()["user_notes"].startswith("仅Alice")
         assert alice.get(food_uri).json()["document"]["title"] == food["document"]["title"]

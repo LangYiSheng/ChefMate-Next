@@ -222,7 +222,7 @@ uv run --project apps/chefmate-playground chefmate-playground
 `get_recipe_draft/revise_recipe_draft` 支持对话内核对和修改；`request_recipe_publication` 发起真实问题，`confirm_recipe_publication` 绑定会话、草稿版本和用户答案执行。修改草稿使旧确认失效，助手自行传入“已批准”不能发布。回复审核卡也会重新读取当前记录，按版本确认保存；已有待回答问题时以问题面板为唯一确认入口。
 个人菜谱采用基础菜谱相同的 `raw_amount/raw_unit/grams` 食材契约，难度取 `beginner/normal/advanced`。用户要求建议或明确给出参数时，创建请求顶层、修订请求的 `recipe` 中可填写 `metadata_provenance`，固定可选字段为 `servings/difficulty/prep_time_min/cook_time_min/total_time_min`。每项为 `{kind:"suggested"|"user_confirmed",evidence,question_id?}`：建议引用本轮真实请求；用户确认引用真实数值答案，通过选项回答时还须绑定宿主 `last_answer.question_id`。同组选项“普通、1人份、30分钟”可直接用于这三项，不需要重新措辞或再次确认。未标记字段继续严格核对原文，步骤计时不能变成整道菜总耗时。
 
-仅改难度、份数、总耗时优先 `revise_recipe_draft(recipe_id,revision,metadata_patch)`，与完整 `recipe` 严格二选一。`metadata_patch` 只接受 `difficulty/servings/total_time_min` 及按字段提供的 `metadata_provenance`；未列字段和来源保留，`null` 明确清空对应值与来源，非空新值须有该项真实依据。服务器从已读的同一版本重建校验输入，只更新所列字段及派生标记，食材、步骤、原文和备菜/烹饪分项保持原样，不为凑总时间重写其他内容。
+仅改难度、份数、总耗时优先 `revise_recipe_draft(recipe_id,revision,metadata_patch)`，与完整 `recipe` 严格二选一。这个 Agent 工具的 `metadata_patch` 接受 `difficulty/servings/total_time_min`、按字段提供的 `metadata_provenance` 和 `clear_fields`。未列字段或 `null` 都保留原值与来源，避免原生严格工具协议自动补齐的空值误删未改参数；明确清空时将字段名放入 `clear_fields`，该字段传 `null` 且不提供新来源，通常传空列表。非空新值仍须有该项真实依据。服务器从已读的同一版本重建校验输入，只更新所列字段及派生标记，食材、步骤、原文和备菜/烹饪分项保持原样，不为凑总时间重写其他内容。菜谱编辑器的完整 `PUT /api/cookbook/{recipe_id}` 请求仍按完整 `recipe` 的显式空值清空，不使用这个工具掩码。
 
 个人记录包含标准 `document`、记录外层的 `metadata_provenance`，以及 `source_metadata_evidence:{servings,difficulty,time}` 中保留的原文引用。外层 `time_evidence/difficulty_evidence` 可包含用户确认或助手建议的展示标签，不能直接当原文写回。建议参数自动加入说明，建议份数在营养与规范化菜谱中标为估算；用户只改总耗时不应自动补齐或凑改备菜、烹饪小计。原始 `source_text` 保留，实际补充另有依据，来源信息不挤入共享 RecipeDocument 的其他字段。
 
