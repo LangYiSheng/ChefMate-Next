@@ -64,8 +64,8 @@ TOOL_CONTRACTS = {item.name: item for item in (
           ("cooking",), "write", True, ("创建运行中计时器", "展示计时器"), ("明确时长来源", "运行/暂停计时器受cooking_settings.timer_limit限制，默认3个；满额须先结束已有计时器")),
     _tool("show_timers", "展示现有计时器；依据截止时间计算剩余时间，不创建计时器、不提升业务版本。",
           ALL_STAGES, "presentation", True, ("替换计时视图",)),
-    _tool("advance_cooking_stage", "按用户意图明确切换阶段，目标须在allowed_transitions中。planning消息新给人数时先select_recipes同一餐单并传diners，等最新回执再prep；本工具不改用餐人数或份量。idea无餐单；选菜自动到planning；准备进入prep；食材全部ready/skipped才可cooking；全部步骤done才可completed。回到idea会清空当前餐单、备菜、步骤与计时。自动展示对应阶段。",
-          ALL_STAGES, "write", True, ("切换阶段", "回到idea清空当前任务", "完成时取消未结束计时器", "展示阶段视图"), ("目标合法且blockers为空", "用户已授权阶段变化")),
+    _tool("advance_cooking_stage", "按用户意图明确切换阶段，目标须在allowed_transitions中。已有餐单的‘回到选菜’对应planning；completed后保留原菜谱/人数/份量再做一餐只需本工具到planning，无需重新检索或select，会保留冻结餐单与份量、建立新餐身份并清除旧执行进度；未完成的同一餐回planning保留进度。只要求回选菜时到此停止。planning消息新给人数时先select_recipes同一餐单并传diners，等最新回执再prep；本工具不改用餐人数或份量。idea无餐单，只有明确要求丢弃当前餐单、从无餐单重新开始才使用，不能将‘再做一餐’或保留配方的‘从零做’当作清空授权；回idea会清空餐单、备菜、步骤与计时。选菜自动到planning；准备进入prep；食材全部ready/skipped才可cooking；全部步骤done才可completed。自动展示对应阶段。",
+          ALL_STAGES, "write", True, ("切换阶段", "已完成回planning保留餐单并开始新餐", "回到idea清空当前任务", "完成时取消未结束计时器", "展示阶段视图"), ("目标合法且blockers为空", "用户已授权阶段变化")),
     _tool("ask_user", "仅在实质歧义阻塞当前动作时提一个问题；已有餐单的备料清单可直接展示，不先逐组询问是否都有。回答中的‘拥有/齐/可用’可直接记录对应真实食材，无需再问代勾选；多选未选项只是未知，不代表缺少，也不需要为展示清单继续追问。至多6个短选项，可允许自填或多选。必须单独调用，成功后立即等待回答；不能自己选答案或替换未回答问题。",
           ALL_STAGES, "wait", False, ("保存待答问题", "暂停本轮等待用户"), ("当前无待回答问题",)),
 )}
