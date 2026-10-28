@@ -104,7 +104,7 @@ def make_app(tmp_path, responses):
     source, model = RecipeSource(), ScriptedModel(responses=list(responses))
     agent = ChefMateAgent(source, AgentConfig(model="offline-contract", max_model_rounds=8), model=model,
                          extra_tools=make_tool_specs(), ui_context_model=UISnapshot, action_model=UIAction)
-    app = create_app(PlaygroundConfig(sessions_database=tmp_path / "contract.db"), service=source, agent=agent)
+    app = create_app(PlaygroundConfig(auth_enabled=False, sessions_database=tmp_path / "contract.db"), service=source, agent=agent)
     return app, source, model
 
 

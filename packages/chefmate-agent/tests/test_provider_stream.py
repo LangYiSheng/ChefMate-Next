@@ -12,6 +12,8 @@ from openai.types.responses import Response, ResponseFunctionToolCall, ResponseO
 
 from chefmate_agent.provider import ArgumentIntegrity, IntegrityChatOpenAI, ProviderIntegrityError
 
+_UNREPORTED = object()
+
 
 def item(index=0, raw='{"value":1}', *, call_id=None, name="echo"):
     return ResponseFunctionToolCall(type="function_call", id=f"fc_{index}", call_id=call_id or f"call_{index}",
@@ -71,11 +73,13 @@ class Stream:
 
 
 class Endpoint:
-    def __init__(self, scripted, asynchronous=False):
+    def __init__(self, scripted, asynchronous=False, retries=_UNREPORTED):
         self.scripted = iter(scripted)
         self.asynchronous = asynchronous
         self.requests = []
         self.streams = []
+        self.retries = iter(retries) if isinstance(retries, list) else None
+        self.retry_count = retries
         self.with_raw_response = NS(create=self.raw_create, parse=self.raw_create)
 
     def _run(self, kwargs, raw):
@@ -84,7 +88,13 @@ class Endpoint:
         if kwargs.get("stream"):
             value = value if isinstance(value, Stream) else Stream(value)
             self.streams.append(value)
-        return NS(parse=lambda: value, headers={}) if raw else value
+        if not raw:
+            return value
+        result = NS(parse=lambda: value, headers={})
+        retries = next(self.retries) if self.retries is not None else self.retry_count
+        if retries is not _UNREPORTED:
+            result.retries_taken = retries
+        return result
 
     def _invoke(self, kwargs, raw=False):
         if not self.asynchronous:
@@ -101,8 +111,8 @@ class Endpoint:
         return self._invoke(kwargs, True)
 
 
-def model(scripted, *, responses=True, streaming=True):
-    sync, asynchronous = Endpoint(scripted), Endpoint(scripted, True)
+def model(scripted, *, responses=True, streaming=True, retries=_UNREPORTED):
+    sync, asynchronous = Endpoint(scripted, retries=retries), Endpoint(scripted, True, retries=retries)
     root = NS(responses=sync, chat=NS(completions=sync), with_raw_response=NS(responses=sync.with_raw_response))
     async_root = NS(responses=asynchronous, chat=NS(completions=asynchronous),
                     with_raw_response=NS(responses=asynchronous.with_raw_response))
@@ -379,3 +389,63 @@ def test_chat_structured_stream_is_rejected_before_requesting_beta_events(asynch
             llm.invoke("fixture", **kwargs)
     assert caught.value.code == "provider_stream_format_unsupported"
     assert not sync.requests and not async_endpoint.requests
+
+
+@pytest.mark.parametrize("responses", [True, False])
+@pytest.mark.parametrize("streaming", [True, False])
+@pytest.mark.parametrize("asynchronous", [True, False])
+@pytest.mark.parametrize("retries", [0, 2])
+def test_raw_sdk_retry_count_is_request_local_and_preserved_in_final_message(
+        responses, streaming, asynchronous, retries):
+    scripted = final_events(responses) if streaming else (
+        response([]) if responses else {"id": "chat_fixture", "model": "fixture", "object": "chat.completion",
+        "created": 0, "choices": [{"index": 0, "finish_reason": "stop", "logprobs": None,
+                                   "message": {"role": "assistant", "content": "ready"}}]})
+    llm, _, _ = model([scripted], responses=responses, streaming=streaming, retries=retries)
+    # Exercise the adapter's already-supported raw streaming path. Do not change
+    # default transport behavior merely to gain retry metadata.
+    if streaming:
+        llm.include_response_headers = True
+    reply = asyncio.run(llm.ainvoke("fixture")) if asynchronous else llm.invoke("fixture")
+    assert reply.response_metadata["provider_attempts"] == retries + 1
+    assert reply.response_metadata["tool_argument_integrity"]["status"] == "verified"
+    assert llm._integrity_active is False
+
+
+@pytest.mark.parametrize("retries", [None, -1, True, 1.5, "2", _UNREPORTED])
+def test_invalid_or_unavailable_raw_sdk_retry_count_stays_unknown(retries):
+    llm, _, _ = model([response([])], streaming=False, retries=retries)
+    reply = asyncio.run(llm.ainvoke("fixture"))
+    assert reply.response_metadata["provider_attempts"] is None
+
+
+@pytest.mark.parametrize("responses", [True, False])
+def test_default_stream_does_not_invent_an_attempt_count_without_a_raw_sdk_response(responses):
+    llm, _, _ = model([final_events(responses)], responses=responses, retries=0)
+    reply = asyncio.run(llm.ainvoke("fixture"))
+    assert reply.response_metadata["provider_attempts"] is None
+
+
+def test_concurrent_raw_stream_attempt_counts_do_not_leak_across_requests():
+    llm, _, _ = model([final_events(True), final_events(True)], retries=[0, 2])
+    llm.include_response_headers = True
+
+    async def exercise():
+        return await asyncio.gather(llm.ainvoke("one"), llm.ainvoke("two"))
+
+    replies = asyncio.run(exercise())
+    assert [reply.response_metadata["provider_attempts"] for reply in replies] == [1, 3]
+
+
+@pytest.mark.parametrize("responses", [True, False])
+def test_direct_stream_final_metadata_carries_exactly_one_attempt_observation(responses):
+    llm, _, _ = model([final_events(responses)], responses=responses, retries=1)
+    llm.include_response_headers = True
+
+    async def exercise():
+        return [chunk async for chunk in llm.astream("fixture")]
+
+    chunks = asyncio.run(exercise())
+    counts = [chunk.response_metadata["provider_attempts"] for chunk in chunks
+              if chunk.response_metadata.get("provider_attempts") is not None]
+    assert counts == [2]

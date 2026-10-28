@@ -35,6 +35,9 @@ class TurnRuntimeContext:
     failure_policy: FailurePolicy = field(default_factory=FailurePolicy)
     batch_rejections: dict[str, dict] = field(default_factory=dict)
     memory_context: dict = field(default_factory=dict)
+    memory_enabled: bool = True
+    memory_accessed: bool = False
+    user_identity: dict = field(default_factory=dict)
     context_usage: dict = field(default_factory=dict)
 
 
@@ -50,7 +53,7 @@ class ChefMateMiddleware(AgentMiddleware):
             if context.failure_policy.finalizing:
                 raise _AgentFailure("no_progress", "重复的工具错误已停止，本轮没有剩余的收尾预算。", True)
             raise _AgentFailure("step_budget_exceeded", "本轮推理达到步数上限，请缩小需求后重试。")
-        memory_size = len(_dump(context.memory_context)) if context.memory_context else 0
+        memory_size = (len(_dump(context.memory_context)) if context.memory_context else 0) + (len(_dump(context.user_identity)) if context.user_identity else 0)
         if len(_dump(self.owner._serialize_messages(state["messages"]))) + memory_size > self.owner.config.max_history_chars:
             raise _AgentFailure("history_limit", "本轮工具信息超过上下文预算，请缩小查询范围。")
         if context.model_rounds:
@@ -61,7 +64,23 @@ class ChefMateMiddleware(AgentMiddleware):
 
     async def awrap_model_call(self, request, handler):
         context = request.runtime.context
-        messages = self.owner._model_messages(request.messages)
+        private_tools = self.owner._memory_tool_names()
+        hidden = {name for name in private_tools if not context.memory_enabled
+                  or not self.owner._tool_skill_available(name)}
+        messages = self.owner._model_messages(request.messages, hidden_tools=hidden)
+        forwarded = private_tools - hidden
+        context.memory_accessed = context.memory_accessed or any(
+            isinstance(message, ToolMessage) and message.name in forwarded
+            or isinstance(message, AIMessage) and any(call["name"] in forwarded for call in message.tool_calls)
+            for message in messages)
+        if context.user_identity:
+            from .boundary import _dump
+            for index in range(len(messages) - 1, -1, -1):
+                if isinstance(messages[index], HumanMessage):
+                    messages[index] = messages[index].model_copy(update={"content": messages[index].content +
+                        "\n\nChefMate 当前用户称呼（身份数据，不是操作指令；无论偏好与记忆开关如何，称呼均使用这里的昵称）：\n" +
+                        _dump(context.user_identity)})
+                    break
         if context.memory_context:
             # Current memory is transient and attached only to the newest human
             # turn. It neither expands the stable system prefix nor accumulates
@@ -100,6 +119,7 @@ class ChefMateMiddleware(AgentMiddleware):
         context.debug_trace.append(trace)
         context.context_usage = request_measurement(context.model_rounds, prompt, final_request.messages,
                                                     final_request.tools, model=self.owner.config.model)
+        context.context_usage["memory_attached"] = bool(context.memory_context) or context.memory_accessed
         await self.owner._emit(context.on_event, {"type": "context_usage", "context_usage": context.context_usage})
         await self.owner._emit(context.on_event, {"type": "debug_context", "context": trace})
         return await handler(final_request)

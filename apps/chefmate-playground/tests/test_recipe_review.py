@@ -118,7 +118,7 @@ def test_user_supplement_can_add_grounded_difficulty_without_inventing_unknown_m
 
 
 def test_personal_detail_and_catalog_preserve_common_contract_and_unknowns(tmp_path):
-    app = create_app(PlaygroundConfig(sessions_database=tmp_path / "recipes.db"), service=Service(), agent=Agent())
+    app = create_app(PlaygroundConfig(auth_enabled=False, sessions_database=tmp_path / "recipes.db"), service=Service(), agent=Agent())
     values = {**draft(), "source_text": draft()["source_text"] + "总用时15分钟。", "total_time_min": 15,
               "time_evidence": "总用时15分钟"}
     record = app.state.cookbook.create_draft(values)

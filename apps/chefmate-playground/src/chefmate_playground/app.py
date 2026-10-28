@@ -16,9 +16,11 @@ from chefmate_workflow import CookingSettings
 from .app_context import AppContext
 from .config import APP_ROOT, PlaygroundConfig
 from .cookbook import CookbookRepository, PersonalRecipeRetrieval
+from .database import Database
 from .images import SessionImages
 from .frontend import mount_frontend
 from .interactions import WorkspaceBinding
+from .http_errors import install_storage_handlers
 from .journal import JournalRepository
 from .memory import MemoryRepository
 from .routes import mount_routes
@@ -33,11 +35,22 @@ def create_app(
     config: PlaygroundConfig | None = None, *, service=None, agent=None, repository: SessionRepository | None = None
 ) -> FastAPI:
     settings = config or PlaygroundConfig.load()
+    if settings.auth_enabled:
+        from .tenancy import create_account_app
+        return create_account_app(settings, service=service, agent=agent)
+    return create_workspace_app(settings, service=service, agent=agent, repository=repository)
+
+
+def create_workspace_app(
+    config: PlaygroundConfig | None = None, *, service=None, agent=None, repository: SessionRepository | None = None
+) -> FastAPI:
+    settings = config or PlaygroundConfig.load()
     setup_error = None
-    repo = repository or SessionRepository(settings.sessions_database)
-    cookbook = CookbookRepository(settings.sessions_database)
-    journal = JournalRepository(settings.sessions_database)
-    memory = MemoryRepository(settings.sessions_database, journal=journal)
+    database = Database(settings.sessions_database, url=settings.app_database_url, schema=settings.app_database_schema)
+    repo = repository or SessionRepository(database)
+    cookbook = CookbookRepository(database)
+    journal = JournalRepository(database)
+    memory = MemoryRepository(database, journal=journal)
     if service is None and settings.database_url:
         try:
             from chefmate_food_data import LocalFoodData
@@ -58,6 +71,7 @@ def create_app(
         await running_app.state.manager.close()
 
     app = FastAPI(title="ChefMate Playground", version=current_version(APP_ROOT), lifespan=lifespan)
+    install_storage_handlers(app)
     context = AppContext(app, settings, repo, cookbook, journal, memory, retrieval=service)
     context.preferences = AppPreferencesService(context)
     workspace_binding = (
@@ -87,7 +101,7 @@ def create_app(
         images,
         reply_suggestions=settings.reply_suggestions,
         reply_suggestion_count=settings.reply_suggestion_count,
-        debug_secrets=(settings.api_key, settings.database_url),
+        debug_secrets=(settings.api_key, settings.database_url, settings.app_database_url),
         memory=memory,
         memory_enabled=lambda: "personal-memory" in context.config.enabled_components,
     )
@@ -117,8 +131,8 @@ def create_app(
             hostname = urlsplit("http://" + request.headers.get("host", "")).hostname
         except ValueError:
             hostname = None
-        if hostname not in {"127.0.0.1", "localhost", "::1", "testserver"}:
-            return JSONResponse({"detail": "仅通过本机地址访问工作台。"}, status_code=403)
+        if hostname not in settings.allowed_hosts and "*" not in settings.allowed_hosts:
+            return JSONResponse({"detail": "访问地址未被允许，请检查 CHEFMATE_ALLOWED_HOSTS。"}, status_code=403)
         origin = request.headers.get("origin")
         if request.method not in {"GET", "HEAD", "OPTIONS"} and origin:
             parsed = urlsplit(origin)

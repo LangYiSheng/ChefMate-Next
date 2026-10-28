@@ -5,7 +5,7 @@
 
 ## 运行与数据位置
 
-从仓库根目录、使用 Python 3.12+、uv 和 Node.js 22.12+：
+日常运行按 [Docker 部署指南](../guide/deployment.md)启动，默认包含应用 PostgreSQL。下列命令用于源码开发，需要 Python 3.12+、uv 和 Node.js 22.12+：
 
 ```powershell
 uv sync --project apps/chefmate-playground --extra dev
@@ -15,7 +15,7 @@ uv run --project apps/chefmate-playground chefmate-playground
 ```
 
 默认访问 [本地工作台](http://127.0.0.1:18765/)，设置地址为 `/settings`；也可运行 `apps/chefmate-playground/run.ps1`，脚本自动执行 `npm ci`、前端构建和 uv 启动。
-使用 `chefmate-playground --port 18766` 可选择其他端口。启动器只监听 `127.0.0.1`。
+使用 `chefmate-playground --port 18766` 可选择其他端口。启动器默认监听 `127.0.0.1`，Docker 通过环境变量显式监听 `0.0.0.0`。
 应用连接调用方准备的 PostgreSQL，启动时不下载 USDA、不启动数据库、不迁移或替换菜谱数据。
 
 前端为 React 19.3.1、TypeScript 7 和 Vite 8。源码与样式在 [frontend/src](../../apps/chefmate-playground/frontend/src/)，全局样式入口是 [styles/index.css](../../apps/chefmate-playground/frontend/src/styles/index.css)，功能域保留自己的作用域样式。[frontend/public](../../apps/chefmate-playground/frontend/public/) 只保存字体、品牌与 Lucide sprite 等静态资源。构建生成 `apps/chefmate-playground/web/`，后端从此提供 SPA 页面并挂载 `/static`。直接使用 uv 启动前先构建，修改源码后也需重新构建；`npm --prefix apps/chefmate-playground/frontend run dev` 仅用于前端开发，其 `/api` 代理到默认后端端口。
@@ -23,13 +23,14 @@ uv run --project apps/chefmate-playground chefmate-playground
 | 数据 | 位置与所有者 |
 | --- | --- |
 | 基础菜谱 | PostgreSQL 指定 schema，由 `chefmate-storage` 管理当前发布集 |
-| 会话、厨房任务、个人菜谱、收藏、制作与饮食记录、长期记忆、用量 | 默认应用目录 `.runtime/sessions.db` 的独立表 |
-| 图片 | 会话数据库同目录的 `images/`，按会话归属管理 |
+| 身份、会话哈希、额度、成本、审计 | 应用 PostgreSQL 的 `<prefix>_accounts` schema |
+| 会话、厨房任务、个人菜谱、收藏、制作与饮食记录、长期记忆、用量 | 应用 PostgreSQL 的 `<prefix>_user_<id>` 独立 schema；本机旧数据与离线测试可使用 SQLite 适配 |
+| 图片 | 运行目录 `users/<id>/images/`，按用户与会话归属管理 |
 | 应用设置覆盖 | 应用目录 `.runtime/settings.json` |
 | USDA 参考 | 配置指定的本地 SQLite，默认指向清洗子项目的食品库 |
 | 界面显示偏好 | 应用设置覆盖中的安全偏好域；浏览器本地存储作为缓存与首次迁移来源 |
 | 未发送文字、确认后续轮 | 当前浏览器 localStorage，由 React 会话状态服务管理 |
-| 未发送图片 Blob | 当前浏览器 IndexedDB；正式聊天图片仍归服务端会话 |
+| 未发送图片 Blob | 按账号分区的浏览器 IndexedDB；正式聊天图片仍归服务端会话 |
 
 删除聊天不会连带删除独立的个人菜谱、制作记录、饮食记录、长期记忆或用量账本。
 活跃对话先停止才能删除；图片按会话清理。[应用资源组装](../../apps/chefmate-playground/src/chefmate_playground/app.py) · [会话路由](../../apps/chefmate-playground/src/chefmate_playground/routes/conversations.py)
@@ -42,6 +43,12 @@ uv run --project apps/chefmate-playground chefmate-playground
 
 | 配置 | 默认与含义 |
 | --- | --- |
+| `CHEFMATE_APP_DATABASE_URL` | Docker 必需；应用个人数据 PostgreSQL，与公共菜谱连接分开；本机开发空值保留 SQLite 适配 |
+| `CHEFMATE_APP_DATABASE_SCHEMA` | `chefmate`，命名空间前缀最多 25 位 |
+| `CHEFMATE_ADMIN_USERNAME` / `CHEFMATE_ADMIN_PASSWORD` | 显式初始化管理员，不接管普通账号或重设已有密码 |
+| `CHEFMATE_RUNTIME_DIR` | 应用 `.runtime`；Docker 为 `/var/lib/chefmate`，保存图片与设置 |
+| `CHEFMATE_NEW_USER_COST_LIMIT_MICROS` | 5000000，即 ¥5；仅首次初始化金额政策，之后以管理员保存的默认额度为准 |
+| `CHEFMATE_ALLOWED_HOSTS` / `CHEFMATE_COOKIE_SECURE` | 允许访问的主机名、HTTPS 会话 Cookie 开关 |
 | `CHEFMATE_DATABASE_URL` | 空；已有 PostgreSQL 连接，由调用方配置 |
 | `CHEFMATE_DATABASE_SCHEMA` | `chefmate` |
 | `CHEFMATE_USDA_DATABASE` | `../../data_cleaning/database/usda.db`；相对应用 `.env` 目录解析，空值关闭本地参考 |
@@ -63,7 +70,7 @@ uv run --project apps/chefmate-playground chefmate-playground
 设置页模型协议支持 `chat_completions` 和 `responses`，默认前者；推荐回复默认开启、数量 3，可配置 1–6。
 设置页保存与环境变量的完整映射见[配置类](../../apps/chefmate-playground/src/chefmate_playground/config.py)和[设置模型](../../apps/chefmate-playground/src/chefmate_playground/settings.py)。
 
-`PATCH /api/settings` 使用 `{revision,section,values}`，section 为 `model/runtime/context/interaction/cooking/components`。
+`PATCH /api/settings` 使用 `{revision,section,values}`，仅允许个人 `interaction/cooking` 分类。全局模型、组件和预算使用管理员的 `GET/PATCH /api/admin/settings`，分类为 `model/runtime/context/components`。
 保存先核对设置版本，校验成功再原子写文件并应用；冲突保留用户草稿供复核。
 活跃模型轮次存在时，除 `cooking` 外的分类会返回 409；计时策略使用最新设置读取，不替换当前 Agent。
 普通外观和对话偏好使用独立的 `GET/PATCH /api/ui-preferences`：读取返回 `{revision,initialized,values}`，保存发送 `{revision,changes}`。字段白名单为 `theme/light_palette/dark_palette/font_pairing/font_size/density/inline_limit/show_estimates/reply_suggestions/reply_suggestion_count`。`font_size=small|medium|large`，根字号为 14 / 15 / 16px，默认中；滑块预览草稿，保存后全局生效，大档保留调整前尺寸。该域独立校验版本，可在轮次运行中更新，不暴露模型、开发者、系统或密钥。首次使用将浏览器外观迁入服务端；冲突不自动重放修改。
@@ -101,6 +108,52 @@ uv run --project apps/chefmate-playground chefmate-playground
 
 `complete_cooking_step` 同属 `cooking-guide`，只在用户明确确认单步完成或撤销时使用。必填 `expected_revision`，`recipe_id/step_id` 省略表示当前步，`completed` 默认true、false撤销；成功更新卡片并定位该菜首个未完成步骤，不自动结束本餐。用户只说“下一步”仍使用导航工具，不能代替完成授权。无当前步且未指定真实步骤时返回 `step_required`，旧版本或非法引用不会修改任何进度。
 完整模型字段见[工作流参考](workflow.md)与[智能界面设计](../design/agent-ui.md)。
+
+## 身份与管理员 API
+
+除 `/healthz`、静态页面与注册登录接口外，业务 API 都要求有效 Cookie，并以服务端会话确定用户。未登录返回 401，未完成引导或权限不足返回 403；不存在或不属于自己的业务 ID 返回 404。写接口核对同源；请求头、用户 ID 参数和浏览器设置不能授予管理权限。
+
+| 接口 | 行为 |
+| --- | --- |
+| `GET /api/auth/me` | 当前用户或 `null`，含欢迎状态、角色、开发者授权、档案、额度 |
+| `POST /api/auth/register` / `login` | `{username,password}`；注册为普通用户并签发 HttpOnly Cookie |
+| `POST /api/auth/logout` | 撤销会话并清除 Cookie |
+| `PATCH /api/auth/password` | `{current_password,new_password}`，撤销旧会话并轮换当前 Cookie |
+| `PATCH /api/auth/onboarding` | `{display_name,cooking_level,household_size,preferences,theme,use_for_ai}`；经验值 `beginner/comfortable/confident`，AI 使用默认关闭 |
+| `PATCH /api/auth/profile` | `{display_name}`，仅更新称呼，不覆盖个人偏好 |
+| `GET/PATCH /api/personal-preferences` | 统一偏好与记忆开关，GET 返回 64 位 `revision`、`enabled/user_notes/summary/cooking_level/household_size/preferences/user`；PATCH 带该版本和修改字段 |
+| `DELETE /api/personal-preferences/summary?revision=...` | 仅清除助手总结，保留手写与厨房偏好 |
+| `GET /api/auth/entitlements` | 当前账号的永久来源、会员及周/5小时窗口使用情况 |
+| `GET /api/auth/quota` | 自己的金额额度、已用、暂估占用、预留、可用余额及单价；Token 仅作统计 |
+| `GET /api/admin/users` | 用户列表 |
+| `GET/PATCH /api/admin/policy` | `{revision,registration_enabled,default_cost_limit_micros}`；控制开放注册和后续注册账号的默认金额，不追改已有金额配置 |
+| `PATCH /api/admin/users/{id}` | 停用、角色、开发者许可；兼容 `cost_limit_micros` 只调整永久基础总额，不变更充值与会员 |
+| `GET /api/admin/users/{id}/entitlements` | `{user,entitlements}`，每个资金来源的金额、使用、预留与当前窗口 |
+| `POST /api/admin/users/{id}/credit-grants` | `{amount_micros,label,request_id}`，发放永久充值额度，幂等请求 ID 防止重发 |
+| `POST /api/admin/users/{id}/memberships` | `{label,duration_days,weekly_limit_micros,five_hour_limit_micros,request_id}`，发放限时会员 |
+| `GET/POST /api/admin/membership-templates` | 读取 `{revision,items}` 或携列表版本创建会员模板；名称、会员名称、有效天数及周/5小时金额上限均保存到账号库 |
+| `PATCH /api/admin/membership-templates/{id}` | `{revision,values}` 修改模板，冲突返回409；不修改已发放会员 |
+| `DELETE /api/admin/membership-templates/{id}?revision=...` | 删除模板；仅管理员、同源、版本检查，现有会员保留 |
+| `POST /api/admin/users/{id}/memberships/{membership_id}/revoke` | `{revision,reason}`，撤销会员，已有用量归属保留 |
+| `POST /api/admin/users/{id}/password` | `{new_password}`，重置并撤销该用户会话 |
+| `GET/PATCH /api/admin/pricing` | 每百万输入、缓存输入、输出 Token 的 CNY 单价，revision 防覆盖；GET 含只读 `configured`，首次必须显式保存确认，允许明确确认全零免费 |
+| `POST /api/admin/users/{id}/usage/{turn_id}/reconcile` | 管理员核对该轮最终总金额：`revision`、`final_cost_micros`、必填 `reason`；运行/预留未结束或版本冲突返回 409，原始记录不改写 |
+| `GET /api/admin/users/{id}/usage/{turn_id}/reconciliations` | 按版本倒序读取该轮完整核对历史；仅管理员 |
+| `GET /api/admin/usage` | `days` 为 1–366；全体、用户和每日汇总，缺失与估算单列 |
+| `GET /api/admin/users/{id}/usage` | 用户用量明细与历史价格快照 |
+| `POST /api/admin/settings/test-model` | 连接与原生工具往返测试，用量计入管理员账本 |
+| `GET/POST /api/admin/models` | 列表返回 `{revision,active_id,items}`；创建携带列表版本和连接、能力、单价配置，密钥仅接收不回显 |
+| `PATCH /api/admin/models/{id}` | `{revision,values}`，使用列表版本更新连接及其价格；空密钥保留，`clear_api_key:true` 明确清除 |
+| `POST /api/admin/models/{id}/activate` | `{revision}`，切换唯一激活模型，执行中拒绝替换配置 |
+| `DELETE /api/admin/models/{id}?revision=...` | 删除备用连接，拒绝删除激活连接 |
+| `POST /api/admin/models/{id}/test` | 可带列表 `revision`；按保存连接的价格测试原生工具调用，不改变当前启用模型 |
+| `GET /api/admin/data` | 个人数据计数、附件文件占用、存储类型与运行状态 |
+| `POST /api/admin/users/{id}/reset-data` | `{confirm_username}`；先归档 schema/文件再重建，保留身份和账本，撤销该用户会话 |
+| `GET /api/admin/audit` | `q/action/actor/target/date_from/date_to/page/page_size`；日期按北京时间含首尾，每页最多100；返回分页与筛选选项，不记录密码或密钥 |
+
+`user.quota.funds` 与额度接口的 `entitlements` 使用同一资金快照。`used_micros` 已含 `estimated_micros`，预估不是另加一笔；`available_micros` 已扣除使用和预留。会员当前可用取周与5小时剩余的较小值，不能把两个窗口额度相加。
+
+厨房偏好投影位于 `/api/memory` 的 `kitchen_profile`，不含称呼。称呼在托管运行时作为独立 `user_identity` 临时加入模型上下文；偏好和记忆由统一开关控制。旧记忆 API 继续兼容，但新页面使用统一偏好 API。规则见[账号设计](../design/accounts-admin.md)。
 
 ## 会话、图片与厨房 API
 
@@ -169,7 +222,7 @@ uv run --project apps/chefmate-playground chefmate-playground
 `get_recipe_draft/revise_recipe_draft` 支持对话内核对和修改；`request_recipe_publication` 发起真实问题，`confirm_recipe_publication` 绑定会话、草稿版本和用户答案执行。修改草稿使旧确认失效，助手自行传入“已批准”不能发布。回复审核卡也会重新读取当前记录，按版本确认保存；已有待回答问题时以问题面板为唯一确认入口。
 个人菜谱采用基础菜谱相同的 `raw_amount/raw_unit/grams` 食材契约，难度取 `beginner/normal/advanced`。用户要求建议或明确给出参数时，创建请求顶层、修订请求的 `recipe` 中可填写 `metadata_provenance`，固定可选字段为 `servings/difficulty/prep_time_min/cook_time_min/total_time_min`。每项为 `{kind:"suggested"|"user_confirmed",evidence,question_id?}`：建议引用本轮真实请求；用户确认引用真实数值答案，通过选项回答时还须绑定宿主 `last_answer.question_id`。同组选项“普通、1人份、30分钟”可直接用于这三项，不需要重新措辞或再次确认。未标记字段继续严格核对原文，步骤计时不能变成整道菜总耗时。
 
-仅改难度、份数、总耗时优先 `revise_recipe_draft(recipe_id,revision,metadata_patch)`，与完整 `recipe` 严格二选一。`metadata_patch` 只接受 `difficulty/servings/total_time_min` 及按字段提供的 `metadata_provenance`；未列字段和来源保留，`null` 明确清空对应值与来源，非空新值须有该项真实依据。服务器从已读的同一版本重建校验输入，只更新所列字段及派生标记，食材、步骤、原文和备菜/烹饪分项保持原样，不为凑总时间重写其他内容。
+仅改难度、份数、总耗时优先 `revise_recipe_draft(recipe_id,revision,metadata_patch)`，与完整 `recipe` 严格二选一。这个 Agent 工具的 `metadata_patch` 接受 `difficulty/servings/total_time_min`、按字段提供的 `metadata_provenance` 和 `clear_fields`。未列字段或 `null` 都保留原值与来源，避免原生严格工具协议自动补齐的空值误删未改参数；明确清空时将字段名放入 `clear_fields`，该字段传 `null` 且不提供新来源，通常传空列表。非空新值仍须有该项真实依据。服务器从已读的同一版本重建校验输入，只更新所列字段及派生标记，食材、步骤、原文和备菜/烹饪分项保持原样，不为凑总时间重写其他内容。菜谱编辑器的完整 `PUT /api/cookbook/{recipe_id}` 请求仍按完整 `recipe` 的显式空值清空，不使用这个工具掩码。
 
 个人记录包含标准 `document`、记录外层的 `metadata_provenance`，以及 `source_metadata_evidence:{servings,difficulty,time}` 中保留的原文引用。外层 `time_evidence/difficulty_evidence` 可包含用户确认或助手建议的展示标签，不能直接当原文写回。建议参数自动加入说明，建议份数在营养与规范化菜谱中标为估算；用户只改总耗时不应自动补齐或凑改备菜、烹饪小计。原始 `source_text` 保留，实际补充另有依据，来源信息不挤入共享 RecipeDocument 的其他字段。
 
@@ -206,7 +259,7 @@ uv run --project apps/chefmate-playground chefmate-playground
 同餐更正更新稳定 ID，未知指标为空；读取历史不会补登记，关闭组件不执行自动登记。[完成餐食规则](../../apps/chefmate-playground/src/chefmate_playground/cooked_intake.py)
 
 长期记忆分开保存用户原文与助手摘要，当前明确要求优先，助手不能覆盖用户原文。
-关闭功能后停用对应上下文与工具；个人历史按需检索。[个人数据路由](../../apps/chefmate-playground/src/chefmate_playground/routes/personal.py)
+全局组件与个人开关共同控制记忆授权。关闭后停用对应上下文与新工具调用，并从后续模型请求中隐藏旧的私有记忆/个人历史工具回执及参数；持久记录和普通旧对话保留，昵称仍独立附加。开启时旧私有内容也触发发送前授权复核，发送前撤权会停止本轮。个人历史按需检索。[个人数据路由](../../apps/chefmate-playground/src/chefmate_playground/routes/personal.py)
 
 ## 系统状态、用量与开发者 API
 

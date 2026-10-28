@@ -163,11 +163,25 @@ class ChefMateAgent(HistoryBoundary, AgentTools):
         tool_context: Any = None,
         image_loader: Callable | None = None,
         memory_context: dict[str, Any] | None = None,
+        memory_enabled: bool = True,
+        user_identity: dict[str, str] | None = None,
     ) -> AgentTurnResult:
         original = copy.deepcopy(list(messages))
         context = TurnRuntimeContext(on_event=on_event, host_context=tool_context)
         try:
-            if memory_context is not None:
+            if type(memory_enabled) is not bool:
+                raise _AgentFailure("invalid_memory_context", "长期记忆授权状态无效。")
+            private_tools = self._memory_tool_names()
+            context.memory_enabled = memory_enabled and (not private_tools or any(
+                self._tool_skill_available(name) for name in private_tools))
+            if user_identity is not None:
+                if (not isinstance(user_identity, dict) or set(user_identity) != {"display_name"}
+                        or not isinstance(user_identity["display_name"], str)
+                        or not 1 <= len(user_identity["display_name"]) <= 40
+                        or any(ord(char) < 32 for char in user_identity["display_name"])):
+                    raise _AgentFailure("invalid_user_identity", "用户称呼格式无效。")
+                context.user_identity = dict(user_identity)
+            if memory_context is not None and context.memory_enabled:
                 if not isinstance(memory_context, dict):
                     raise _AgentFailure("invalid_memory_context", "长期记忆格式无效。")
                 try:
@@ -177,8 +191,8 @@ class ChefMateAgent(HistoryBoundary, AgentTools):
                 if memory_size > self.config.max_memory_chars:
                     raise _AgentFailure("memory_context_limit", "长期记忆超过本轮读取预算，请精简记忆。")
                 context.memory_context = copy.deepcopy(memory_context)
-            working = self._prepare_history(original, reserved_chars=len(_dump(context.memory_context))
-                                            if context.memory_context else 0)
+            working = self._prepare_history(original, reserved_chars=(len(_dump(context.memory_context))
+                                            if context.memory_context else 0) + (len(_dump(context.user_identity)) if context.user_identity else 0))
             if working[-1].get("images") and not self.config.supports_images:
                 raise _AgentFailure("images_not_supported", "当前模型没有开启图片能力，请更换模型或开启支持图片。")
             if self.config.supports_images:

@@ -234,31 +234,42 @@ class RecipePatchProvenance(BaseModel):
 class RecipeMetadataPatch(BaseModel):
     model_config = ConfigDict(extra="forbid", allow_inf_nan=False)
     servings: float | None = Field(default=None, gt=0, le=100,
-        description="只提供需要修改的份数；省略保留原值，null明确清空且移除该项来源。非空新值提供对应metadata_provenance。")
+        description="需要修改时提供份数；省略或null保留原值。清空须将servings列入clear_fields。非空新值提供对应metadata_provenance。")
     difficulty: Literal["beginner", "normal", "advanced"] | None = Field(default=None,
-        description="只改用户要求的难度；省略保留原值，null清空。")
+        description="只改用户要求的难度；省略或null保留原值。清空须将difficulty列入clear_fields。")
     total_time_min: float | None = Field(default=None, ge=0, le=2880,
-        description="只改整道菜总耗时；省略保留原值，null清空。此patch绝不会修改备菜/烹饪小计。")
+        description="只改整道菜总耗时；省略或null保留原值。清空须列入clear_fields。此patch绝不会修改备菜/烹饪小计。")
+    clear_fields: list[Literal["servings", "difficulty", "total_time_min"]] = Field(default_factory=list, max_length=3,
+        description="仅在用户明确要求清空时列出字段名；通常传[]。清空字段的值须为null且不提供新来源，其旧值与来源一并移除。")
     metadata_provenance: RecipePatchProvenance = Field(default_factory=RecipePatchProvenance,
         description="每个修改后的非空值提供该字段的真实建议/用户确认依据；未修改字段不要重抄来源。")
 
     @model_validator(mode="after")
     def targeted(self):
-        fields = self.model_fields_set & {"servings", "difficulty", "total_time_min"}
+        fields = self.changed_fields()
         if not fields:
             raise PydanticCustomError("recipe_metadata_patch_empty", "metadata_patch至少提供一个需要修改的字段")
+        if len(self.clear_fields) != len(set(self.clear_fields)) or any(
+                getattr(self, field) is not None for field in self.clear_fields):
+            raise PydanticCustomError("recipe_metadata_clear_conflict", "clear_fields不能重复，也不能与同一字段的非空新值同时提供")
         if set(self.metadata_provenance.model_dump(exclude_none=True)) - fields:
             raise PydanticCustomError("recipe_metadata_patch_unrelated", "来源仅能对应本次patch列出的字段")
         if any(getattr(self, field) is None for field in self.metadata_provenance.model_dump(exclude_none=True)):
             raise PydanticCustomError("recipe_metadata_value_missing", "清空值时不要提供新的来源；该项旧来源会一并移除")
         return self
 
+    def changed_fields(self):
+        # Native strict tool schemas require every nullable property to be
+        # present. A provider-supplied null must never imply a user's deletion.
+        return set(self.clear_fields) | {field for field in ("servings", "difficulty", "total_time_min")
+                                        if getattr(self, field) is not None}
+
 
 class RecipeDraftRevisionRequest(RecipeDeletionRequest):
     recipe: RecipeDraftRequest | None = Field(default=None,
         description="修改食材/步骤等正文时提供完整recipe；仅修改难度/份数/总耗时请省略，改用metadata_patch。")
     metadata_patch: RecipeMetadataPatch | None = Field(default=None,
-        description="仅改难度/份数/总耗时的优先入口。只列要改字段及其来源，其他食材、步骤、分项时间与原文逐字保留。与recipe严格二选一。")
+        description="仅改难度/份数/总耗时的优先入口。未改字段传null保留，明确清空用clear_fields；其他食材、步骤、分项时间与原文逐字保留。与recipe严格二选一。")
 
     @model_validator(mode="after")
     def one_edit_mode(self):
@@ -285,7 +296,7 @@ def apply_metadata_patch(record, patch: RecipeMetadataPatch):
                       **{key: item[key] for key in ("grams", "amount_evidence", "scalable", "usda_query", "allergens")}}
                      for item in doc["ingredients"]])
     provenance = dict(record.get("metadata_provenance") or {})
-    requested = patch.model_fields_set & {"servings", "difficulty", "total_time_min"}
+    requested = patch.changed_fields()
     bases = patch.metadata_provenance.model_dump(exclude_none=True)
     for field in requested:
         value = getattr(patch, field)

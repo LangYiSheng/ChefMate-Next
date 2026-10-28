@@ -67,7 +67,7 @@ def test_actual_disabled_components_are_hidden_and_reject_fabricated_execution(t
     journal = JournalRepository(path)
     memory = MemoryRepository(path, journal=journal)
     cookbook = CookbookRepository(path)
-    config = PlaygroundConfig(sessions_database=path, api_key="test-key", model="test-model", enabled_components=())
+    config = PlaygroundConfig(auth_enabled=False, sessions_database=path, api_key="test-key", model="test-model", enabled_components=())
     agent, components = build_agent(config, Service(), memory=memory, cookbook=cookbook, journal=journal,
                                     preferences=SimpleNamespace(read=lambda: {}))
     context = TurnRuntimeContext(ui_context={"stage": "idea"})
@@ -86,7 +86,7 @@ def test_actual_disabled_components_are_hidden_and_reject_fabricated_execution(t
 
 
 def test_real_app_agent_builds_with_registered_kitchen_display_tool(tmp_path):
-    config = PlaygroundConfig(sessions_database=tmp_path / "configured.db", api_key="test-key", model="test-model")
+    config = PlaygroundConfig(auth_enabled=False, sessions_database=tmp_path / "configured.db", api_key="test-key", model="test-model")
     app = create_app(config, service=Service())
     with TestClient(app) as client:
         status = client.get("/api/status").json()
@@ -111,9 +111,9 @@ def test_generated_stage_targets_keep_each_transition_owners_permission():
 
 
 def test_current_components_config_roundtrips_and_old_skills_format_is_rejected(tmp_path):
-    config = PlaygroundConfig(sessions_database=tmp_path / "config.db", enabled_components=("food-journal",))
+    config = PlaygroundConfig(auth_enabled=False, sessions_database=tmp_path / "config.db", enabled_components=("food-journal",))
     persist_settings(config)
-    assert load_overrides(PlaygroundConfig(sessions_database=config.sessions_database)).enabled_components == ("food-journal",)
+    assert load_overrides(PlaygroundConfig(auth_enabled=False, sessions_database=config.sessions_database)).enabled_components == ("food-journal",)
     assert "enabled_skills" not in public_settings(config)
     path = tmp_path / "settings.json"
     path.write_text(json.dumps({"enabled_skills": ["meal-planning"]}), encoding="utf-8")
@@ -125,7 +125,7 @@ def test_current_components_config_roundtrips_and_old_skills_format_is_rejected(
 
 
 def test_component_settings_cas_and_debug_catalog_match_live_runtime(tmp_path):
-    config = PlaygroundConfig(sessions_database=tmp_path / "http.db", api_key="test-key", model="test-model")
+    config = PlaygroundConfig(auth_enabled=False, sessions_database=tmp_path / "http.db", api_key="test-key", model="test-model")
     app = create_app(config, service=Service(), agent=Agent())
     with TestClient(app) as client:
         initial = client.get("/api/settings").json()
@@ -147,7 +147,7 @@ def test_component_settings_cas_and_debug_catalog_match_live_runtime(tmp_path):
 
 @pytest.mark.parametrize("names", [["missing"], ["food-journal", "food-journal"], [None], [{"id": "food-journal"}]])
 def test_invalid_component_selection_cannot_replace_or_persist_configuration(tmp_path, names):
-    config = PlaygroundConfig(sessions_database=tmp_path / "invalid.db")
+    config = PlaygroundConfig(auth_enabled=False, sessions_database=tmp_path / "invalid.db")
     app = create_app(config, service=Service(), agent=Agent())
     with TestClient(app) as client:
         before = client.get("/api/settings").json()

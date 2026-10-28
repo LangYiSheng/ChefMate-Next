@@ -16,9 +16,26 @@ const fixture = () => ({revision: revision(1), api_key_set: true, model: {base_u
 const preferences = () => ({revision: revision(100), initialized: true, values: {...normalizeAppearance(), reply_suggestions: true, reply_suggestion_count: 3}});
 const choose = (label: string, option: string) => {fireEvent.click(screen.getByRole('combobox', {name: label})); fireEvent.click(screen.getByRole('option', {name: option}));};
 beforeEach(() => {localStorage.clear(); request.mockReset(); readPreferences.mockReset(); savePreferences.mockReset(); readPreferences.mockResolvedValue(preferences()); savePreferences.mockImplementation(async changes => ({...preferences(), revision: revision(101), values: {...preferences().values, ...changes}})); request.mockImplementation((path: string) => Promise.resolve(path === '/api/settings' ? fixture() : {ready: true, model: 'test-model', database: {ready: true}}));});
+beforeEach(() => {
+  Object.defineProperty(HTMLDialogElement.prototype, 'showModal', {configurable: true, value(this: HTMLDialogElement) {
+    this.setAttribute('open', ''); this.querySelector<HTMLElement>('input:not(:disabled),button:not(:disabled)')?.focus();
+  }});
+  Object.defineProperty(HTMLDialogElement.prototype, 'close', {configurable: true, value(this: HTMLDialogElement) {this.removeAttribute('open');}});
+});
 afterEach(() => vi.unstubAllGlobals());
 
 describe('React settings transactions', () => {
+  it('keeps global controls and revoked developer settings outside the personal settings scope', async () => {
+    render(<Settings scope="personal" developerAllowed={false} initialSection="developer" onClose={vi.fn()}/>); await screen.findByLabelText('显示模式');
+    for (const name of ['模型连接', '系统组件', '上下文预算', '执行设置', '数据与状态', '开发者']) expect(screen.queryByRole('button', {name})).not.toBeInTheDocument();
+    expect(screen.queryByRole('switch', {name: '开发者模式'})).not.toBeInTheDocument(); expect(screen.getByRole('heading', {name: '外观与对话'})).toBeVisible();
+  });
+  it('writes global model changes exclusively through the administrator settings endpoint', async () => {
+    request.mockImplementation((path: string, options: RequestInit = {}) => Promise.resolve(path === '/api/admin/settings' ? options.method === 'PATCH' ? {...fixture(), revision: revision(2), model: {...fixture().model, model: 'admin-model'}} : fixture() : {ready: true}));
+    render(<Settings scope="admin" initialSection="model" apiBase="/api/admin/settings" onClose={vi.fn()}/>); fireEvent.change(await screen.findByLabelText('模型名称'), {target: {value: 'admin-model'}}); fireEvent.click(screen.getByRole('button', {name: '保存修改'}));
+    await waitFor(() => expect(request).toHaveBeenCalledWith('/api/admin/settings', expect.objectContaining({method: 'PATCH'})));
+    expect(request.mock.calls.some(([path, options]) => path === '/api/settings' && options?.method === 'PATCH')).toBe(false); expect(screen.queryByRole('button', {name: '长期记忆'})).not.toBeInTheDocument();
+  });
   it('clears a category error on navigation while retaining its draft and original revision', async () => {
     const writes: any[] = [];
     request.mockImplementation((path: string, options: RequestInit = {}) => {
@@ -76,12 +93,12 @@ describe('React settings transactions', () => {
   it('keeps the short about and data sections on one page instead of hiding each paragraph behind a tab', async () => {
     render(<Settings onClose={vi.fn()}/>); await screen.findByLabelText('显示模式');
     fireEvent.click(screen.getByRole('button', {name: '关于 ChefMate'}));
-    expect(await screen.findByText(/聊天、个人菜谱、饮食记录和长期记忆保存在本机/)).toBeVisible();
+    expect(await screen.findByText(/聊天、个人菜谱、饮食记录和长期记忆按账号隔离保存/)).toBeVisible();
     expect(screen.getByRole('heading', {name: '营养数据'})).toBeVisible();
     expect(screen.queryByRole('tablist')).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', {name: '数据与状态'}));
     expect(screen.getByRole('heading', {name: '当前连接'})).toBeVisible();
-    expect(screen.getByRole('heading', {name: '本机保存'})).toBeVisible();
+    expect(screen.getByRole('heading', {name: '保存与隔离'})).toBeVisible();
     expect(screen.queryByRole('tablist')).not.toBeInTheDocument();
   });
 
@@ -114,6 +131,7 @@ describe('React settings transactions', () => {
     await screen.findByLabelText('显示模式'); fireEvent.click(screen.getByRole('button', {name: '模型连接'}));
     fireEvent.change(screen.getByLabelText('模型名称'), {target: {value: 'my-draft'}}); fireEvent.click(screen.getByRole('button', {name: '保存修改'}));
     await screen.findAllByText('设置已在另一页面更新；当前草稿保留。');
+    await waitFor(() => expect(screen.getByRole('button', {name: '保存修改'})).toBeEnabled());
     expect(screen.getByLabelText('模型名称')).toHaveValue('my-draft');
     const resume = vi.fn(), event = new CustomEvent('chefmate:before-page-change', {cancelable: true, detail: {page: 'recipes', resume}});
     act(() => {window.dispatchEvent(event);}); expect(event.defaultPrevented).toBe(true); expect(resume).not.toHaveBeenCalled();
@@ -132,20 +150,96 @@ describe('React settings transactions', () => {
     expect(close).toHaveBeenCalledOnce(); expect(navigation?.defaultPrevented).toBe(false); expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
   });
 
+  it.each([
+    ['返回工作台', 'continue'], ['返回工作台', 'cancel'],
+    ['重新读取', 'continue'], ['重新读取', 'cancel'],
+  ])('restores focus to %s after dismissing the unsaved confirmation with %s', async (triggerName, dismissal) => {
+    const close = vi.fn(); render(<Settings onClose={close}/>); await screen.findByLabelText('显示模式');
+    choose('显示模式', '深色');
+    const trigger = screen.getByRole('button', {name: triggerName}); trigger.focus(); fireEvent.click(trigger);
+    const confirmation = screen.getByRole('alertdialog', {name: '保留未保存的修改？'});
+    const keepEditing = screen.getByRole('button', {name: '继续编辑'});
+    expect(keepEditing).toHaveFocus();
+    if (dismissal === 'cancel') fireEvent(confirmation, new Event('cancel', {cancelable: true})); else fireEvent.click(keepEditing);
+    expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
+    expect(trigger).toHaveFocus();
+    expect(confirmation.tagName).toBe('DIALOG');
+    expect(screen.getByRole('combobox', {name: '显示模式'})).toHaveTextContent('深色');
+    expect(screen.getByRole('button', {name: '保存修改'})).toBeEnabled();
+    expect(close).not.toHaveBeenCalled(); expect(savePreferences).not.toHaveBeenCalled();
+  });
+
+  async function acceptedReload(immediate = false) {
+    const view = render(<Settings onClose={vi.fn()}/>); await screen.findByLabelText('显示模式'); choose('显示模式', '深色');
+    let resolve!: (value: ReturnType<typeof fixture>) => void, reject!: (reason: Error) => void;
+    const pending = new Promise<ReturnType<typeof fixture>>((accepted, failed) => {resolve = accepted; reject = failed;});
+    request.mockImplementation((path: string) => path === '/api/settings' ? immediate ? Promise.resolve(fixture()) : pending : Promise.resolve({ready: true}));
+    const trigger = screen.getByRole('button', {name: '重新读取'}); trigger.focus(); fireEvent.click(trigger);
+    fireEvent.click(screen.getByRole('button', {name: '放弃修改'}));
+    if (!immediate) expect(trigger).toBeDisabled();
+    return {view, trigger, resolve, reject};
+  }
+
+  it('restores the accepted reload entry after its asynchronous read finishes', async () => {
+    const {trigger, resolve} = await acceptedReload();
+    await act(async () => resolve(fixture()));
+    expect(trigger).toBeEnabled(); expect(trigger).toHaveFocus();
+    expect(screen.getByRole('combobox', {name: '显示模式'})).toHaveTextContent('浅色');
+    expect(screen.getByRole('button', {name: '保存修改'})).toBeDisabled();
+  });
+
+  it('restores the accepted reload entry even when the read resolves immediately', async () => {
+    const {trigger} = await acceptedReload(true);
+    await waitFor(() => expect(trigger).toBeEnabled());
+    expect(trigger).toHaveFocus();
+  });
+
+  it('restores the reload entry after an error while retaining the unsaved draft', async () => {
+    const {trigger, reject} = await acceptedReload();
+    await act(async () => reject(new Error('本次读取失败')));
+    expect(trigger).toBeEnabled(); expect(trigger).toHaveFocus();
+    expect(screen.getAllByText('本次读取失败').length).toBeGreaterThan(0);
+    expect(screen.getByRole('combobox', {name: '显示模式'})).toHaveTextContent('深色');
+    expect(screen.getByRole('button', {name: '保存修改'})).toBeEnabled();
+  });
+
+  it.each([false, true])('does not reclaim focus when the user moves away during reload (then blurs: %s)', async blur => {
+    const {trigger, resolve} = await acceptedReload();
+    const other = screen.getByRole('button', {name: '返回工作台'}); other.focus(); if (blur) other.blur();
+    await act(async () => resolve(fixture()));
+    expect(trigger).not.toHaveFocus();
+    if (blur) expect(document.body).toHaveFocus(); else expect(other).toHaveFocus();
+  });
+
+  it('does not focus the reused reload button after the selected section changes', async () => {
+    const {view, trigger, resolve} = await acceptedReload();
+    view.rerender(<Settings initialSection="keyboard" onClose={vi.fn()}/>);
+    await act(async () => resolve(fixture()));
+    expect(screen.getByRole('heading', {name: '快捷键'})).toBeVisible();
+    expect(trigger).not.toHaveFocus();
+  });
+
+  it('does not restore a reload trigger after settings have unmounted', async () => {
+    const {view, trigger, resolve} = await acceptedReload();
+    view.unmount(); const focus = vi.spyOn(trigger, 'focus');
+    await act(async () => resolve(fixture()));
+    expect(focus).not.toHaveBeenCalled();
+  });
+
   it('retains memory edits between sections and uses the memory revision for save and clear', async () => {
-    let memory = {revision: 4, user_notes: '不吃香菜', summary: '偏好清淡', enabled: true};
+    let memory = {revision: 4, user_notes: '不吃香菜', summary: '偏好清淡', enabled: true, cooking_level: 'beginner', household_size: 1, preferences: []};
     request.mockImplementation((path: string, options: RequestInit = {}) => {
-      if (path === '/api/memory' && options.method === 'PATCH') {const payload = JSON.parse(options.body as string); expect(payload.revision).toBe(4); memory = {...memory, ...payload, revision: 5}; return Promise.resolve(memory);}
-      if (path.startsWith('/api/memory?')) {expect(path).toBe('/api/memory?revision=5'); memory = {...memory, user_notes: '', summary: '', revision: 6}; return Promise.resolve(memory);}
+      if (path === '/api/personal-preferences' && options.method === 'PATCH') {const payload = JSON.parse(options.body as string); expect(payload.revision).toBe(4); memory = {...memory, ...payload, revision: 5}; return Promise.resolve(memory);}
+      if (path.startsWith('/api/personal-preferences/summary?')) {expect(path).toBe('/api/personal-preferences/summary?revision=5'); memory = {...memory, summary: '', revision: 6}; return Promise.resolve(memory);}
       return Promise.resolve(memory);
     });
     const dirty = vi.fn(), onBusy = vi.fn(); const {rerender} = render(<MemorySettings active onDirty={dirty} onBusy={onBusy}/>);
     fireEvent.change(await screen.findByLabelText('你希望记住的事'), {target: {value: '不吃香菜，少辣'}});
     fireEvent.click(screen.getByRole('switch')); rerender(<MemorySettings active={false} onDirty={dirty} onBusy={onBusy}/>); rerender(<MemorySettings active onDirty={dirty} onBusy={onBusy}/>);
     expect(screen.getByLabelText('你希望记住的事')).toHaveValue('不吃香菜，少辣');
-    fireEvent.click(screen.getByRole('button', {name: '保存记忆'})); await screen.findByText('记忆已保存。');
+    fireEvent.click(screen.getByRole('button', {name: '保存个人偏好'})); await screen.findByText('个人偏好已保存。');
     expect(memory.enabled).toBe(false); await waitFor(() => expect(dirty).toHaveBeenLastCalledWith(false));
-    fireEvent.click(screen.getByRole('button', {name: '清空记忆'})); fireEvent.click(screen.getByRole('button', {name: '确认清空'})); await screen.findByText('记忆已清空。'); expect(memory.user_notes).toBe('');
+    fireEvent.click(screen.getByRole('tab', {name: '长期记忆'})); fireEvent.click(screen.getByRole('button', {name: '清空长期记忆'})); fireEvent.click(screen.getByRole('button', {name: '确认清空长期记忆'})); await screen.findByText('长期记忆已清空。'); expect(memory.user_notes).toBe('不吃香菜，少辣');
   });
 
   it('validates a cleared numeric field locally instead of posting an empty string', async () => {
@@ -265,19 +359,34 @@ describe('React settings transactions', () => {
   });
 
   it('recovers a memory conflict without silently losing the user draft', async () => {
-    const original = {revision: 1, user_notes: '少盐', summary: '', enabled: true}, updated = {...original, revision: 2, user_notes: '少盐，少油'}; let reads = 0;
+    const original = {revision: 1, user_notes: '少盐', summary: '', enabled: true, cooking_level: 'beginner', household_size: 1, preferences: []}, updated = {...original, revision: 2, user_notes: '少盐，少油'}; let reads = 0;
     request.mockImplementation((_path: string, options: RequestInit = {}) => options.method === 'PATCH' ? Promise.reject(new Error('记忆已更新，你的草稿仍保留；请重新读取并核对。')) : Promise.resolve(++reads === 1 ? original : updated));
     render(<MemorySettings active onDirty={vi.fn()} onBusy={vi.fn()}/>);
-    fireEvent.change(await screen.findByLabelText('你希望记住的事'), {target: {value: '少盐，不要香菜'}}); fireEvent.click(screen.getByRole('button', {name: '保存记忆'}));
+    fireEvent.change(await screen.findByLabelText('你希望记住的事'), {target: {value: '少盐，不要香菜'}}); fireEvent.click(screen.getByRole('button', {name: '保存个人偏好'}));
     await screen.findByText('记忆已更新，你的草稿仍保留；请重新读取并核对。'); expect(screen.getByLabelText('你希望记住的事')).toHaveValue('少盐，不要香菜');
     fireEvent.click(screen.getByRole('button', {name: '读取最新'})); fireEvent.click(screen.getByRole('button', {name: '保留草稿'})); expect(reads).toBe(1);
-    fireEvent.click(screen.getByRole('button', {name: '读取最新'})); fireEvent.click(screen.getByRole('button', {name: '放弃修改并读取'})); await screen.findByText('已读取最新记忆。'); expect(screen.getByLabelText('你希望记住的事')).toHaveValue(updated.user_notes);
+    fireEvent.click(screen.getByRole('button', {name: '读取最新'})); fireEvent.click(screen.getByRole('button', {name: '放弃修改并读取'})); await screen.findByText('已读取最新个人偏好。'); expect(screen.getByLabelText('你希望记住的事')).toHaveValue(updated.user_notes);
   });
 
   it('retries an initial memory read failure', async () => {
-    request.mockRejectedValueOnce(new Error('本次读取失败')).mockResolvedValue({revision: 1, user_notes: '清淡', summary: '', enabled: true});
+    request.mockRejectedValueOnce(new Error('本次读取失败')).mockResolvedValue({revision: 1, user_notes: '清淡', summary: '', enabled: true, cooking_level: 'beginner', household_size: 1, preferences: []});
     render(<MemorySettings active onDirty={vi.fn()} onBusy={vi.fn()}/>); await screen.findByText('本次读取失败');
-    fireEvent.click(screen.getByRole('button', {name: '重新读取记忆'})); expect(await screen.findByLabelText('你希望记住的事')).toHaveValue('清淡');
+    fireEvent.click(screen.getByRole('button', {name: '重新读取个人偏好'})); expect(await screen.findByLabelText('你希望记住的事')).toHaveValue('清淡');
+  });
+  it('puts account categories first, retains nickname drafts across categories and guards logout', async () => {
+    Object.defineProperty(HTMLDialogElement.prototype, 'showModal', {configurable: true, value() {this.setAttribute('open', '');}});
+    Object.defineProperty(HTMLDialogElement.prototype, 'close', {configurable: true, value() {this.removeAttribute('open');}});
+    const account = {id: 'a', username: 'testcook', display_name: '小厨', role: 'user' as const, developer_allowed: false, disabled: false, onboarding_completed: true, created_at: '', profile: {}, quota: {cost_limit_micros: 5_000_000, used_tokens: 10, used_cost_micros: 0, reserved_tokens: 0, reserved_cost_micros: 0}};
+    render(<Settings account={account} refreshAccount={vi.fn().mockResolvedValue(undefined)} scope="personal" initialSection="account-profile" onClose={vi.fn()}/>);
+    fireEvent.click(await screen.findByRole('button', {name: '编辑称呼'}));
+    fireEvent.change(await screen.findByLabelText('称呼'), {target: {value: '还没保存'}});
+    const categoryButtons = [...screen.getByRole('navigation', {name: '设置分类'}).querySelectorAll('button')]; expect(categoryButtons.slice(0, 3).map(button => button.textContent?.replace('•', ''))).toEqual(['个人资料', '我的额度', '账号安全']);
+    expect(categoryButtons[0].querySelector('[aria-label="有未保存修改"]')).toBeInTheDocument(); expect(categoryButtons[2].querySelector('[aria-label="有未保存修改"]')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', {name: '我的额度'})); expect(await screen.findByRole('heading', {name: '我的额度'})).toBeVisible(); expect(screen.queryByRole('button', {name: '退出登录'})).not.toBeInTheDocument();
+    expect(screen.getByRole('navigation', {name: '设置分类'}).querySelectorAll('[aria-current="page"]')).toHaveLength(1); expect(screen.getByRole('button', {name: '我的额度'})).toHaveAttribute('aria-current', 'page'); expect(screen.getByRole('button', {name: '外观与对话'})).not.toHaveAttribute('aria-current');
+    fireEvent.click(screen.getByRole('button', {name: /个人资料/})); fireEvent.click(screen.getByRole('button', {name: '编辑称呼'})); expect(screen.getByLabelText('称呼')).toHaveValue('还没保存'); expect(screen.queryByRole('combobox', {name: '下厨经验'})).not.toBeInTheDocument();
+    const resume = vi.fn(); let accepted = true; act(() => {accepted = window.dispatchEvent(new CustomEvent('chefmate:before-page-change', {cancelable: true, detail: {page: 'logout', resume}}));});
+    expect(accepted).toBe(false); expect(screen.getByRole('alertdialog')).toBeVisible(); fireEvent.click(screen.getByRole('button', {name: '继续编辑'})); expect(resume).not.toHaveBeenCalled();
   });
 });
 

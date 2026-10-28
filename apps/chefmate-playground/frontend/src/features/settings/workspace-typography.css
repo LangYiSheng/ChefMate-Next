@@ -1,0 +1,56 @@
+/* Settings and administration share one semantic type scale.
+   Rem units keep the user's chosen text size; reading/title families stay intact. */
+.settings-page.react-settings,.admin-page.admin-console,.account-popover{
+  --workspace-font-page:1.75rem;
+  --workspace-font-section:1rem;
+  --workspace-font-body:1rem;
+  --workspace-font-control:.9375rem;
+  --workspace-font-help:.8125rem;
+  font-size:var(--workspace-font-body);
+  line-height:1.75;
+}
+
+/* Ordinary section/card headings share a size regardless of their HTML level.
+   Identity, dialog titles, reading previews and numeric totals retain their role. */
+:is(.settings-page.react-settings,.admin-page.admin-console):is(.react-settings,.admin-console) :is(h2,h3,h4):not(.account-profile-heading h2):not(.quota-wallet h2):not(.session-dialog>h2):not(.session-dialog>header h2):not(.product-about-name h2):not(.product-release-meta h2):not(.appearance-preview h3){
+  font-size:var(--workspace-font-section);line-height:1.6;
+}
+
+/* The extra scope keeps lazy-loaded component sheets and small-screen rules
+   from silently changing the size of an equivalent title, label or action. */
+:is(.settings-page.react-settings,.admin-page.admin-console):is(.react-settings,.admin-console) :is(.settings-header,.admin-header) h1{
+  font-size:var(--workspace-font-page);line-height:1.35;
+}
+:is(.settings-page.react-settings,.admin-page.admin-console):is(.react-settings,.admin-console) :is(.settings-header,.admin-header) p{
+  font-size:var(--workspace-font-body);line-height:1.8;
+}
+:is(.settings-page.react-settings,.admin-page.admin-console):is(.react-settings,.admin-console) :is(.settings-group-title,.account-edit-heading,.account-profile-section-heading>h2,.account-security-note h2,.admin-section>h2,.admin-data-overview>h2,.admin-registration-policy>h2,.settings-group>h2,.pquota-section-title h3,.model-editor-section h3,.model-price-fields h3){
+  font-size:var(--workspace-font-section);line-height:1.6;font-family:var(--font-ui);font-weight:600;
+}
+:is(.settings-page.react-settings,.admin-page.admin-console):is(.react-settings,.admin-console) :is(.model-profile-title h3,.pquota-membership h4,.pquota-permanent h4,.pquota-empty h4,.component-card-heading .setting-label,.admin-empty h3){
+  font-size:var(--workspace-font-section);line-height:1.6;font-family:var(--font-ui);font-weight:600;
+}
+:is(.settings-page.react-settings,.admin-page.admin-console):is(.react-settings,.admin-console) :is(.setting-label,.account-field>label,.account-field>span,.admin-check strong,.admin-policy-disclosure>summary strong,.entitlement-actions strong,.entitlement-member-actions strong){
+  font-size:var(--workspace-font-body);line-height:1.65;
+}
+:is(.settings-page.react-settings,.admin-page.admin-console):is(.react-settings,.admin-console) :is(.settings-note,.settings-status-grid dd,.account-identity-details dd,.status-row,.admin-empty p,.admin-registration-policy>p,.admin-data-overview>p,.account-notice,.model-profile-title p,.pquota-hero-copy>p:not(.account-eyebrow)){
+  font-size:var(--workspace-font-body);line-height:1.8;
+}
+:is(.settings-page.react-settings,.admin-page.admin-console):is(.react-settings,.admin-console) :is(.primary-button,.secondary-button,.text-button,.settings-tab,.ui-select-trigger,.settings-nav>button,.admin-nav>button){
+  font-size:var(--workspace-font-control);line-height:1.6;
+}
+:is(.settings-page.react-settings,.admin-page.admin-console):is(.react-settings,.admin-console) :is(input:not([type=checkbox]):not([type=radio]),textarea){
+  font-size:var(--workspace-font-control);line-height:1.6;
+}
+:is(.settings-page.react-settings,.admin-page.admin-console):is(.react-settings,.admin-console) :is(.admin-table,.admin-table thead th,.admin-table tbody th,.admin-table tbody td,.admin-table strong,.settings-status-grid dt,.model-connection-meta dd,.pquota-meter>div,.component-flow strong){
+  font-size:var(--workspace-font-control);line-height:1.8;
+}
+:is(.settings-page.react-settings,.admin-page.admin-console):is(.react-settings,.admin-console) :is(small,.insight-metric dt,.account-metrics dt,.appearance-preview-metrics dt,.product-facts dt,.quota-wallet dt,.quota-permanent dt,.quota-section-title>span,.quota-membership header p,.quota-window-detail,.quota-window>div:first-child span,.quota-permanent>p,.membership-template-list p,.membership-template-dialog-heading>p,.membership-template-current p,.membership-template-delete p,.membership-template-current strong,.entitlement-toolbar>p,.settings-index button,.component-technical>summary,.setting-help,.account-fineprint,.settings-note:empty,.model-manager-note,.model-test-result,.model-test-empty,.model-endpoint,.model-profile-provider,.model-manager-toolbar>p,.model-manager-toolbar>p>span,.model-connection-meta dt,.model-price-summary dt,.model-price-summary>div,.model-profile-state,.pquota-state,.pquota-reset,.pquota-permanent>p,.pquota-empty p,.pquota-membership header p,.pquota-section-title>span,.pquota-ring span,.pquota-hero-copy .account-eyebrow,.admin-list-count,.audit-overview,.admin-list-controls>label,.admin-list-pagination>label,.admin-list-pagination>div>span,.settings-nav-label,.admin-nav-title,.account-profile-section-heading>span,.account-identity-details dt,.account-activity-status,.component-flow>div>span,.component-example,.component-capability,.component-interfaces>span){
+  font-size:var(--workspace-font-help);line-height:1.75;
+}
+
+/* Account shortcuts live in a body portal and must carry the same scale. */
+.account-popover.account-popover :is(nav>button,.account-popover-logout){font-size:var(--workspace-font-control);line-height:1.6}
+.account-popover.account-popover .account-quota-remaining{font-size:inherit;line-height:inherit}
+.account-popover.account-popover .account-popover-identity strong{font-size:var(--workspace-font-body)}
+.account-popover.account-popover .account-popover-identity>span{font-size:var(--workspace-font-help)}

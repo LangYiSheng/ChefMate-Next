@@ -69,16 +69,56 @@ def _step_id(recipe_id, ordinal):
     return f"{recipe_id}:step:{ordinal}"
 
 
+_DURATION_NUMBER = r"(?:\d+(?:\.\d+)?|[零〇一二两三四五六七八九十百千万点]+|半)"
+_DURATION_UNIT = r"(?:秒钟?|分钟|小时|hours?|minutes?|seconds?|mins?|min|s|h|分(?=\s|$|[，,。；;、!?！？）)\d零〇一二两三四五六七八九十半~～〜—–−－到至-]))(?![A-Za-z])"
+_DURATION_PART = re.compile(
+    rf"(?<![\d.零〇一二两三四五六七八九十百千万点个])(?P<number>{_DURATION_NUMBER})"
+    rf"(?P<half_before>\s*(?:个\s*)?半)?\s*(?:个\s*)?(?P<unit>{_DURATION_UNIT})(?P<half_after>\s*半)?", re.I)
+_DURATION_HALF = r"(?:\s*(?:个\s*)?半)?\s*(?:个\s*)?"
+_DURATION_RANGE = re.compile(
+    rf"(?<![\d.零〇一二两三四五六七八九十百千万点个]){_DURATION_NUMBER}{_DURATION_HALF}"
+    rf"(?:{_DURATION_UNIT})?(?:\s*半)?\s*(?:[-~～〜—–−－]{{1,2}}|到|至)\s*"
+    rf"{_DURATION_NUMBER}{_DURATION_HALF}{_DURATION_UNIT}", re.I)
+_DURATION_NEGATIVE = re.compile(rf"[-−－负]\s*{_DURATION_NUMBER}{_DURATION_HALF}{_DURATION_UNIT}", re.I)
+
+
+def _duration_number(value):
+    if value == "半":
+        return .5
+    digits = dict(zip("零〇一二两三四五六七八九", (0, 0, 1, 2, 2, 3, 4, 5, 6, 7, 8, 9)))
+    if value in digits:
+        return digits[value]
+    if value.count("十") == 1:
+        tens, ones = value.split("十")
+        if (not tens or tens in digits) and (not ones or ones in digits):
+            return digits.get(tens, 1) * 10 + digits.get(ones, 0)
+    try:
+        return float(value)
+    except ValueError:
+        return None
+
+
 def _explicit_durations(text):
-    if not isinstance(text, str):
+    if not isinstance(text, str) or _DURATION_RANGE.search(text) or _DURATION_NEGATIVE.search(text):
         return set()
-    if re.search(r"\d+\s*[-~—到至]\s*\d+\s*(?:秒|分钟|小时|seconds?|minutes?|hours?|mins?)", text, re.I):
-        return set()
-    values = {1800} if "半小时" in text else set()
-    for value, unit in re.findall(r"(\d+(?:\.\d+)?)\s*(秒钟?|分钟|小时|seconds?|minutes?|hours?|mins?|s|min|h)(?![A-Za-z])", text, re.I):
-        factor = 3600 if unit.lower() in {"小时", "hour", "hours", "h"} else 60 if unit.lower() in {
-            "分钟", "minute", "minutes", "min", "mins"} else 1
-        seconds = float(value) * factor
-        if seconds.is_integer() and 0 < seconds <= 86400:
-            values.add(int(seconds))
+    values, total, last_factor, end = set(), 0., 0, 0
+    def finish():
+        if total is not None and math.isfinite(total) and total.is_integer() and 0 < total <= 86400:
+            values.add(int(total))
+    for part in _DURATION_PART.finditer(text):
+        value = _duration_number(part["number"])
+        if part["half_before"] or part["half_after"]:
+            value = value + .5 if value is not None and part["number"] != "半" else None
+        unit = part["unit"].lower()
+        factor = 3600 if unit in {"小时", "hour", "hours", "h"} else 60 if unit in {
+            "分", "分钟", "minute", "minutes", "min", "mins"} else 1
+        connector = text[end:part.start()].strip().lower()
+        # Only adjacent, descending units form a single duration. Separate
+        # instructions (e.g. boil 1 minute, then fry 30 seconds) stay separate.
+        if not last_factor or factor >= last_factor or connector not in {"", "and", "又", "零"}:
+            finish()
+            total = 0.
+        total = total + value * factor if total is not None and value is not None else None
+        last_factor, end = factor, part.end()
+    finish()
     return values

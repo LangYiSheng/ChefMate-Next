@@ -278,7 +278,7 @@ def make_recipe_tools(cookbook):
         ),
         InjectedToolSpec(
             name="revise_recipe_draft", args_schema=RecipeDraftRevisionRequest, handler=revise_draft,
-            description="修改已读回的同一草稿。只改难度/份数/总耗时优先metadata_patch，只列需改值及对应metadata_provenance，未列内容原样保留；不会为凑总时长改动分项。改食材/步骤才传完整recipe，二者严格二选一。真实id/revision与来源校验照旧，发布仍需确认。",
+            description="修改已读回的同一草稿。只改难度/份数/总耗时优先metadata_patch；未改字段传null保留，仅需改值填写对应metadata_provenance，clear_fields通常为[]，仅用户明确要求清空才列字段名；不会为凑总时长改动分项。改食材/步骤才传完整recipe，二者严格二选一。真实id/revision与来源校验照旧，发布仍需确认。",
             required_skill="recipe-authoring", effect="write", side_effects=("修改待审核菜谱草稿",),
         ),
         InjectedToolSpec(

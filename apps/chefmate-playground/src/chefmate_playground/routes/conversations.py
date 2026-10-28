@@ -10,6 +10,7 @@ from ..images import ImageError
 from ..runtime import TurnConflict, encode_event
 from ..sessions import public_session
 from ..app_context import AppContext
+from ..accounts import AccountError
 
 
 def build_router(context: AppContext) -> APIRouter:
@@ -126,6 +127,8 @@ def build_router(context: AppContext) -> APIRouter:
             raise HTTPException(422, "图片未上传或不属于当前会话，请重新上传。") from None
         except TurnConflict as error:
             raise HTTPException(409, str(error)) from None
+        except AccountError as error:
+            raise HTTPException(error.status_code, error.detail) from None
 
         async def stream():
             if replay is not None:

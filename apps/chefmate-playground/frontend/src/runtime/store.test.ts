@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ChefStore } from './store';
 import type { AttachmentPersistence, ImageDraft, StoreOptions } from './types';
+import {QUOTA_CHANGED} from './quota-events';
 
 const json = (data: any, status = 200) => new Response(JSON.stringify(data), { status, headers: { 'Content-Type': 'application/json' } });
 const stream = (events: any[]) => new Response(events.map(event => `data: ${JSON.stringify(event)}\n\n`).join(''), { headers: { 'Content-Type': 'text/event-stream' } });
@@ -40,6 +41,40 @@ function controlledStream() {
 }
 
 describe('React conversation store lifecycle', () => {
+  it.each(['completed','error','cancelled'])('notifies quota only after the %s turn reaches a terminal state', async status => {
+    const connection = controlledStream(), notified = vi.fn();
+    window.addEventListener(QUOTA_CHANGED,notified);
+    try {
+      const {store} = harness(path => path.endsWith('/turn') ? connection.response : undefined);
+      await store.start(); await store.openSession('quota-turn');
+      const sending = store.sendMessage('煮鸡蛋'); await flush();
+      connection.event({type:'assistant_delta',text:'烧开水'}); await flush();
+      expect(notified).not.toHaveBeenCalled();
+      connection.event({type:'result',result:{status,text:'完成'}}); connection.event({type:'done',status}); await flush();
+      expect(notified).toHaveBeenCalledOnce();
+      connection.close(); await sending;
+      expect(notified).toHaveBeenCalledOnce();
+    } finally {window.removeEventListener(QUOTA_CHANGED,notified);}
+  });
+  it('notifies quota after a disconnected running turn is recovered as finished', async () => {
+    let running = true;
+    const notified = vi.fn(); window.addEventListener(QUOTA_CHANGED,notified);
+    try {
+      const {store} = harness(path => path === '/api/sessions/recovered' ? json({id:'recovered',messages:[],running}) : undefined);
+      await store.start(); await store.openSession('recovered'); expect(notified).not.toHaveBeenCalled();
+      running = false; await store.refreshSession('recovered'); expect(notified).toHaveBeenCalledOnce();
+      await store.refreshSession('recovered'); expect(notified).toHaveBeenCalledOnce();
+    } finally {window.removeEventListener(QUOTA_CHANGED,notified);}
+  });
+  it('removes account-owned state and ignores late responses from the previous account', async () => {
+    const pending = deferred<Response>();
+    const {store} = harness(path => path === '/api/status' ? pending.promise : undefined);
+    const starting = store.start(); await flush(); await store.openSession('previous-private-chat'); store.setDraft('previous-private-draft');
+    expect(store.getSnapshot().currentId).toBe('previous-private-chat');
+    await store.resetForAccount('next-account');
+    pending.resolve(json({ready: true, model: 'previous-account-model'})); await starting;
+    expect(store.getSnapshot()).toMatchObject({currentId: null, status: null, session: null, sessions: [], cache: {}, drafts: {}, imageDrafts: {}, continuations: {}});
+  });
   it('keeps stable snapshots and does not mutate snapshots already rendered by React', async () => {
     const connection = controlledStream(); let requestId = '';
     const { store } = harness((path, options) => {

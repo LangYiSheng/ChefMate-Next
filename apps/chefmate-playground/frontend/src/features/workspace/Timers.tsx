@@ -23,7 +23,8 @@ export function KitchenTimers({ sessionId, onOpenSession, active: surfaceActive 
   const [open, setOpen] = useState(false), [creating, setCreating] = useState(false), [highlight, setHighlight] = useState<string | undefined>();
   const [position, setPosition] = useState<CSSProperties>({});
   const root = useRef<HTMLDivElement>(null), panel = useRef<HTMLElement>(null), trigger = useRef<HTMLButtonElement>(null);
-  const focusOnOpen = useRef(false), seenEvent = useRef(state.timerEvent?.sequence || 0), id = useId();
+  const lastPanelFocus = useRef<HTMLElement | null>(null);
+  const focusOnOpen = useRef(false), focusNewTimer = useRef(false), seenEvent = useRef(state.timerEvent?.sequence || 0), id = useId();
   const activeSurface = () => {
     if (!surfaceActive || root.current?.closest('[inert],[hidden]')) return false;
     const modal = [...document.querySelectorAll<HTMLDialogElement>('dialog[open]')].at(-1);
@@ -39,9 +40,13 @@ export function KitchenTimers({ sessionId, onOpenSession, active: surfaceActive 
     if (event.sessionId !== sessionId || !activeSurface()) return;
     setHighlight(event.timerId);
     if (event.reason !== 'expired') setCreating(false);
-    focusOnOpen.current = event.reason === 'inspect';
+    // A successful manual submission removes its focused form. Keep keyboard
+    // navigation with the new timer unless the user has already moved away.
+    focusNewTimer.current = event.reason === 'started' && creating && open
+      && (document.activeElement === document.body || Boolean(panel.current?.contains(document.activeElement)));
+    focusOnOpen.current = event.reason === 'inspect' || focusNewTimer.current;
     setOpen(true);
-  }, [state.timerEvent, sessionId, surfaceActive]);
+  }, [state.timerEvent, sessionId, surfaceActive, creating, open]);
   useEffect(() => {
     if (!open) return;
     const outside = (event: PointerEvent) => { if (root.current && !root.current.contains(event.target as Node)) close(false); };
@@ -70,10 +75,22 @@ export function KitchenTimers({ sessionId, onOpenSession, active: surfaceActive 
     if (panel.current) observer?.observe(panel.current);
     return () => { observer?.disconnect(); window.removeEventListener('resize', place); window.visualViewport?.removeEventListener('resize', place); window.visualViewport?.removeEventListener('scroll', place); };
   }, [open, creating, sessionId]);
+  useLayoutEffect(() => {
+    if (!open) { lastPanelFocus.current = null; return; }
+    // Ending or acknowledging a timer removes its focused controls. Restore a
+    // usable panel target only if the browser lost focus with the removed node.
+    if (activeSurface() && !focusOnOpen.current && lastPanelFocus.current && !lastPanelFocus.current.isConnected && document.activeElement === document.body) {
+      panel.current?.querySelector<HTMLElement>('button:not(:disabled)')?.focus({ preventScroll: true });
+    }
+  });
   useEffect(() => {
     if (!open) return;
-    if (focusOnOpen.current) { panel.current?.querySelector<HTMLElement>(creating ? 'input:not(:disabled)' : 'button:not(:disabled)')?.focus({ preventScroll: true }); focusOnOpen.current = false; }
     const row = [...(panel.current?.querySelectorAll<HTMLElement>('[data-timer-row]') || [])].find(row => row.dataset.timerRow === highlight);
+    if (focusOnOpen.current) {
+      const target = focusNewTimer.current ? row || panel.current : panel.current;
+      target?.querySelector<HTMLElement>(creating ? 'input:not(:disabled)' : 'button:not(:disabled)')?.focus({ preventScroll: true });
+      focusOnOpen.current = false; focusNewTimer.current = false;
+    }
     const body = panel.current?.querySelector<HTMLElement>('.timer-popup-body');
     if (row && body) body.scrollTop = Math.max(0, body.scrollTop + row.getBoundingClientRect().top - body.getBoundingClientRect().top);
   }, [open, highlight, creating]);
@@ -86,7 +103,7 @@ export function KitchenTimers({ sessionId, onOpenSession, active: surfaceActive 
   const { limit, active } = timerCapacity(entry?.snapshot, entry?.views || [], entry?.clock() || Date.now());
   return <div className="react-kitchen-timers" ref={root}>
     <button type="button" ref={trigger} className="timer-trigger" data-state={display?.state || (reminders.length ? 'expired' : 'empty')} aria-label={first ? `厨房计时：${first.label}，${display!.clock}，${display!.status}` : reminders.length ? '查看其他会话的到时提醒' : '打开厨房计时'} aria-expanded={open} aria-controls={id} onClick={() => { focusOnOpen.current = !open; setOpen(!open); if (!open) setCreating(false); }}><Icon name="timer" /><span className="timer-trigger-clock">{display?.clock || (reminders.length ? '时间到' : '计时')}</span>{visible.length > 1 && <span className="timer-trigger-count">{visible.length}</span>}{reminders.length > 0 && <span className="timer-trigger-count">!</span>}</button>
-    {open && <section id={id} ref={panel} style={position} className="react-timer-popover timer-popover-surface" role="dialog" aria-label="厨房计时">
+    {open && <section id={id} ref={panel} style={position} className="react-timer-popover timer-popover-surface" role="dialog" aria-label="厨房计时" onFocusCapture={event => { lastPanelFocus.current = event.target as HTMLElement; }}>
       <header className="timer-popup-heading"><h3>{creating ? '新建计时' : '厨房计时'}</h3><div><Button className="timer-popup-button" aria-label={creating ? '返回计时列表' : '添加计时器'} disabled={!creating && (!entry || entry.snapshot?.stage !== 'cooking' || entry.saving || active >= limit)} onClick={() => { focusOnOpen.current = true; setCreating(!creating); }}><Icon name={creating ? 'arrow-left' : 'plus'} /></Button><Button className="timer-popup-button" aria-label="关闭计时浮层" onClick={() => close(true)}><Icon name="x" /></Button></div></header>
       <div className="timer-popup-body">{entry && sessionId && <WorkspaceError sessionId={sessionId} entry={entry} />}
       {creating && entry && sessionId ? <TimerForm view={view} ctx={{ sessionId, entry }} onStarted={() => setCreating(false)} /> : <div className="timer-popup-list">{visible.length && entry && sessionId ? visible.map(timer => <div className={highlight === timer.id ? 'timer-highlight' : ''} key={timer.id}><TimerRow timer={timer} view={view} ctx={{ sessionId, entry }} /></div>) : <p className="timer-popup-empty">还没有进行中的计时。</p>}{reminders.map(item => <article className="timer-popup-row" data-state="expired" key={`${item.sessionId}:${item.timer.id}`}><div className="timer-popup-copy"><strong className="timer-other-reminder"><Icon name="timer"/><span>{item.timer.label}</span><small>时间到</small></strong><p>另一个会话的计时提醒</p></div><div className="timer-popup-actions"><Button className="timer-popup-button" onClick={() => openSession(item.sessionId)}>查看会话</Button><Button className="timer-popup-button" onClick={() => workspaceStore.acknowledge(item.sessionId, item.timer.id)}>知道了</Button></div></article>)}</div>}</div>

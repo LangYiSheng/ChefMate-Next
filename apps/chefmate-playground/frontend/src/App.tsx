@@ -12,25 +12,30 @@ import { CookingFocus, KitchenTimers, WorkspacePanel, initializeWorkspace } from
 import { workspaceStore } from './features/workspace/store';
 import { viewChoices } from './features/workspace/protocol';
 import { initializeUiPreferences } from './features/preferences/client';
+import type {AccountUser} from './features/account/types';
 
-type Page = 'chat' | 'settings' | 'recipes' | 'journal';
+type Page = 'chat' | 'settings' | 'recipes' | 'journal' | 'account' | 'admin';
 const loadSettings = () => import('./features/settings/Settings').then(module => ({ default: module.Settings }));
 const loadCenters = () => import('./features/centers/KitchenCenters').then(module => ({ default: module.KitchenCenters }));
+const loadAdmin = () => import('./features/account/AdminPanel').then(module => ({default: module.AdminPanel}));
 const developmentBase = import.meta.env.DEV ? import.meta.env.BASE_URL.replace(/\/$/, '') : '';
-const pathFor = (page: Page) => `${developmentBase}${page === 'chat' ? '/' : `/${page}`}`;
-const pageFor = (): Page => ({ '/settings': 'settings', '/recipes': 'recipes', '/journal': 'journal' })[location.pathname.slice(developmentBase.length)] as Page || 'chat';
+const pathFor = (page: Page, section = 'display') => `${developmentBase}${page === 'chat' ? '/' : `/${page === 'account' ? 'settings' : page}`}${page === 'account' ? '?section=account-profile' : page === 'settings' && section !== 'display' ? '?section=' + encodeURIComponent(section) : ''}`;
+const pageFor = (): Page => ({ '/settings': 'settings', '/recipes': 'recipes', '/journal': 'journal', '/account': 'settings', '/admin': 'admin' })[location.pathname.slice(developmentBase.length)] as Page || 'chat';
+const settingsSectionFor = () => location.pathname.endsWith('/account') ? 'account-profile' : new URLSearchParams(location.search).get('section') || 'display';
 function local<T>(key: string, fallback: T): T { try { return JSON.parse(localStorage.getItem(key) || 'null') ?? fallback; } catch { return fallback; } }
 
-export default function App() {
+export default function App({account, refreshAccount = async () => {}, logout = async () => {}}: {account?: AccountUser; refreshAccount?: () => Promise<void>; logout?: () => Promise<void>} = {}) {
   const state = useSyncExternalStore(chefStore.subscribe, chefStore.getSnapshot);
   const canFocus = useSyncExternalStore(workspaceStore.subscribe, () => {
     const entry = state.currentId ? workspaceStore.getSnapshot().entries[state.currentId] : undefined;
     return Boolean(entry && viewChoices(entry.views, entry.snapshot?.stage).some(view => view.kind !== 'timers'));
   });
   const [page, setPage] = useState<Page>(pageFor);
+  const [settingsSection, setSettingsSection] = useState(settingsSectionFor);
   const [pageAttempt, setPageAttempt] = useState(0);
   const Settings = useMemo(() => lazy(loadSettings), [pageAttempt]);
   const KitchenCenters = useMemo(() => lazy(loadCenters), [pageAttempt]);
+  const AdminPanel = useMemo(() => lazy(loadAdmin), [pageAttempt]);
   const [collapsed, setCollapsed] = useState(() => local('chefmate:sidebar-collapsed', false));
   const [mobileOpen, setMobileOpen] = useState(false);
   const [mobile, setMobile] = useState(() => window.matchMedia('(max-width: 760px)').matches);
@@ -47,7 +52,8 @@ export default function App() {
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const dragging = useRef<{ side: 'left' | 'right'; startX: number; startWidth: number; pointerId: number; handle: HTMLDivElement } | null>(null);
   const editorPositions = useRef(new Map<string, { start: number; end: number }>());
-  const developer = local<Record<string, any>>('chefmate:developer-settings', {}).enabled === true;
+  const developerAllowed = !account || account.role === 'admin' || account.developer_allowed;
+  const developer = developerAllowed && local<Record<string, any>>('chefmate:developer-settings', {}).enabled === true;
   const running = Boolean(state.session?.running || state.currentId && state.runs[state.currentId]);
   const notify = useCallback((text: string) => {
     setNotice(text); if (toastTimer.current) clearTimeout(toastTimer.current);
@@ -79,6 +85,7 @@ export default function App() {
     chefStore.acknowledgeKitchenDisplay(request.action_id);
   }, [state.kitchenDisplayRequest, state.currentId, canFocus, page]);
   useEffect(() => { if (!developer && tab === 'query') setTab('workspace'); }, [developer, tab]);
+  useEffect(() => {if (page === 'admin' && account?.role !== 'admin') {setPage('chat'); history.replaceState({}, '', pathFor('chat'));}}, [page, account?.role]);
   useEffect(() => {
     const media = window.matchMedia('(max-width: 760px)');
     const resize = () => { setMobile(media.matches); if (!media.matches) setMobileOpen(false); };
@@ -86,13 +93,13 @@ export default function App() {
   }, []);
   useEffect(() => {
     const listener = () => {
-      const next = pageFor();
-      const resume = () => { setPage(next); setMobileOpen(false); setFocus(false); if (next !== 'chat') setDetail(false); history.replaceState({}, '', pathFor(next)); };
+      const next = pageFor(), section = settingsSectionFor();
+      const resume = () => { setPage(next); setSettingsSection(section); setMobileOpen(false); setFocus(false); if (next !== 'chat') setDetail(false); history.replaceState({}, '', pathFor(next, section)); };
       const event = new CustomEvent('chefmate:before-page-change', { cancelable: true, detail: { page: next, resume } });
-      if (window.dispatchEvent(event)) resume(); else history.pushState({}, '', pathFor(page));
+      if (window.dispatchEvent(event)) resume(); else history.pushState({}, '', pathFor(page, settingsSection));
     };
     window.addEventListener('popstate', listener); return () => window.removeEventListener('popstate', listener);
-  }, [page]);
+  }, [page, settingsSection]);
   useEffect(() => {
     const escape = (event: KeyboardEvent) => {
       if (event.key !== 'Escape' || event.defaultPrevented || document.querySelector('dialog[open]')) return;
@@ -131,16 +138,24 @@ export default function App() {
     event.currentTarget.setPointerCapture?.(event.pointerId);
     setResizing(side);
   }
-  function navigate(next: Page, after?: () => void) {
+  function navigate(next: Page, after?: () => void, section = 'display') {
+    if (next === 'account') {next = 'settings'; section = 'account-profile';}
     const resume = () => {
-      setPage(next); setMobileOpen(false); setFocus(false); if (next !== 'chat') setDetail(false);
-      if (location.pathname !== pathFor(next)) history.pushState({}, '', pathFor(next));
+      setPage(next); if (next === 'settings') setSettingsSection(section); setMobileOpen(false); setFocus(false); if (next !== 'chat') setDetail(false);
+      const path = pathFor(next, section);
+      if (location.pathname + location.search !== path) history.pushState({}, '', path);
       after?.();
     };
     const event = new CustomEvent('chefmate:before-page-change', { cancelable: true, detail: { page: next, resume } });
     if (!window.dispatchEvent(event)) return;
     resume();
   }
+  const openSettings = (section: string) => navigate('settings', undefined, section);
+  const requestLogout = () => {
+    const resume = () => {void logout().catch(problem => notify(problem.message));};
+    const event = new CustomEvent('chefmate:before-page-change', {cancelable: true, detail: {page: 'logout', resume}});
+    if (window.dispatchEvent(event)) resume();
+  };
   function ask(text: string, image = false) {
     navigate('chat', () => {
       chefStore.setDraft(text);
@@ -150,9 +165,10 @@ export default function App() {
   }
   function openRecipe(id: string, snapshot?: Record<string, any>) { setSelection({ id, snapshot }); setTab('recipe'); setDetail(true); }
   function openFocus(kind = '') { if (!canFocus) return; setFocusKind(kind); setFocus(true); }
-  const title = page === 'chat' ? state.session?.title || '新对话' : { settings: '设置', recipes: '菜谱中心', journal: '食光手记' }[page];
+  const title = page === 'chat' ? state.session?.title || '新对话' : { settings: '设置', recipes: '菜谱中心', journal: '食光手记', account: '我的账号', admin: '管理平台' }[page];
   const stage = state.session?.conversation_state;
-  const banner = state.status && !state.status.ready ? !state.status.configured ? '模型尚未配置，请到设置里完成模型连接。' : !state.status.database?.ready ? '菜谱数据库暂时不可用，请检查数据库连接。' : '服务暂时未就绪，请稍后重试。' : '';
+  const modelConfigured = state.status?.model_configured ?? state.status?.configured;
+  const banner = state.status && !state.status.ready ? !modelConfigured ? account?.role === 'admin' ? '模型尚未配置，请在管理平台完成模型连接。' : account ? '管理员尚未配置模型连接。' : '模型尚未配置，请到设置里完成模型连接。' : !state.status.database?.ready ? account?.role === 'admin' ? '菜谱服务尚未连接，请检查部署配置。' : '菜谱服务尚未连接，请联系管理员。' : state.status.billing_ready === false ? '管理员尚未确认模型计价，请联系管理员完成设置。' : '服务暂时未就绪，请稍后重试。' : '';
   const prefs = local<Record<string, any>>('chefmate:ui-settings', {});
   return <>
     {developer && <DeveloperWatermark />}
@@ -160,7 +176,7 @@ export default function App() {
     <div inert={focus} className={`app react-app ${focus ? 'focus-scene-active' : ''} ${resizing ? 'pane-resizing' : ''} ${collapsed ? 'sidebar-collapsed' : ''} ${mobileOpen ? 'sidebar-open' : ''} ${detail ? 'details-open' : ''} ${prefs.density === 'compact' ? 'compact-density' : ''}`}
       data-page={page} data-preferences={prefsVersion} data-resizing={resizing || undefined} style={{ '--sidebar-width': `${collapsed ? 64 : width}px`, '--detail-width': `${rightWidth}px` } as CSSProperties}>
       <aside className="sidebar" aria-label="会话导航" inert={mobile && !mobileOpen}><Sidebar state={state} page={page} collapsed={collapsed} onCollapse={value => { setCollapsed(value); try { localStorage.setItem('chefmate:sidebar-collapsed', JSON.stringify(value)); } catch { /* Keep this session's layout. */ } }}
-        onClose={() => setMobileOpen(false)} navigate={navigate} notify={notify} developer={developer} onInspect={() => { setDetail(true); setTab('query'); }} />
+        onClose={() => setMobileOpen(false)} navigate={navigate} openSettings={openSettings} onLogout={requestLogout} notify={notify} developer={developer} account={account} onInspect={() => { setDetail(true); setTab('query'); }} />
       </aside>
       {!collapsed && <div className="sidebar-resize" role="separator" aria-label="调整侧栏宽度" aria-orientation="vertical" aria-valuemin={208} aria-valuemax={360} aria-valuenow={width} tabIndex={0}
         onPointerDown={event => startResizing(event, 'left')} onLostPointerCapture={event => { if (dragging.current?.pointerId === event.pointerId) stopResizing(); }} onKeyDown={event => { if (['ArrowLeft', 'ArrowRight'].includes(event.key)) { event.preventDefault(); setWidth(Math.max(208, Math.min(360, width + (event.key === 'ArrowLeft' ? -8 : 8)))); } }} />}
@@ -169,10 +185,11 @@ export default function App() {
         <div className="topbar-actions"><KitchenTimers sessionId={state.currentId} active={!focus} onOpenSession={id => navigate('chat', () => { void chefStore.openSession(id).catch(error => notify(error.message)); })} />
           {page === 'chat' && <>{canFocus && <button type="button" className="panel-toggle" aria-label="打开烹饪工作台" onClick={() => openFocus()}><Icon name="maximize" /><span>做菜</span></button>}
             <button type="button" className="panel-toggle" aria-label={detail ? '收起右侧栏' : '展开右侧栏'} aria-expanded={detail} onClick={() => setDetail(!detail)}><Icon name="panel-right" /><span>详情</span></button></>}</div></header>
-        {banner && <div className="connection-banner" role="status">{banner}<button type="button" onClick={() => navigate('settings')}>打开设置</button><button type="button" onClick={() => void chefStore.loadStatus().catch(error => notify(error.message))}>重新连接</button></div>}
+        {banner && <div className="connection-banner" role="status">{banner}{(!account || account.role === 'admin') && <button type="button" onClick={() => navigate(account ? 'admin' : 'settings')}>{account ? '管理平台' : '打开设置'}</button>}<button type="button" onClick={() => void chefStore.loadStatus().catch(error => notify(error.message))}>重新连接</button></div>}
         {state.error && <div className="error-box" role="alert">{state.error}</div>}
         <PageBoundary key={`${page}:${pageAttempt}`} onRetry={() => setPageAttempt(value => value + 1)} onBack={() => navigate('chat')}><Suspense fallback={<p className="panel-loading" role="status">正在打开页面…</p>}>
-          {page === 'settings' && <Settings onClose={() => navigate('chat')} onSaved={() => { void chefStore.loadStatus().catch(error => notify(error.message)); setPrefsVersion(value => value + 1); }} notify={notify} />}
+          {page === 'settings' && <Settings account={account} refreshAccount={refreshAccount} initialSection={settingsSection} onSectionChange={openSettings} scope={account ? 'personal' : undefined} developerAllowed={developerAllowed} onClose={() => navigate('chat')} onSaved={() => { void chefStore.loadStatus().catch(error => notify(error.message)); setPrefsVersion(value => value + 1); }} notify={notify} />}
+          {page === 'admin' && account?.role === 'admin' && <AdminPanel user={account} refreshAccount={refreshAccount} notify={notify} onClose={() => navigate('chat')}/>}
           {(page === 'recipes' || page === 'journal') && <KitchenCenters page={page} onRecipe={openRecipe} onChat={text => navigate('chat', () => { chefStore.newSession(); chefStore.setDraft(text); })} onRecord={() => navigate('chat', () => { chefStore.newSession(); chefStore.setDraft('我想记录刚刚吃的一餐，请先整理草稿让我核对。'); })} onReturn={() => navigate('chat')} notify={notify} />}
         </Suspense></PageBoundary>
         <section className="chat-page" hidden={page !== 'chat'} aria-label="对话工作区"><Conversation state={state} active={page === 'chat' && !focus} developer={developer} onRecipe={openRecipe} onAsk={ask} onFocus={openFocus} />{!focus && <Composer state={state} positions={editorPositions.current} notify={notify} />}</section>

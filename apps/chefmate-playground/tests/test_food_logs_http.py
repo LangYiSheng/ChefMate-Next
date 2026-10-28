@@ -11,7 +11,7 @@ from test_meal_logging import NOW, photo
 
 
 def application(tmp_path):
-    app = create_app(PlaygroundConfig(sessions_database=tmp_path / "http-food.db"), service=Service(), agent=Agent())
+    app = create_app(PlaygroundConfig(auth_enabled=False, sessions_database=tmp_path / "http-food.db"), service=Service(), agent=Agent())
     app.state.journal._now = lambda: NOW
     app.state.journal.food_logs._now = lambda: NOW
     return app

@@ -1,0 +1,3 @@
+# Compatibility override: the catalog and safe first-run seed are now default.
+# Existing -f compose.yaml -f compose.catalog.yaml commands remain valid.
+services: {}

@@ -4,6 +4,7 @@ import hashlib
 import json
 import math
 import sqlite3
+from .database import Database
 from datetime import date as Day, datetime, timedelta, timezone
 from pathlib import Path
 
@@ -55,11 +56,12 @@ def _nutrition(recipes, diners):
 
 
 class JournalRepository:
-    def __init__(self, path: Path | str, *, now=None):
-        self.path = Path(path)
+    def __init__(self, path: Path | str | Database, *, now=None):
+        self.database = Database.coerce(path)
+        self.path = self.database.path
         self.path.parent.mkdir(parents=True, exist_ok=True)
         self._now = now or (lambda: datetime.now(timezone.utc))
-        self.food_logs = FoodLogRepository(self.path, now=self._now)
+        self.food_logs = FoodLogRepository(self.database, now=self._now)
         with self._connect() as connection:
             connection.execute("CREATE TABLE IF NOT EXISTS food_journal ("
                                "id TEXT PRIMARY KEY, session_id TEXT NOT NULL, meal_id TEXT NOT NULL, "
@@ -72,9 +74,7 @@ class JournalRepository:
         self.cooked_intake = CookedMealIntakeRepository(self.food_logs)
 
     def _connect(self):
-        connection = sqlite3.connect(self.path, timeout=10)
-        connection.row_factory = sqlite3.Row
-        return connection
+        return self.database.connect(row_factory=sqlite3.Row, timeout=10)
 
     def sync_session(self, state: dict, *, register_intake=False) -> bool:
         """Record only observed starts/completions after the session transaction commits.

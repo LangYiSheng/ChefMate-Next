@@ -1,5 +1,6 @@
-import { HttpError, normalizeSession, normalizeToolCall, readEvents, requestJson, safeText } from './http';
+import { accountHeaders, HttpError, normalizeSession, normalizeToolCall, notifyAccountBoundary, readEvents, requestJson, safeText } from './http';
 import { BrowserAttachments, imageMetadata, prepareImage, releaseImages } from './attachments';
+import {notifyQuotaChanged} from './quota-events';
 import type { ApiData, AttachmentPersistence, Continuation, ImageDraft, Message, RunState, RuntimeState, SendOptions, Session, StorageLike, StoreOptions, WorkspaceAdapter } from './types';
 
 const DRAFTS_KEY = 'chefmate:react-drafts';
@@ -22,6 +23,7 @@ interface ActiveRun extends RunState {
   failed: boolean;
   httpRejected: boolean;
   accepted: boolean;
+  quotaNotified?: boolean;
   terminalStatus?: string;
   retryable?: boolean;
 }
@@ -200,6 +202,20 @@ export class ChefStore {
     this.saveContinuations();
   };
 
+  /** Account switches are a stronger boundary than detaching a mounted view. */
+  resetForAccount = async (accountId?: string | null): Promise<void> => {
+    this.dispose();
+    await this.persistQueue.catch(() => undefined);
+    for (const images of Object.values(this.state.imageDrafts)) releaseImages(images);
+    await this.attachments.save({}).catch(() => undefined);
+    if (this.attachments instanceof BrowserAttachments) this.attachments = new BrowserAttachments(accountId);
+    const fresh = new ChefStore({fetch: this.fetcher, storage: null, attachments: this.attachments, prepareImage: this.prepareImage, pollInterval: this.pollInterval});
+    this.state = fresh.state; this.submissions = {}; this.hydratedImages = false; this.adapter = null;
+    this.sessionEpoch.clear(); this.deleted.clear(); this.touchedImages.clear(); this.metadata.clear(); this.displayActions.clear();
+    this.continuationScheduled = false;
+    this.emit();
+  };
+
   loadStatus = async (): Promise<void> => {
     const lifecycle = this.lifecycle, epoch = ++this.statusEpoch;
     try {
@@ -271,7 +287,9 @@ export class ChefStore {
       let session = normalizeSession(await this.request(url(id)));
       if (!this.valid(lifecycle) || this.sessionEpoch.get(id) !== epoch || this.active.has(id) || this.deleted.has(id)) return;
       if ((this.metadata.get(id)?.version || 0) !== metadataVersion) session = { ...session, ...this.metadata.get(id)!.values };
+      const wasRunning = Boolean(this.state.cache[id]?.running || this.state.runs[id]?.recovering || this.state.sessions.some(item => item.id === id && item.running));
       this.setCache(id, session); this.adapter?.setRunning?.(id, Boolean(session.running));
+      if (wasRunning && !session.running) notifyQuotaChanged();
       this.reconcileSubmission(id, session);
       if (!session.running && this.state.runs[id]?.recovering) this.emit({ runs: omit(this.state.runs, id) });
       this.reconcileContinuation(id, session);
@@ -471,6 +489,11 @@ export class ChefStore {
     });
     if (event.type === 'ui_action') this.receiveDisplayActions(run.sessionId, [event.action]);
     if (event.type === 'result') this.receiveDisplayActions(run.sessionId, (event.result || event).actions);
+    // The server emits done after monetary settlement. Do not wait for the
+    // separate canonical-session read, which can be delayed by the connection.
+    if (event.type === 'done' && !run.quotaNotified && this.valid(run.lifecycle) && this.active.get(run.sessionId) === run) {
+      run.quotaNotified = true; notifyQuotaChanged();
+    }
   }
 
   sendMessage = async (text?: string, options: SendOptions = {}): Promise<{ error?: string; accepted?: boolean }> => {
@@ -554,14 +577,15 @@ export class ChefStore {
     }
     try {
       const response = await this.fetcher(`${url(id)}/turn`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json', Accept: 'text/event-stream' }, signal: run.controller.signal,
+        method: 'POST', headers: accountHeaders(`${url(id)}/turn`, { 'Content-Type': 'application/json', Accept: 'text/event-stream' }), signal: run.controller.signal,
         body: JSON.stringify({ message: input, images: metadata.map(image => image.id), retry: Boolean(options.retry), request_id: run.requestId, ui_snapshot: snapshot }),
       });
       if (!this.valid(lifecycle)) return { error: '页面已关闭，请重新打开对话。' };
       if (!response.ok) {
         run.httpRejected = true;
         const payload = await response.json().catch(() => null);
-        throw new HttpError(safeText(typeof payload?.detail === 'string' ? payload.detail : payload?.message || `请求失败（${response.status}）。`), response.status, payload);
+        notifyAccountBoundary(response.status, payload, `${url(id)}/turn`);
+        throw new HttpError(safeText(typeof payload?.detail === 'string' ? payload.detail : payload?.detail?.message || payload?.message || `请求失败（${response.status}）。`), response.status, payload);
       }
       run.accepted = true;
       this.acceptContinuation(id, run.requestId);
@@ -608,6 +632,7 @@ export class ChefStore {
     this.active.delete(id);
     this.emit({ runs: omit(this.state.runs, id) });
     this.adapter?.setRunning?.(id, recovery);
+    if (!recovery && !run.quotaNotified) notifyQuotaChanged();
     void Promise.resolve(this.adapter?.refresh?.(id)).catch(() => undefined);
     if (recovery) this.schedulePoll(id);
     void this.loadSessions().catch(() => undefined);

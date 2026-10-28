@@ -3,9 +3,12 @@
 from dataclasses import replace
 
 import pytest
+from fastapi.testclient import TestClient
 from pydantic import ValidationError
 
+from chefmate_playground import PlaygroundConfig, create_app
 from chefmate_playground.recipe_drafts import RecipeDraftRevisionRequest
+from test_app import Agent, Service
 from test_cookbook import draft
 from test_recipe_metadata_provenance import answer_metadata, metadata_recipe, revise
 from test_recipe_review import PublicationFlow
@@ -59,7 +62,7 @@ def test_patch_can_clear_one_value_without_touching_other_values_or_their_source
     before = prepare_suggestions(flow)
     flow.current = replace(flow.current, messages=[{"role": "user", "content": "把总耗时清空，其他保留"}])
     flow.read()
-    result = patch(flow, {"total_time_min": None})
+    result = patch(flow, {"total_time_min": None, "clear_fields": ["total_time_min"]})
     assert result["status"] == "ok"
     record = result["draft"]
     assert record["document"]["total_time_min"] is None
@@ -67,6 +70,66 @@ def test_patch_can_clear_one_value_without_touching_other_values_or_their_source
     for field in ("servings", "difficulty", "prep_time_min", "cook_time_min"):
         assert record["document"][field] == before["document"][field]
         assert record["metadata_provenance"][field] == before["metadata_provenance"][field]
+
+
+def test_native_strict_nullable_fields_preserve_unrequested_values_and_provenance(tmp_path):
+    flow = PublicationFlow(tmp_path)
+    before = prepare_suggestions(flow)
+    text = "只把总耗时改为30分钟，份数难度与其他内容保持原样"
+    flow.current = replace(flow.current, messages=[{"role": "user", "content": text}])
+    flow.read()
+    # Responses strict tools materialize optional nullable properties. This
+    # exact shape used to save servings/difficulty=null, then require repair.
+    result = patch(flow, {"servings": None, "difficulty": None, "total_time_min": 30,
+        "clear_fields": [], "metadata_provenance": {"servings": None, "difficulty": None,
+            "total_time_min": {"kind": "user_confirmed", "evidence": text, "question_id": None}}})
+    assert result["status"] == "ok"
+    after = result["draft"]
+    assert after["document"]["total_time_min"] == 30
+    for field in before["document"]:
+        if field not in {"total_time_min", "warnings"}:
+            assert after["document"][field] == before["document"][field]
+    for field, evidence in before["metadata_provenance"].items():
+        if field != "total_time_min":
+            assert after["metadata_provenance"][field] == evidence
+    for field in ("source_text", "source_kind", "source_image_ids", "source_metadata_evidence"):
+        assert after[field] == before[field]
+    assert after["revision"] == before["revision"] + 1
+
+
+@pytest.mark.parametrize("field", ["servings", "difficulty", "total_time_min"])
+def test_explicit_clear_fields_clear_only_the_named_nullable_metadata(tmp_path, field):
+    flow = PublicationFlow(tmp_path)
+    before = prepare_suggestions(flow)
+    flow.current = replace(flow.current, messages=[{"role": "user", "content": "清空这项，其他保留"}])
+    flow.read()
+    result = patch(flow, {"servings": None, "difficulty": None, "total_time_min": None,
+        "clear_fields": [field], "metadata_provenance": {"servings": None, "difficulty": None, "total_time_min": None}})
+    assert result["status"] == "ok"
+    after = result["draft"]
+    assert after["document"][field] is None and field not in after["metadata_provenance"]
+    for other in {"servings", "difficulty", "total_time_min", "prep_time_min", "cook_time_min"} - {field}:
+        assert after["document"][other] == before["document"][other]
+        assert after["metadata_provenance"][other] == before["metadata_provenance"][other]
+
+
+def test_full_recipe_http_editor_still_clears_an_explicit_null_without_agent_mask(tmp_path):
+    flow = PublicationFlow(tmp_path)
+    before = prepare_suggestions(flow)
+    values = {**metadata_recipe("unused"), "total_time_min": None, "prep_time_min": 12, "cook_time_min": 12,
+        "metadata_provenance": {field: evidence for field, evidence in before["metadata_provenance"].items()
+                                if field != "total_time_min"}}
+    app = create_app(PlaygroundConfig(auth_enabled=False, sessions_database=flow.repository.path), service=Service(), agent=Agent())
+    uri = "/api/cookbook/" + before["recipe_id"]
+    with TestClient(app) as client:
+        response = client.put(uri, json={"revision": before["revision"], "recipe": values})
+        assert response.status_code == 200
+        after = client.get(uri).json()
+    assert after["document"]["total_time_min"] is None
+    assert "total_time_min" not in after["metadata_provenance"]
+    for field in ("servings", "difficulty", "prep_time_min", "cook_time_min"):
+        assert after["document"][field] == before["document"][field]
+        assert after["metadata_provenance"][field] == before["metadata_provenance"][field]
 
 
 def test_patch_uses_real_bound_answer_and_keeps_stale_version_and_missing_basis_guards(tmp_path):
@@ -86,6 +149,12 @@ def test_patch_uses_real_bound_answer_and_keeps_stale_version_and_missing_basis_
 @pytest.mark.parametrize("extra", [
     {"recipe": draft(), "metadata_patch": {"total_time_min": None}}, {},
     {"metadata_patch": {}}, {"metadata_patch": {"prep_time_min": 15}},
+    {"metadata_patch": {"servings": None, "difficulty": None, "total_time_min": None, "clear_fields": []}},
+    {"metadata_patch": {"clear_fields": ["name"]}},
+    {"metadata_patch": {"clear_fields": ["difficulty", "difficulty"]}},
+    {"metadata_patch": {"difficulty": "normal", "clear_fields": ["difficulty"]}},
+    {"metadata_patch": {"clear_fields": ["total_time_min"], "metadata_provenance": {"total_time_min": {
+        "kind": "suggested", "evidence": "可以给一个时间建议"}}}},
     {"metadata_patch": {"total_time_min": 30, "metadata_provenance": {"difficulty": {
         "kind": "suggested", "evidence": "请更新难度"}}}},
 ])

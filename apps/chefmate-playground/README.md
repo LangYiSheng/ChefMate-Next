@@ -19,6 +19,8 @@
 
 ## 快速开始
 
+日常启动使用仓库根目录的 [Docker Compose](../../docs/guide/deployment.md)，包含独立应用 PostgreSQL。注册登录后进入各自的工作区，管理员维护模型、额度、价格和开发者许可。以下本机方式用于源码开发；需要在应用 `.env` 配置管理员初始化信息。
+
 需要 Python 3.12+、uv 和 Node.js 22.12+。在仓库根目录运行，已有配置文件时保留原文件：
 
 ```powershell
@@ -65,4 +67,4 @@ npm --prefix apps/chefmate-playground/frontend test
 npm --prefix apps/chefmate-playground/frontend run build
 ```
 
-会话与个人数据位于被忽略的 `.runtime`，与只读基础菜谱库独立。完整 API、状态协议与可用性边界见[接口参考](../../docs/reference/workbench.md)，实际模型与浏览器证据见[工程档案](../../docs/engineering/README.md)。
+Docker 中账号与个人记录位于应用 PostgreSQL，图片和设置位于持久卷；本机 SQLite 适配供旧数据与离线测试使用。完整 API、状态协议与可用性边界见[接口参考](../../docs/reference/workbench.md)，实际模型与浏览器证据见[工程档案](../../docs/engineering/README.md)。

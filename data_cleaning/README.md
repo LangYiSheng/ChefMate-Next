@@ -35,7 +35,7 @@ Copy-Item .env.example .env
 | [scripts/](scripts) | 初始化、导入、转换、批次与导出 CLI |
 | [../packages/](../packages/README.md) | 共享契约、处理和食物查询能力 |
 
-模型与清洗配置由本应用持有，不流入在线检索参数。导出经 Storage 校验后显式发布，不由工作台启动时自动导入。
+模型与清洗配置由本应用持有，不流入在线检索参数。自定义导出经 Storage 校验后显式发布；默认 Docker 只在空库首次启动时自动导入仓库固定的 [358 道基础菜谱快照](../data/seed/catalog/README.md)，不会扫描清洗目录或在重启时覆盖已有数据。
 
 ## 验证
 

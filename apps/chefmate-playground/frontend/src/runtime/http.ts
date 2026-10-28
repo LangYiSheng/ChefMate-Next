@@ -1,5 +1,22 @@
 import type { ApiData, Message, Session } from './types';
 
+let boundAccount: string | null = null;
+export function bindHttpAccount(accountId: string | null) { boundAccount = accountId; }
+export function accountHeaders(path: string, input?: HeadersInit): Headers {
+  const headers = new Headers(input);
+  if (boundAccount && path.startsWith('/api/') && !['/api/auth/me', '/api/auth/login', '/api/auth/register'].includes(path)) {
+    headers.set('X-ChefMate-Account', boundAccount);
+  }
+  return headers;
+}
+
+export function notifyAccountBoundary(status: number, payload: any, path: string) {
+  if (typeof window === 'undefined' || !path.startsWith('/api/')) return;
+  if ((status === 401 && !path.startsWith('/api/auth/')) || payload?.detail?.code === 'account_changed') {
+    window.dispatchEvent(new CustomEvent('chefmate:session-expired'));
+  }
+}
+
 export function safeText(value: unknown): string {
   return String(value ?? '')
     .replace(/(\b(?:postgres(?:ql)?|https?):\/\/)[^\s/@]+:[^\s/@]+@/gi, '$1[已隐藏]@')
@@ -29,13 +46,14 @@ export class HttpError extends Error {
 }
 
 export async function requestJson<T = any>(fetcher: typeof fetch, path: string, options: RequestInit = {}): Promise<T> {
-  const headers = new Headers(options.headers);
+  const headers = accountHeaders(path, options.headers);
   if (!headers.has('Accept')) headers.set('Accept', 'application/json');
   if (options.body && !headers.has('Content-Type')) headers.set('Content-Type', 'application/json');
   const response = await fetcher(path, { ...options, headers });
   const payload = await response.json().catch(() => null);
   if (!response.ok) {
-    const message = typeof payload?.detail === 'string' ? payload.detail : payload?.message || payload?.error?.message;
+    notifyAccountBoundary(response.status, payload, path);
+    const message = typeof payload?.detail === 'string' ? payload.detail : payload?.detail?.message || payload?.message || payload?.error?.message;
     throw new HttpError(safeText(message || `请求失败（${response.status}），请稍后重试。`), response.status, payload);
   }
   return payload as T;

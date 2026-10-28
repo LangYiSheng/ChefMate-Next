@@ -14,7 +14,7 @@ from test_app import Agent, Service
 
 @pytest.fixture
 def usage_client(tmp_path):
-    app = create_app(PlaygroundConfig(sessions_database=tmp_path / "insights.db"),
+    app = create_app(PlaygroundConfig(auth_enabled=False, sessions_database=tmp_path / "insights.db"),
                      service=Service(), agent=Agent())
     ledger = app.state.usage
     ledger._now = lambda: datetime(2026, 10, 21, 4, tzinfo=timezone.utc)
@@ -77,7 +77,7 @@ def test_usage_rejects_invalid_range_with_public_validation_message(usage_client
 
 def test_reading_usage_does_not_create_model_observations(tmp_path):
     agent = Agent()
-    app = create_app(PlaygroundConfig(sessions_database=tmp_path / "empty.db"), service=Service(), agent=agent)
+    app = create_app(PlaygroundConfig(auth_enabled=False, sessions_database=tmp_path / "empty.db"), service=Service(), agent=agent)
     with TestClient(app) as client:
         for days in ("7", "30", "all"):
             response = client.get("/api/usage", params={"days": days})
@@ -96,7 +96,7 @@ def test_about_reports_project_version_database_count_and_installed_components(t
             return {**super().get_search_options(), "recipe_count": 37}
 
     secret = "fixture-key-not-for-public-metadata"
-    app = create_app(PlaygroundConfig(sessions_database=tmp_path / "about.db", api_key=secret,
+    app = create_app(PlaygroundConfig(auth_enabled=False, sessions_database=tmp_path / "about.db", api_key=secret,
                                      enabled_components=enabled_components),
                      service=CountedService(), agent=Agent())
     expected_version = tomllib.loads((APP_ROOT / "pyproject.toml").read_text(encoding="utf-8"))["project"]["version"]

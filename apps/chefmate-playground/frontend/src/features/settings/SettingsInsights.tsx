@@ -31,7 +31,7 @@ export function usageCalendar(data: any) {
   return {days, offset, columns: Math.ceil((offset + days.length) / 7), clipped: start > requested};
 }
 export const usageDayLabel = (day: any) => day.status === 'empty' ? `${day.date} · 没有模型请求` : day.status === 'unknown' ? `${day.date} · ${day.calls} 次请求，Token未报告` : `${day.date} · ${tokenText(day.value)} Token${day.status === 'partial' ? '（已知小计）' : ''} · ${day.calls} 次请求`;
-function UsageCalendar({data}: {data: any}) {
+export function UsageCalendar({data}: {data: any}) {
   const calendar = usageCalendar(data), [selected, setSelected] = useState(calendar.days.length - 1), refs = useRef<(HTMLButtonElement | null)[]>([]), scroller = useRef<HTMLDivElement>(null);
   useEffect(() => {setSelected(calendar.days.length - 1); if (scroller.current) scroller.current.scrollLeft = scroller.current.scrollWidth;}, [data]);
   const months: {column: number; label: string}[] = []; let previousMonth = '';
@@ -49,11 +49,11 @@ function ReleaseSources({release}: {release: any}) {
 
 function ReleaseNotes({data}: {data: any}) {
   const titleId = useId();
-  return <section className="product-release-log" id={`${titleId}-releases`} data-settings-index="更新记录" aria-labelledby={titleId}><h2 className="visually-hidden" id={titleId}>更新记录</h2>
-    {(data.releases || []).map((release: any, index: number) => <article className="product-release" id={`settings-release-${index}`} data-settings-index={`${release.version} · ${release.title}`} key={`${release.version}-${index}`} aria-label={`${release.version} 版本更新`}>
+  return <section className="product-release-log" id={`${titleId}-releases`} aria-labelledby={titleId}><h2 className="visually-hidden" id={titleId}>更新记录</h2>
+    {(data.releases || []).map((release: any, index: number) => <article className="product-release" id={`settings-release-${index}`} data-settings-index={release.version} key={`${release.version}-${index}`} aria-label={`${release.version} 版本更新`}>
       <header className="product-release-meta"><h2>{release.version}</h2>{release.version === data.current_version && <span className="product-current-version">当前版本</span>}{release.date && <time dateTime={release.date}>{release.date}</time>}</header>
       <h3 className="product-release-title">{release.title}</h3>{release.summary && <p className="product-release-summary">{release.summary}</p>}
-      <div className="product-release-sections">{(release.sections || []).map((group: any, groupIndex: number) => <section className="product-release-section" id={index === 0 ? `settings-release-${index}-group-${groupIndex}` : undefined} data-settings-index={index === 0 ? group.title : undefined} key={`${group.title}-${groupIndex}`}><h4>{group.title}</h4><ul>{(group.items || []).map((item: string, itemIndex: number) => <li key={itemIndex}>{item}</li>)}</ul></section>)}</div>
+      <div className="product-release-sections">{(release.sections || []).map((group: any, groupIndex: number) => <section className="product-release-section" id={index === 0 ? `settings-release-${index}-group-${groupIndex}` : undefined} key={`${group.title}-${groupIndex}`}><h4>{group.title}</h4><ul>{(group.items || []).map((item: string, itemIndex: number) => <li key={itemIndex}>{item}</li>)}</ul></section>)}</div>
       <ReleaseSources release={release}/>
     </article>)}
     {!data.releases?.length && <p className="settings-note">还没有发布更新记录。</p>}
@@ -66,10 +66,10 @@ function ProductAbout({data}: {data: any}) {
   return <>
     <section className="product-about" id={`${titleId}-product`} data-settings-index="产品信息" aria-labelledby={titleId}>
       <header className="product-about-identity"><Brand className="product-brand-mark"/><div><div className="product-about-name"><h2 id={titleId}>{data.name || 'ChefMate'}</h2><span className="product-version">版本 {data.version || '未提供'}</span></div><p>{data.subtitle || '您的个性化烹饪助手'}</p></div></header>
-      <dl className="product-build-meta"><div><dt>运行方式</dt><dd><Icon name="monitor"/>{data.runtime || '未提供'}</dd></div>{data.commit && <div><dt>构建</dt><dd><code title={data.commit}>{data.commit}</code></dd></div>}</dl>
+      <dl className="product-build-meta"><div><dt>运行方式</dt><dd><Icon name="monitor"/>{data.runtime || '未提供'}</dd></div>{data.commit && <div><dt>构建</dt><dd><code title={data.commit}>{data.commit.slice(0, 12)}</code></dd></div>}</dl>
       <dl className="product-facts">{[['基础菜谱', data.recipe_count, '道'], ['系统组件', data.component_count, '个']].map(([label, value, unit]) => <div key={String(label)}><dt>{label}</dt><dd>{count(value) === null ? <span className="product-count-unknown">未提供</span> : <><strong>{count(value)}</strong><span>{unit}</span></>}</dd></div>)}</dl>
     </section>
-    <SettingsGroup title="数据与隐私"><div className="product-boundary-copy"><p>聊天、个人菜谱、饮食记录和长期记忆保存在本机。</p><p>调用模型时，会发送本次对话需要的内容与图片。API Key 不回显。</p></div></SettingsGroup>
+    <SettingsGroup title="数据与隐私"><div className="product-boundary-copy"><p>聊天、个人菜谱、饮食记录和长期记忆按账号隔离保存。</p><p>调用模型时，会发送本次对话需要的内容与图片。API Key 不回显。</p></div></SettingsGroup>
     <SettingsGroup title="营养数据"><div className="product-boundary-copy"><p>制作量与个人摄入分别记录。单人餐完成后按配方自动登记，多人餐先确认本人份额。</p><p>照片记餐需核对后保存，未知营养留空。</p></div></SettingsGroup>
   </>;
 }
@@ -86,6 +86,6 @@ export function SettingsInsights({section, refresh, usageDays}: {section: string
   const caption = (key: string) => {const report = summary.coverage?.[key], known = report?.known ?? report?.reported; return `${report && known < report.calls ? `已知小计 · ${known}/${report.calls} 次请求` : ''}${key === 'cached_tokens' ? ' · 包含在输入中' : ''}`;};
   return <>{range}
     <SettingsGroup title="用量概览"><dl className="insight-metrics">{[['input_tokens', '输入 Token'], ['output_tokens', '输出 Token'], ['cached_tokens', '缓存读取'], ['total_tokens', '总 Token']].map(([key, title]) => <div className="insight-metric" key={key}><dt>{title}</dt><dd>{tokenText(totals[key])}</dd><small>{caption(key)}</small></div>)}</dl><p className="settings-note">{summary.model_calls ?? 0} 次模型请求。同次输入与输出完整时相加得到总量；其余缺失项保留未知。{summary.total_derived_calls ? ` ${summary.total_derived_calls} 次按输入 + 输出计算。` : ''}</p><UsageCalendar data={data}/><h2>使用概况</h2><Row label="今日已知 Token" value={tokenText((data.today?.known_totals || data.today?.summary?.known_totals || data.today)?.total_tokens)}/><Row label="累计已知 Token" value={tokenText((data.all_time?.known_totals || data.all_time?.summary?.known_totals || data.all_time)?.total_tokens)}/></SettingsGroup>
-    <SettingsGroup title="按模型统计">{(data.models || []).map((model: any, index: number) => {const usage = model.known_totals || model.summary?.known_totals || model; return <section key={index} id={`settings-model-usage-${index}`} data-settings-index={model.model && model.model !== 'unknown' ? model.model : '历史模型未记录'}><h3>{model.model && model.model !== 'unknown' ? model.model : '历史模型未记录'}</h3><Row label="输入 / 输出" value={`${tokenText(usage.input_tokens)} / ${tokenText(usage.output_tokens)}`}/><Row label="缓存读取" value={tokenText(usage.cached_tokens)}/></section>})}{!data.models?.length && <p className="settings-note">所选时间范围还没有模型用量记录。</p>}<p className="settings-note">统计保存在本机。删除聊天会保留用量账本；历史中未记录的模型身份不会推断。</p></SettingsGroup>
+    <SettingsGroup title="按模型统计">{(data.models || []).map((model: any, index: number) => {const usage = model.known_totals || model.summary?.known_totals || model; return <section key={index} id={`settings-model-usage-${index}`} data-settings-index={model.model && model.model !== 'unknown' ? model.model : '历史模型未记录'}><h3>{model.model && model.model !== 'unknown' ? model.model : '历史模型未记录'}</h3><Row label="输入 / 输出" value={`${tokenText(usage.input_tokens)} / ${tokenText(usage.output_tokens)}`}/><Row label="缓存读取" value={tokenText(usage.cached_tokens)}/></section>})}{!data.models?.length && <p className="settings-note">所选时间范围还没有模型用量记录。</p>}<p className="settings-note">统计随当前账号保存。删除聊天会保留用量账本；历史中未记录的模型身份不会推断。</p></SettingsGroup>
   </>;
 }

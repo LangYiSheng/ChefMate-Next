@@ -228,6 +228,8 @@ class RetrievalService:
                     if matched_groups:
                         recipe["matched_ingredients"].append({**ingredient, "matched_groups": matched_groups})
             notes = [EVIDENCE_NOTE]
+            if any(recipe.get("ready_for_recommendation") is False for recipe in result["items"]):
+                notes.append("部分候选尚未达到完整推荐条件；请核对原文及营养缺失，不能据此认定已审核或营养完整。")
             if query.exclude_taste_tags or query.exclude_allergens:
                 notes.append("排除仅针对已记录的标签/过敏原，缺失信息不能证明口味或过敏安全。")
             return {"status": "ok", "snapshot": snapshot, "normalized_query": query.model_dump(mode="json"),

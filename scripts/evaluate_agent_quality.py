@@ -110,10 +110,18 @@ def summarize(session, state):
                        "message": (call.get("result") or {}).get("message")} for call in calls]}
 
 
+def isolated_config(config, case_root):
+    # This in-process model-evaluation harness deliberately exercises a single
+    # synthetic workspace. A new file path alone does not isolate PostgreSQL:
+    # never inherit the daily application's account schemas or database URL.
+    return replace(config, auth_enabled=False, managed_user=False, app_database_url="",
+                   app_database_schema="chefmate", sessions_database=case_root / "sessions.db")
+
+
 def run_scenario(name, config, root):
     case_root = root / name
     case_root.mkdir(parents=True, exist_ok=False)
-    app = create_app(replace(config, sessions_database=case_root / "sessions.db"))
+    app = create_app(isolated_config(config, case_root))
     report = {"scenario": name, "model": config.model, "turns": [], "checks": {}}
     try:
         with TestClient(app) as client:

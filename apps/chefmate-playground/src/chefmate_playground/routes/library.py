@@ -124,6 +124,8 @@ def build_router(context: AppContext) -> APIRouter:
     async def edit_recipe_draft(recipe_id: str, values: dict):
         if set(values) != {"revision", "recipe"} or type(values["revision"]) is not int:
             raise HTTPException(422, "草稿请求无效。")
+        if context.cookbook.get(recipe_id) is None:
+            raise HTTPException(404, "个人菜谱不存在。")
         try:
             return context.cookbook.update_draft(
                 recipe_id, RecipeDraftRequest.model_validate(values["recipe"]), values["revision"]

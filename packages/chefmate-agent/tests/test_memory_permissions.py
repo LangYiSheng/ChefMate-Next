@@ -1,6 +1,7 @@
 """Turn-local memory context and disabled-skill tools share real runner boundaries."""
 
 import asyncio
+import copy
 import json
 from typing import Literal
 
@@ -14,6 +15,126 @@ from test_agent import REQUESTS, ScriptedModel, Service, answer, tool
 
 class Empty(BaseModel):
     model_config = ConfigDict(extra="forbid")
+
+
+MEMORY_TOOLS = ("read_long_term_memory", "search_personal_history", "maintain_memory_summary")
+
+
+def private_history():
+    history = [{"role": "user", "content": "之前读取过个人记忆"}]
+    for index, name in enumerate(MEMORY_TOOLS):
+        history.extend([
+            {"role": "assistant", "content": "", "tool_calls": [{"id": f"private-{index}",
+                "type": "function", "function": {"name": name,
+                    "arguments": json.dumps({"query": "private-query-fixture", "summary": "private-summary-fixture"},
+                                            separators=(",", ":"))}}]},
+            {"role": "tool", "tool_call_id": f"private-{index}", "name": name,
+                "content": json.dumps({"status": "ok", "memory": {"user_notes": "private-notes-fixture"},
+                    "items": [{"content": "private-history-fixture"}]})},
+        ])
+    return [*history, {"role": "assistant", "content": "旧对话中已经显示的普通回答保留。"},
+            {"role": "user", "content": "只查看当前餐单。"}]
+
+
+@pytest.mark.parametrize("disabled", ["personal", "component"])
+def test_disabled_memory_hides_private_history_receipts_and_arguments_only_in_request(tmp_path, disabled):
+    model = ScriptedModel([answer("当前餐单。")])
+    specs = [InjectedToolSpec(name, "private", Empty, lambda request, context: {"status": "ok"},
+                             required_skill="personal-memory") for name in MEMORY_TOOLS]
+    agent = ChefMateAgent(Service(), AgentConfig(model="test"), model=model, request_models=REQUESTS,
+        extra_tools=specs, skills=registry(tmp_path) if disabled == "personal" else None)
+    history = private_history()
+    original = copy.deepcopy(history)
+    events = []
+    kwargs = {"memory_enabled": False} if disabled == "personal" else {}
+    result = asyncio.run(agent.run_turn(history, on_event=events.append,
+        user_identity={"display_name": "小青"}, memory_context={"user_notes": "private-context-fixture"}, **kwargs))
+    assert result.status == "completed"
+    sent = json.dumps([message.model_dump() for message in model.histories[0]], ensure_ascii=False)
+    trace = json.dumps(result.debug_trace, ensure_ascii=False)
+    for marker in ("private-query-fixture", "private-summary-fixture", "private-notes-fixture",
+                   "private-history-fixture", "private-context-fixture"):
+        assert marker not in sent and marker not in trace
+    assert "旧对话中已经显示的普通回答保留。" in sent and "小青" in sent
+    assert history == original and result.messages[:-1] == original
+    assert [event["context_usage"]["memory_attached"] for event in events if event["type"] == "context_usage"] == [False]
+
+
+def test_enabled_empty_memory_marks_forwarded_private_history_before_provider_entry(tmp_path):
+    from chefmate_agent.boundary import _AgentFailure
+
+    model = ScriptedModel([answer("不应进入模型")])
+    specs = [InjectedToolSpec(name, "private", Empty, lambda request, context: {"status": "ok"},
+                             required_skill="personal-memory") for name in MEMORY_TOOLS]
+    agent = ChefMateAgent(Service(), AgentConfig(model="test"), model=model, request_models=REQUESTS,
+        extra_tools=specs, skills=registry(tmp_path))
+    measurements = []
+
+    def revoke_before_entry(event):
+        if event["type"] == "context_usage":
+            measurements.append(event["context_usage"]["memory_attached"])
+            if event["context_usage"]["memory_attached"]:
+                raise _AgentFailure("profile_consent_changed", "授权已经关闭")
+
+    result = asyncio.run(agent.run_turn(private_history(), memory_context={}, on_event=revoke_before_entry))
+    assert result.status == "error" and result.error.code == "profile_consent_changed"
+    assert measurements == [True] and model.histories == []
+
+
+def test_enabled_memory_forwards_history_and_counts_it_with_empty_current_memory(tmp_path):
+    model = ScriptedModel([answer("仅按当前要求继续")])
+    specs = [InjectedToolSpec(name, "private", Empty, lambda request, context: {"status": "ok"},
+                             required_skill="personal-memory") for name in MEMORY_TOOLS]
+    agent = ChefMateAgent(Service(), AgentConfig(model="test"), model=model, request_models=REQUESTS,
+        extra_tools=specs, skills=registry(tmp_path))
+    events = []
+    source = private_history()
+    result = asyncio.run(agent.run_turn(source, memory_context={}, on_event=events.append))
+    assert result.status == "completed" and result.messages[:-1] == source
+    sent = json.dumps([message.model_dump() for message in model.histories[0]])
+    assert all(marker in sent for marker in ("private-query-fixture", "private-summary-fixture",
+                                             "private-notes-fixture", "private-history-fixture"))
+    assert [event["context_usage"]["memory_attached"] for event in events if event["type"] == "context_usage"] == [True]
+
+
+def test_explicitly_disabled_memory_blocks_new_private_tool_even_with_enabled_skill(tmp_path):
+    called = []
+    spec = InjectedToolSpec("private_read", "private", Empty, lambda request, context: called.append(request),
+                            required_skill="personal-memory")
+    model = ScriptedModel([tool("private_read", {}), answer("记忆已关闭。")])
+    agent = ChefMateAgent(Service(), AgentConfig(model="test"), model=model, request_models=REQUESTS,
+                         extra_tools=[spec], skills=registry(tmp_path))
+    result = asyncio.run(agent.run_turn([{"role": "user", "content": "继续当前餐单"}], memory_enabled=False))
+    assert result.status == "completed" and called == []
+    assert result.tool_calls[0].result["status"] == "memory_disabled"
+    assert all("private_read" not in {definition["function"]["name"] for definition in binding}
+               for binding in model.bind_history)
+
+
+def test_private_request_projection_masks_provider_raw_arguments_without_mutating_messages():
+    from langchain_core.messages import AIMessage, ToolMessage
+
+    call = AIMessage(content="普通回答保留", tool_calls=[{"id": "private", "name": "maintain_memory_summary",
+        "args": {"summary": "private-canonical-fixture"}}], invalid_tool_calls=[{"id": "invalid-private",
+            "name": "maintain_memory_summary", "args": "private-invalid-fixture", "error": "invalid json"}], additional_kwargs={"tool_calls": [
+            {"id": "private", "type": "function", "function": {"name": "maintain_memory_summary",
+                "arguments": '{"summary":"private-provider-fixture"}'}}]})
+    receipt = ToolMessage(content='{"status":"ok","memory":{"summary":"private-receipt-fixture"}}',
+                          name="maintain_memory_summary", tool_call_id="private")
+    public_call = AIMessage(content="", tool_calls=[{"id": "public", "name": "get_recipe",
+                                                    "args": {"recipe_id": "public-recipe"}}])
+    public_receipt = ToolMessage(content='{"status":"ok","name":"public-recipe"}',
+                                 name="get_recipe", tool_call_id="public")
+    source = [call, receipt, public_call, public_receipt]
+    original = copy.deepcopy(source)
+    projected = ChefMateAgent._model_messages(source, hidden_tools={"maintain_memory_summary"})
+    sent = json.dumps([message.model_dump() for message in projected], ensure_ascii=False)
+    assert "private-canonical-fixture" not in sent and "private-provider-fixture" not in sent
+    assert "private-invalid-fixture" not in sent
+    assert "private-receipt-fixture" not in sent and "普通回答保留" in sent
+    assert projected[0].tool_calls[0]["id"] == projected[1].tool_call_id == "private"
+    assert projected[2:] == source[2:]
+    assert source == original
 
 
 def registry(tmp_path, name="personal-memory"):
@@ -85,6 +206,46 @@ def test_oversized_memory_is_rejected_before_model_request():
     agent = ChefMateAgent(Service(), AgentConfig(model="test", max_memory_chars=1000), model=model, request_models=REQUESTS)
     result = asyncio.run(agent.run_turn([{"role": "user", "content": "开始"}], memory_context={"summary": "a" * 1001}))
     assert result.status == "error" and result.error.code == "memory_context_limit"
+    assert model.histories == []
+
+
+def test_identity_is_sent_without_memory_and_never_saved_in_conversation():
+    model = ScriptedModel([answer("小青，今天一起做饭吧。")])
+    agent = ChefMateAgent(Service(), AgentConfig(model="test"), model=model, request_models=REQUESTS)
+    identity = {"display_name": "小青"}
+    result = asyncio.run(agent.run_turn([{"role": "user", "content": "今天吃什么"}],
+        user_identity=identity, memory_context={}))
+    assert result.status == "completed"
+    sent = str(model.histories[0][1].content)
+    assert '"display_name":"小青"' in sent or '"display_name": "小青"' in sent
+    assert "身份数据" in sent
+    assert "user_notes" not in sent and "kitchen_profile" not in sent
+    assert result.messages[0]["content"] == "今天吃什么"
+    assert "当前用户称呼" not in json.dumps(result.messages, ensure_ascii=False)
+    assert identity == {"display_name": "小青"}
+
+
+def test_history_only_memory_tool_marks_next_request_for_consent_guard(tmp_path):
+    events = []
+    spec = InjectedToolSpec("private_history_search", "private", Empty,
+        lambda request, context: {"status": "ok", "items": [{"text": "private-history-fixture"}]},
+        required_skill="personal-memory")
+    model = ScriptedModel([tool("private_history_search", {}), answer("查到了")])
+    agent = ChefMateAgent(Service(), AgentConfig(model="test"), model=model,
+        request_models=REQUESTS, extra_tools=[spec], skills=registry(tmp_path))
+    result = asyncio.run(agent.run_turn([{"role": "user", "content": "查找历史"}], on_event=events.append))
+    assert result.status == "completed"
+    measured = [event["context_usage"] for event in events if event["type"] == "context_usage"]
+    assert [event["memory_attached"] for event in measured] == [False, True]
+
+
+@pytest.mark.parametrize("identity", [{"display_name": ""}, {"display_name": "a\nb"},
+    {"display_name": "x" * 41}, {"display_name": "正常", "preferences": "extra"}])
+def test_invalid_identity_never_reaches_provider(identity):
+    model = ScriptedModel([])
+    agent = ChefMateAgent(Service(), AgentConfig(model="test"), model=model, request_models=REQUESTS)
+    result = asyncio.run(agent.run_turn([{"role": "user", "content": "开始"}], user_identity=identity))
+    assert result.status == "error" and result.error.code == "invalid_user_identity"
     assert model.histories == []
 
 

@@ -31,7 +31,7 @@ class NavigationAgent(Agent):
 
 def test_next_request_and_replay_move_one_session_card_only_once(tmp_path):
     agent = NavigationAgent()
-    app = create_app(PlaygroundConfig(sessions_database=tmp_path / "navigation.db"), service=CookingService(), agent=agent)
+    app = create_app(PlaygroundConfig(auth_enabled=False, sessions_database=tmp_path / "navigation.db"), service=CookingService(), agent=agent)
     with TestClient(app) as client:
         session = client.post("/api/sessions").json()["id"]
         other = client.post("/api/sessions").json()["id"]

@@ -9,6 +9,9 @@
 | 模块 | 职责与改动入口 |
 | --- | --- |
 | `app.py` / `app_context.py` | 装配依赖、生命周期、同源边界，持有当前配置与服务 |
+| `accounts.py` / `routes/accounts.py` | 账号、会话、欢迎配置、角色、额度、价格和审计 |
+| `tenancy.py` / `database.py` | 用户工作区分发、PostgreSQL schema 隔离与显式存储适配 |
+| `migrate_data.py` | 旧 SQLite 只读迁移、暂存 schema、表计数与内容指纹核对 |
 | `http_models.py` | HTTP 设置、会话和发送请求的结构校验 |
 | `routes/system.py` | 状态、设置、模型连接检查、关于 |
 | `routes/conversations.py` | 会话、流式轮次、取消、删除 |
@@ -48,6 +51,7 @@
 | `src/features/settings/` | 设置读取与保存、外观、记忆、用量与导航保护 |
 | `src/features/preferences/` | 普通偏好服务端同步、浏览器缓存、串行写入与迟到请求处理 |
 | `src/features/centers/` | 菜谱中心、编辑器、食光手记与个人饮食 |
+| `src/features/account/` | 登录、欢迎引导、账号档案、额度与管理员平台 |
 | `src/styles/index.css` / `foundation.css` | 全局样式入口、本地字体声明、语义颜色与字体角色 |
 | `src/styles/controls.css` / `shell.css` | 公共控件、主框架、侧栏、移动抽屉与布局断点 |
 | `src/styles/chat.css` / `details.css` | 聊天、输入、消息卡片、菜谱与调试详情布局 |
@@ -81,6 +85,8 @@
 
 ## 启动与配置
 
+日常运行采用 [Docker 部署](deployment.md)，包含应用 PostgreSQL。下列本机命令供源码开发使用；必须在应用 `.env` 填写管理员初始化账号密码。需要旧数据时按[显式迁移指南](migrate-sqlite.md)处理，不通过启动自动认领。
+
 在仓库根目录执行：
 
 ```powershell
@@ -99,6 +105,10 @@ uv run --project apps/chefmate-playground chefmate-playground
 
 ### 新环境准备数据
 
+默认 Docker 启动已经包含 [358 道基础菜谱](../../data/seed/catalog/README.md)的校验与空库初始化，不需要先手工执行下列导入。内置快照保留原审核、未知营养和估算状态，不把数据存在当作营养已完整；一般查询可查看这些真实候选，严格可推荐过滤仍单独生效。
+
+下列流程用于维护和替换自定义基础数据：
+
 1. 使用[清洗工具](../../data_cleaning/README.md)导入原文、转换、核对并导出当前统一格式。
 2. 准备自己的 PostgreSQL 数据库，将 DSN 放入进程环境变量 `CHEFMATE_DATABASE_URL`；不要把密码写进工具参数或提交。
 3. 在已安装 Storage 的环境里显式执行下列维护命令，导入目标须确认是准备发布的 schema：
@@ -115,23 +125,28 @@ chefmate-storage --schema chefmate import 'path/to/approved-export' --replace --
 
 ### 隔离浏览器验收
 
-更换端口本身不会隔离数据。验收应同时替换会话数据库路径；可在仓库根目录创建临时脚本运行以下内容：
+更换端口和文件路径本身不会隔离 PostgreSQL。验收应使用独立 Compose 项目与卷，或同时更换文件目录和应用 schema 前缀；可在仓库根目录创建临时脚本运行以下内容：
 
 ```python
 from dataclasses import replace
 from pathlib import Path
+from uuid import uuid4
 import uvicorn
 from chefmate_playground import PlaygroundConfig, create_app
 
+preview_id = "preview_" + uuid4().hex[:12]
 config = replace(
     PlaygroundConfig.load(),
-    sessions_database=Path("apps/chefmate-playground/.runtime/preview/sessions.db").resolve(),
+    sessions_database=Path(f"apps/chefmate-playground/.runtime/{preview_id}/sessions.db").resolve(),
+    app_database_schema=preview_id,
     port=18766,
 )
 uvicorn.run(create_app(config), host="127.0.0.1", port=18766)
 ```
 
-用 App 虚拟环境执行脚本。此方式复用已有模型连接与只读基础库，把新会话、个人数据、图片和设置覆盖放到隔离目录。修改隔离配置不会写回常用目录。
+用 App 虚拟环境执行脚本。此方式复用已有模型连接与只读基础库，将个人 PostgreSQL 数据放入随机前缀下的独立 schema，并把图片和设置放入对应隔离目录。未配置应用 PostgreSQL 时则在该目录使用开发用 SQLite。初始化管理员仍来自显式部署配置，预览仍要求登录；结束验收后保留或单独清理对应预览资源，不操作常用命名空间。
+
+`scripts/evaluate_agent_quality.py` 是另一种进程内单工作区模型评测工具：明确关闭其测试实例的账号边界并强制使用输出目录中的 SQLite，不继承日常应用 PostgreSQL；它检验模型厨房流程，不作为账号或金额管理验收。多用户验收使用 `scripts/verify_multi_user.py` 与可丢弃 Docker 项目。
 
 ## 检查命令
 

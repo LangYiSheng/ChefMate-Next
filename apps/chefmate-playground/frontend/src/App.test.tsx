@@ -3,6 +3,7 @@ import { act, cleanup, fireEvent, render, screen, within } from '@testing-librar
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { RuntimeState } from './runtime/types';
 import App from './App';
+import type {AccountUser} from './features/account/types';
 
 const fixture = vi.hoisted(() => {
   const runtimeListeners = new Set<() => void>(), workspaceListeners = new Set<() => void>();
@@ -19,11 +20,11 @@ const fixture = vi.hoisted(() => {
 vi.mock('./runtime/store', () => ({ chefStore: fixture.chefStore }));
 vi.mock('./features/workspace/store', () => ({ workspaceStore: fixture.workspaceStore }));
 vi.mock('./features/settings/appearance', () => ({ initAppearance: () => () => {} }));
-vi.mock('./components/Sidebar', () => ({ Sidebar: () => <nav aria-label="会话导航内容">最近会话</nav> }));
+vi.mock('./components/Sidebar', () => ({ Sidebar: ({openSettings, onLogout}: {openSettings: (section: string) => void; onLogout: () => void}) => <nav aria-label="会话导航内容">最近会话<button onClick={() => openSettings('account-profile')}>打开个人资料</button><button onClick={() => openSettings('memory')}>打开个人偏好</button><button onClick={onLogout}>退出测试菜单</button></nav> }));
 vi.mock('./components/Composer', () => ({ Composer: () => <label>对话输入<input aria-label="对话输入" /></label> }));
 vi.mock('./components/Conversation', () => ({ Conversation: ({ active, onRecipe }: { active: boolean; onRecipe: (id: string) => void }) => <div aria-label="聊天记录" data-active={active}>已有消息<button onClick={() => onRecipe('tomato-eggs')}>查看已选菜谱</button></div> }));
 vi.mock('./components/Details', () => ({ Diagnostics: () => <div>开发请求诊断</div>, RecipeDetails: () => <div>菜谱详情内容</div> }));
-vi.mock('./features/settings/Settings', () => ({ Settings: () => <div>设置内容</div> }));
+vi.mock('./features/settings/Settings', () => ({ Settings: ({initialSection}: {initialSection: string}) => <div aria-label={'设置内容：' + initialSection}>设置内容</div> }));
 vi.mock('./features/centers/KitchenCenters', () => ({ KitchenCenters: () => <div>个人中心内容</div> }));
 vi.mock('./features/workspace', () => ({
   initializeWorkspace: () => () => {},
@@ -72,6 +73,34 @@ function capture(handle: HTMLElement) {
 }
 
 describe('App surface coordination', () => {
+  it('keeps the legacy account URL usable and routes account shortcuts to settings sections', async () => {
+    const base = import.meta.env.DEV ? import.meta.env.BASE_URL.replace(/\/$/, '') : '';
+    history.replaceState({}, '', base + '/account'); render(<App/>); expect(await screen.findByLabelText('设置内容：account-profile')).toBeVisible();
+    fireEvent.click(screen.getByRole('button', {name: '打开个人偏好'})); expect(await screen.findByLabelText('设置内容：memory')).toBeVisible(); expect(location.pathname + location.search).toBe(base + '/settings?section=memory');
+    fireEvent.click(screen.getByRole('button', {name: '打开个人资料'})); expect(await screen.findByLabelText('设置内容：account-profile')).toBeVisible(); expect(location.pathname + location.search).toBe(base + '/settings?section=account-profile');
+  });
+  it('dispatches the same draft guard before logout and resumes only after it accepts', () => {
+    const logout = vi.fn().mockResolvedValue(undefined); let resume: (() => void) | undefined;
+    const guard = (event: Event) => {const navigation = event as CustomEvent<{page: string; resume: () => void}>; if (navigation.detail.page === 'logout') {event.preventDefault(); resume = navigation.detail.resume;}};
+    window.addEventListener('chefmate:before-page-change', guard); render(<App logout={logout}/>); fireEvent.click(screen.getByRole('button', {name: '退出测试菜单'})); expect(logout).not.toHaveBeenCalled(); expect(resume).toBeTypeOf('function'); act(() => resume?.()); expect(logout).toHaveBeenCalledOnce(); window.removeEventListener('chefmate:before-page-change', guard);
+  });
+  it('distinguishes a configured model from a missing recipe service for ordinary accounts', () => {
+    fixture.data.runtime!.status = {ready: false, configured: false, model_configured: true, database: {ready: false}};
+    render(<App account={{id: 'user-a', role: 'user', developer_allowed: false} as AccountUser}/>);
+    expect(screen.getByText('菜谱服务尚未连接，请联系管理员。')).toBeInTheDocument(); expect(screen.queryByText('管理员尚未配置模型连接。')).not.toBeInTheDocument(); expect(screen.queryByRole('button', {name: '管理平台'})).not.toBeInTheDocument();
+  });
+  it('requires the server account permission even if developer mode was enabled in browser storage', () => {
+    localStorage.setItem('chefmate:developer-settings', JSON.stringify({enabled: true}));
+    render(<App account={{id: 'user-a', role: 'user', developer_allowed: false} as AccountUser}/>);
+    fireEvent.click(screen.getByRole('button', {name: '展开右侧栏'})); expect(screen.queryByRole('tab', {name: '调试', hidden: true})).not.toBeInTheDocument(); expect(screen.queryByText('开发请求诊断')).not.toBeInTheDocument();
+  });
+  it('allows an administrator to open diagnostics without a separate developer grant', () => {
+    localStorage.setItem('chefmate:developer-settings', JSON.stringify({enabled: true}));
+    render(<App account={{id: 'promoted-admin', role: 'admin', developer_allowed: false} as AccountUser}/>);
+    fireEvent.click(screen.getByRole('button', {name: '展开右侧栏'}));
+    fireEvent.click(screen.getByRole('tab', {name: '调试'}));
+    expect(screen.getByText('开发请求诊断')).toBeInTheDocument();
+  });
   it('drags the left separator by pointer distance without snapping to a viewport coordinate', () => {
     const view = render(<App />), app = view.container.querySelector('.app')!;
     const handle = screen.getByRole('separator', { name: '调整侧栏宽度' }), release = capture(handle);

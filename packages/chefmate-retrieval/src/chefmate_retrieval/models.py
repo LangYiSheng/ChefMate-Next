@@ -116,7 +116,9 @@ class RecipeSearchRequest(ToolRequest):
     exclude_allergens: Annotated[list[Text], Field(max_length=30)] = Field(
         default_factory=list, description="仅按用户明确过敏/禁忌传get_search_options.options.allergen中的code；排除已记录过敏原，不证明未记录信息的安全性。未提及时不自行添加。")
     nutrients: Annotated[list[NutrientConstraint], Field(max_length=12)] = Field(default_factory=list)
-    ready_for_recommendation: bool | None = True
+    ready_for_recommendation: bool | None = Field(default=None, description=(
+        "普通查菜默认不限制推荐资格，可返回尚待审阅或营养不完整的候选，须保留原标记；"
+        "用户明确要求完整推荐资格时传true，false仅查未达到资格的候选。缺失营养仍不能满足营养硬条件。"))
     sort: SearchSort = Field(default_factory=SearchSort)
     limit: Annotated[int, Field(ge=1, le=100)] = Field(default=8, description="每页默认8道；明确需要更多时再分页或提高limit。")
     offset: Annotated[int, Field(ge=0, le=100000)] = 0

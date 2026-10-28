@@ -2,10 +2,14 @@ import type { AttachmentPersistence, ImageDraft } from './types';
 
 /** Blobs live in IndexedDB rather than being lost when a tab closes. */
 export class BrowserAttachments implements AttachmentPersistence {
+  constructor(private readonly accountId: string | null = currentBrowserAccount()) {}
+  private databaseName(): string {
+    return this.accountId ? `chefmate-react-drafts:${this.accountId}` : 'chefmate-react-drafts';
+  }
   private open(): Promise<IDBDatabase> {
     return new Promise((resolve, reject) => {
       if (!globalThis.indexedDB) { reject(new Error('浏览器不支持本地图片草稿。')); return; }
-      const request = indexedDB.open('chefmate-react-drafts', 1);
+      const request = indexedDB.open(this.databaseName(), 1);
       request.onupgradeneeded = () => request.result.createObjectStore('drafts');
       request.onsuccess = () => resolve(request.result);
       request.onerror = () => reject(request.error);
@@ -35,6 +39,10 @@ export class BrowserAttachments implements AttachmentPersistence {
       });
     } finally { db.close(); }
   }
+}
+
+function currentBrowserAccount(): string | null {
+  try {return localStorage.getItem('chefmate:browser-account');} catch {return null;}
 }
 
 export function releaseImages(images: ImageDraft[] = []): void {

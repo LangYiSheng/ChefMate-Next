@@ -6,6 +6,14 @@ const preference = (revision = 1, id = 'preferences'): View => ({ id, kind: 'pre
 const response = (revision: number, views: View[] = [preference(revision)], extra = {}) => ({ status: 'ok', workspace: { revision, stage: 'planning', selected_recipe_ids: [], recent_actions: [], ...extra }, views });
 describe('workspace transactions', () => {
   beforeEach(() => localStorage.clear());
+  it('does not replay a previous account action or continuation after resetting the workspace', async () => {
+    let complete!: (value: any) => void;
+    const request = vi.fn(() => new Promise<any>(resolve => {complete = resolve;})), continued = vi.fn(), store = new WorkspaceStore(request, continued);
+    store.receive('previous-private-chat', response(1));
+    const saving = store.dispatch('previous-private-chat', 'select_recipes', {recipe_ids: ['egg']}, preference(), {continuation: '继续上一位用户的任务'});
+    store.resetForAccount(); complete(response(2)); await saving;
+    expect(store.getSnapshot().entries).toEqual({}); expect(store.getSnapshot().reminders).toEqual([]); expect(continued).not.toHaveBeenCalled();
+  });
   it('keeps draft values when a newer server revision replaces the form and requires review', async () => {
     const request = vi.fn().mockResolvedValue(response(2, [preference(2, 'new-form')])), store = new WorkspaceStore(request);
     store.receive('s', response(1)); store.draft('s', preference(), { baseline: { servings: 2 }, values: { servings: 4 } });

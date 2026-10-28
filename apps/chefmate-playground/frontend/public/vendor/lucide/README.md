@@ -10,6 +10,8 @@
 
 ## 使用约定
 
-[`icons.js`](../../../src/components/Icon.tsx)提供统一装饰图标函数。只有图标的按钮必须有可访问名称，装饰图标对辅助技术隐藏。运行时无需 CDN 或 npm 包。
+[`Icon.tsx`](../../../src/components/Icon.tsx)提供统一装饰图标组件。只有图标的按钮必须有可访问名称，装饰图标对辅助技术隐藏。运行时无需 CDN 或 npm 包。
 
 新增图标同步白名单、sprite 和来源记录。配色与交互规则见[视觉规范](../../../../../../docs/design/ui.md)。
+
+账号、欢迎引导和管理平台新增的 `arrow-right`、`eye`、`eye-off`、`leaf`、`sprout`、`sparkles`、`notebook-pen`、`sun`、`moon`、`monitor`、`chart-no-axes-combined`、`user-round`、`shield-check`、`log-out`、`users-round`、`coins`，以及版本来源使用的 `git-branch` 同样取自上述 1.60.0 软件包，保留原始 SVG 路径与统一描边规则。

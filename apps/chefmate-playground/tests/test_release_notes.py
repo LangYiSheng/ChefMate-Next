@@ -9,16 +9,17 @@ from fastapi.testclient import TestClient
 
 from chefmate_playground import PlaygroundConfig, create_app
 from chefmate_playground.config import APP_ROOT
+from chefmate_playground.versioning import current_commit
 
 
 def test_release_page_uses_the_same_version_as_about_and_openapi_without_configuration(tmp_path):
-    app = create_app(PlaygroundConfig(sessions_database=tmp_path / "sessions.db"))
+    app = create_app(PlaygroundConfig(auth_enabled=False, sessions_database=tmp_path / "sessions.db"))
     expected = tomllib.loads((APP_ROOT / "pyproject.toml").read_text(encoding="utf-8"))["project"]["version"]
     with TestClient(app) as client:
         response = client.get("/api/changelog")
         assert response.status_code == 200
         body = response.json()
-        assert body["current_version"] == expected == "0.2.2"
+        assert body["current_version"] == expected == "0.3.0"
         assert client.get("/api/about").json()["version"] == expected
         assert client.get("/openapi.json").json()["info"]["version"] == expected
         assert body["releases"] == json.loads((APP_ROOT / "releases.json").read_text(encoding="utf-8"))
@@ -51,7 +52,19 @@ def test_changelog_never_queries_an_unavailable_recipe_service(tmp_path):
             raise AssertionError("Reading release notes must not query the recipe database")
 
     app = create_app(
-        PlaygroundConfig(sessions_database=tmp_path / "sessions.db"), service=UnavailableRecipes()
+        PlaygroundConfig(auth_enabled=False, sessions_database=tmp_path / "sessions.db"), service=UnavailableRecipes()
     )
     with TestClient(app) as client:
         assert client.get("/api/changelog").status_code == 200
+
+
+def test_container_build_identity_works_without_git_and_rejects_invalid_metadata(tmp_path, monkeypatch):
+    commit = "a1" * 20
+    monkeypatch.setenv("CHEFMATE_BUILD_COMMIT", commit)
+    def no_git(*args, **kwargs):
+        raise FileNotFoundError("git is not installed")
+    monkeypatch.setattr("chefmate_playground.versioning.subprocess.run", no_git)
+    with TestClient(create_app(PlaygroundConfig(auth_enabled=False, sessions_database=tmp_path / "sessions.db"))) as client:
+        assert client.get("/api/about").json()["commit"] == commit
+    monkeypatch.setenv("CHEFMATE_BUILD_COMMIT", "invalid\npassword=must-not-reflect")
+    assert current_commit(APP_ROOT) is None

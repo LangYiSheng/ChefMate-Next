@@ -21,6 +21,7 @@ from langchain_openai import ChatOpenAI
 from pydantic import PrivateAttr
 
 INTEGRITY_METADATA = "tool_argument_integrity"
+PROVIDER_ATTEMPTS_METADATA = "provider_attempts"
 _LIMIT = 256_000
 _SAFE_ID = re.compile(r"[A-Za-z0-9_.:-]{1,200}\Z")
 
@@ -112,6 +113,17 @@ class ArgumentIntegrity:
         self.completed_event = None
         self.finish_reason = None
         self.status = "pending"
+        self.provider_attempts: int | None = None
+
+    def observe_sdk_response(self, response):
+        """Retain only the SDK's public raw-response retry counter.
+
+        Parsed provider JSON and transport headers are not evidence of SDK
+        retries. An absent or invalid counter remains unknown, including zero
+        retries on SDK/client paths that do not expose a raw response.
+        """
+        retries = _get(response, "retries_taken")
+        self.provider_attempts = retries + 1 if type(retries) is int and retries >= 0 else None
 
     def diagnostics(self):
         return {"protocol": self.protocol, "status": self.status,
@@ -350,6 +362,7 @@ class _GuardedStream:
 class _RawResponse:
     def __init__(self, raw, guard, streaming):
         self.raw, self.guard, self.streaming = raw, guard, streaming
+        guard.observe_sdk_response(raw)
 
     def __getattr__(self, name):
         return getattr(self.raw, name)
@@ -416,6 +429,7 @@ class IntegrityChatOpenAI(ChatOpenAI):
     def _tag(result, guard):
         for generation in result.generations:
             generation.message.response_metadata[INTEGRITY_METADATA] = guard.diagnostics()
+            generation.message.response_metadata[PROVIDER_ATTEMPTS_METADATA] = guard.provider_attempts
         return result
 
     def _generate(self, messages, stop=None, run_manager=None, **kwargs):
@@ -438,7 +452,8 @@ class IntegrityChatOpenAI(ChatOpenAI):
             return
         model, guard = self._request_copy(kwargs, streaming=True)
         yield from super(IntegrityChatOpenAI, model)._stream(messages, stop=stop, run_manager=run_manager, **kwargs)
-        yield ChatGenerationChunk(message=AIMessageChunk(content="", response_metadata={INTEGRITY_METADATA: guard.diagnostics()}))
+        yield ChatGenerationChunk(message=AIMessageChunk(content="", response_metadata={
+            INTEGRITY_METADATA: guard.diagnostics(), PROVIDER_ATTEMPTS_METADATA: guard.provider_attempts}))
 
     async def _astream(self, messages, stop=None, run_manager=None, **kwargs):
         if self._integrity_active:
@@ -448,4 +463,5 @@ class IntegrityChatOpenAI(ChatOpenAI):
         model, guard = self._request_copy(kwargs, streaming=True)
         async for chunk in super(IntegrityChatOpenAI, model)._astream(messages, stop=stop, run_manager=run_manager, **kwargs):
             yield chunk
-        yield ChatGenerationChunk(message=AIMessageChunk(content="", response_metadata={INTEGRITY_METADATA: guard.diagnostics()}))
+        yield ChatGenerationChunk(message=AIMessageChunk(content="", response_metadata={
+            INTEGRITY_METADATA: guard.diagnostics(), PROVIDER_ATTEMPTS_METADATA: guard.provider_attempts}))

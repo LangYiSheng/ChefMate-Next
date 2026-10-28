@@ -19,7 +19,8 @@ export default defineConfig({
       },
     },
   },
-  server: { proxy: { '/api': 'http://127.0.0.1:18765' } },
+  // Preserve the browser Host so the backend can validate its Origin normally.
+  server: { proxy: { '/api': { target: 'http://127.0.0.1:18765', changeOrigin: false } } },
   test: {
     environment: 'jsdom',
     setupFiles: ['./src/test-setup.ts'],

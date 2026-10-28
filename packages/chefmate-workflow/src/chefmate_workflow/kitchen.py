@@ -149,6 +149,10 @@ class KitchenCommands:
                      and [item.model_dump(mode="json") for item in selected] == [item.model_dump(mode="json") for item in state.meal_plan])
         if same_plan:
             return self._show(state, MealPlan, "这次的餐单", self._meal_data(state))
+        return self._new_meal(state, selected, diners, portion_mode)
+
+    def _new_meal(self, state, selected, diners, portion_mode):
+        """Replace execution state without deriving new portions or source facts."""
         state.meal_plan = selected
         state.meal_diners, state.portion_mode = diners, portion_mode
         state.meal_id, state.started_at, state.completed_at = str(uuid4()), None, None
@@ -229,6 +233,9 @@ class KitchenCommands:
         blockers = self._transition_blockers(state, stage)
         if blockers:
             raise DomainConflict(blockers[0]["code"], blockers[0]["message"])
+        if state.stage == "completed" and stage == "planning":
+            return self._new_meal(state, [recipe.model_copy(deep=True) for recipe in state.meal_plan],
+                                  state.meal_diners, state.portion_mode)
         if stage == "completed":
             state.completed_at = state.completed_at or _stamp(self._now())
             for timer in state.timers:

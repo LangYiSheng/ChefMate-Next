@@ -8,6 +8,7 @@
 | 参考文档 | 主要内容 | 对应入口 |
 | --- | --- | --- |
 | [核心 App](workbench.md) | 启动、配置优先级、HTTP、SSE、个人资料与状态协议 | [应用 README](../../apps/chefmate-playground/README.md) |
+| [会员与金额额度](membership-billing.md) | 额度来源、首次使用窗口、预留、核对、管理 API 与升级迁移 | [账号指南](../guide/accounts.md) |
 | [Agent](agent.md) | 模型与工具注入、middleware、上下文、Skills、事件、失败边界 | [智能体包](../../packages/chefmate-agent/README.md) |
 | [Workflow](workflow.md) | 冻结菜谱、工作区、版本与动作、阶段门槛、份量、计时 | [工作流包](../../packages/chefmate-workflow/README.md) |
 | [Retrieval](retrieval.md) | 食材候选、组内 OR/组间 AND、快照、选项、证据与营养过滤 | [检索包](../../packages/chefmate-retrieval/README.md) |
@@ -25,5 +26,5 @@
 - **持久化**：对话完整历史提交、厨房原子动作、个人资料保存分别有边界，生成失败不会统一回滚已成功写入。
 - **能力配置**：组件清单管理产品能力；按需 Skill 正文提供指引，具体权限仍由工具和业务服务检查。
 
-字段和端点以对应源码、运行应用的 `/docs` 与测试为最终核对入口。
+字段和端点以对应源码与测试为最终核对入口。账号部署不对匿名访问开放 OpenAPI 文档，HTTP 合同集中在[核心 App 参考](workbench.md)。
 设计原因见[规范目录](../design/README.md)，按日期保存的实测、旧方案和迁移考察见[工程档案](../engineering/README.md)；旧记录里的测试数量、模型表现或服务器状态不自动代表当前运行环境。

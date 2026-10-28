@@ -16,7 +16,7 @@ def test_cursor_pages_cover_ties_pins_and_deleted_anchor(tmp_path):
     repo = SessionRepository(tmp_path / 'sessions.db')
     seed(repo)
     repo.create()  # An unsent chat never occupies a sidebar slot.
-    with TestClient(create_app(PlaygroundConfig(sessions_database=repo.path), repository=repo)) as client:
+    with TestClient(create_app(PlaygroundConfig(auth_enabled=False, sessions_database=repo.path), repository=repo)) as client:
         first = client.get('/api/sessions').json()
         assert len(first['items']) == 20
         assert [item['id'] for item in first['items'][:2]] == ['chat-004', 'chat-024']
@@ -37,7 +37,7 @@ def test_metadata_is_persisted_without_changing_activity_or_workspace(tmp_path):
     repo = SessionRepository(tmp_path / 'sessions.db')
     seed(repo, 3)
     original = repo.get('chat-001')
-    with TestClient(create_app(PlaygroundConfig(sessions_database=repo.path), repository=repo)) as client:
+    with TestClient(create_app(PlaygroundConfig(auth_enabled=False, sessions_database=repo.path), repository=repo)) as client:
         response = client.patch('/api/sessions/chat-001', json={'title': '  今晚吃什么  ', 'pinned': True})
         assert response.status_code == 200
         assert response.json()['title'] == '今晚吃什么'

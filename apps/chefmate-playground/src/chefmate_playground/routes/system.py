@@ -103,7 +103,7 @@ def build_router(context: AppContext) -> APIRouter:
             context.manager.agent = context.agent
             context.manager.reply_suggestions = context.config.reply_suggestions
             context.manager.reply_suggestion_count = context.config.reply_suggestion_count
-            context.manager.debug_secrets = (context.config.api_key, context.config.database_url)
+            context.manager.debug_secrets = (context.config.api_key, context.config.database_url, context.config.app_database_url)
             context.app.state.config, context.app.state.components = context.config, context.components
             if body.section != "cooking":
                 context.setup_error = None
@@ -118,7 +118,9 @@ def build_router(context: AppContext) -> APIRouter:
                 if options.get("status", "ok") == "ok":
                     database.update(ready=True, data_version=(options.get("snapshot") or {}).get("data_version"))
                     if getattr(context.retrieval, "store", None) is not None:
-                        count = await asyncio.to_thread(context.retrieval.store.search, limit=1)
+                        from chefmate_storage import RecipeFilter
+                        count = await asyncio.to_thread(context.retrieval.store.search,
+                            RecipeFilter(ready_for_recommendation=None), limit=1)
                         database["recipe_count"] = count["total"]
                     else:
                         database["recipe_count"] = options.get("recipe_count", 0)
@@ -126,9 +128,19 @@ def build_router(context: AppContext) -> APIRouter:
                 database["error"] = "数据库暂时不可用，请检查连接。"
         else:
             database["error"] = context.setup_error or "请先配置 CHEFMATE_DATABASE_URL。"
+        pricing_configured, billing_ready = True, True
+        if context.manager.account_usage is not None:
+            meter = context.manager.account_usage
+            user = meter.accounts.get_user(meter.user_id)
+            pricing_configured = bool(meter.accounts.pricing().get("configured"))
+            billing_ready = bool(user and (user["role"] == "admin" or user["quota"]["cost_limit_micros"] is None or pricing_configured))
         return {
-            "ready": bool(database["ready"] and context.agent is not None),
+            "ready": bool(database["ready"] and context.agent is not None and billing_ready),
+            "pricing_configured": pricing_configured,
+            "billing_ready": billing_ready,
             "configured": context.agent is not None,
+            "model_configured": context.config.model_configured,
+            "personal_storage": "postgresql" if context.config.app_database_url else "sqlite",
             "model": context.config.model or None,
             "database": database,
             "supports_images": context.config.supports_images,
@@ -157,7 +169,7 @@ def build_router(context: AppContext) -> APIRouter:
             "subtitle": "您的个性化烹饪助手",
             "version": current_version(APP_ROOT),
             "commit": await asyncio.to_thread(current_commit, APP_ROOT),
-            "runtime": "本地工作台",
+            "runtime": "账号工作台" if context.config.managed_user else "本地工作台",
             "recipe_count": current_status["database"]["recipe_count"],
             "component_count": len(context.components.metadata()) if context.components else 0,
         }

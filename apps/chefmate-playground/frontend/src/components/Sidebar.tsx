@@ -6,12 +6,14 @@ import { Brand, Icon } from './Icon';
 import { Dialog } from './Dialog';
 import { conversationStage } from './chat-presentation';
 import { ContextMeter } from './ContextMeter';
+import type {AccountUser} from '../features/account/types';
+import {AccountMenu} from '../features/account/AccountMenu';
 
-type Page = 'chat' | 'settings' | 'recipes' | 'journal';
-export function Sidebar({ state, page, collapsed, onCollapse, onClose, navigate, notify, onInspect, developer }: {
+type Page = 'chat' | 'settings' | 'recipes' | 'journal' | 'account' | 'admin';
+export function Sidebar({ state, page, collapsed, onCollapse, onClose, navigate, notify, onInspect, developer, account, openSettings, onLogout }: {
   state: RuntimeState; collapsed: boolean; onCollapse: (value: boolean) => void; onClose: () => void;
   page: Page; navigate: (page: Page, after?: () => void) => void; notify: (text: string) => void; onInspect: () => void;
-  developer: boolean;
+  developer: boolean; account?: AccountUser; openSettings?: (section: string) => void; onLogout?: () => void;
 }) {
   const [menu, setMenu] = useState<Session | null>(null);
   const [action, setAction] = useState<'rename' | 'delete' | null>(null);
@@ -136,7 +138,7 @@ export function Sidebar({ state, page, collapsed, onCollapse, onClose, navigate,
         : (state.nextCursor || state.sessionsLoading) && <div ref={sessionSentinel} className="session-load-more" role={state.sessionsLoading ? 'status' : undefined} aria-hidden={!state.sessionsLoading}>{state.sessionsLoading ? '正在读取…' : ''}</div>}
     </nav>
     {developer && context && <ContextMeter context={context} onInspect={onInspect} />}
-    <div className="sidebar-footer"><button type="button" className="settings-link" title="设置" aria-current={page === 'settings' ? 'page' : undefined} onClick={() => navigate('settings')}><Icon name="settings" /><span>设置</span></button></div>
+    <div className="sidebar-footer">{account ? <AccountMenu account={account} onPreferences={() => openSettings ? openSettings('memory') : navigate('settings')} onProfile={() => openSettings ? openSettings('account-profile') : navigate('account')} onQuota={() => openSettings ? openSettings('account-quota') : navigate('account')} onSettings={() => openSettings ? openSettings('display') : navigate('settings')} onAdmin={() => navigate('admin')} onLogout={() => onLogout?.()}/> : <button type="button" className="settings-link" title="设置" aria-current={page === 'settings' ? 'page' : undefined} onClick={() => navigate('settings')}><Icon name="settings" /><span>设置</span></button>}</div>
     {selected && !action && createPortal(<div ref={menuPanel} id="session-menu" className="session-menu" role="menu" aria-label={`对话操作：${selected.title || '新对话'}`} aria-busy={busy} style={position} onKeyDown={menuKeys}>
       <button type="button" role="menuitem" disabled={busy} onClick={() => { setAction('rename'); setName(selected.title || '新对话'); setError(''); }}><Icon name="copy" />重命名</button>
       <button type="button" role="menuitem" disabled={busy} onClick={() => void pin()}><Icon name="star" />{busy ? '正在保存…' : selected.pinned ? '取消置顶' : '置顶'}</button>

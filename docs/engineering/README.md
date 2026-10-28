@@ -6,14 +6,38 @@
 历史验收只覆盖记录中的版本、环境与场景，不能当作今天重新测试的结果。
 历史计划里的未勾选任务不自动成为当前待办，已勾选项目也不替代现行代码和最新验收。本文按记录日期整理；跨日期补充会单独说明。
 
-最近一轮与当前版本：[0.2.2 界面细节与发布整理](records/2026-10-27-release-0.2.2.md)。前轮见[剩余设置页与专注底栏统一](records/2026-10-27-settings-completion-focus.md)、[浏览器批注：控件与设置布局](records/2026-10-27-ui-feedback.md)、[微明度层次与界面动效](records/2026-10-27-tonal-motion.md)、[近期对话问题与真实模型迭代](records/2026-10-24-conversation-quality.md)、[三档字号、步骤与专注回复验收](records/2026-10-24-readable-cooking-ui.md)、[厨房卡片与专注对话交互验收](records/2026-10-24-kitchen-interaction-feedback.md)。上次发布见[0.2.1 工作台与对话内操作验收](records/2026-10-24-release-0.2.1.md)；早期结构整理见[代码与文档整理验收](records/2026-10-22-code-organization.md)，首次版本日志页面见[0.2.0 发布记录](records/2026-10-22-release-0.2.0.md)。
+最新发布：[0.3.0 账号、管理平台与部署](records/2026-10-28-release-0.3.0.md)。
+
+持续打磨：[智能体与多端界面持续打磨](records/2026-10-28-agent-and-ui-polish.md)。
+
+前次界面修正：[称呼编辑与设置侧目录](records/2026-10-28-profile-editor-and-outline.md)。
+
+前次修正：[额度同步、尾数使用与页面一致性](records/2026-10-28-quota-sync-and-consistency.md)。
+
+前次界面整理：[管理平台、个人设置与会员模板](records/2026-10-28-admin-settings-ui.md)。
+
+前次功能迭代：[会员额度、多模型与账号设置](records/2026-10-27-membership-models-preferences.md)。当前已发布版本记录：[0.2.2 界面细节与发布整理](records/2026-10-27-release-0.2.2.md)。前轮见[剩余设置页与专注底栏统一](records/2026-10-27-settings-completion-focus.md)、[浏览器批注：控件与设置布局](records/2026-10-27-ui-feedback.md)、[微明度层次与界面动效](records/2026-10-27-tonal-motion.md)、[近期对话问题与真实模型迭代](records/2026-10-24-conversation-quality.md)、[三档字号、步骤与专注回复验收](records/2026-10-24-readable-cooking-ui.md)、[厨房卡片与专注对话交互验收](records/2026-10-24-kitchen-interaction-feedback.md)。上次发布见[0.2.1 工作台与对话内操作验收](records/2026-10-24-release-0.2.1.md)；早期结构整理见[代码与文档整理验收](records/2026-10-22-code-organization.md)，首次版本日志页面见[0.2.0 发布记录](records/2026-10-22-release-0.2.0.md)。
 
 ## 验收与实现记录
+
+### 2026-10-28
+
+| 记录 | 关注点 |
+| --- | --- |
+| [智能体与多端界面持续打磨](records/2026-10-28-agent-and-ui-polish.md) | 真实模型流程、业务补丁、弹窗居中、多端检查与测试资源清理 |
+| [称呼编辑与设置侧目录](records/2026-10-28-profile-editor-and-outline.md) | 紧凑称呼弹窗、草稿保护、宽屏侧目录与仅版本索引 |
+| [额度同步、尾数使用与页面一致性](records/2026-10-28-quota-sync-and-consistency.md) | 固定阅读宽度、统一字号与动效、资料活动、共用管理列表、正余额尾数准入与实时刷新 |
+| [管理平台、个人设置与会员模板](records/2026-10-28-admin-settings-ui.md) | 色阶与动效、宽窄屏、个人百分比额度、资料安全表单和多会员模板 |
 
 ### 2026-10-27
 
 | 记录 | 关注点 |
 | --- | --- |
+| [会员额度、多模型与账号设置](records/2026-10-27-membership-models-preferences.md) | 固定窗口会员、永久资金来源、模型独立计价、审计筛选与统一偏好 |
+| [账号、金额额度与 PostgreSQL 改造](records/2026-10-27-accounts-admin-postgresql.md) | 登录与欢迎引导、用户隔离、长期记忆授权、管理员和金额计价 |
+| [Docker、备份与恢复验收](records/2026-10-27-docker-acceptance.md) | 应用 PostgreSQL、非 root 镜像、备份完整性、真实恢复和代理边界 |
+| [72 账号持续运行检查](records/2026-10-27-multiuser-soak.md) | 两阶段隔离读写、缓存换出、重启持久化及资源口径 |
+| [旧日常数据实际迁入 PostgreSQL](records/2026-10-27-daily-postgresql-migration.md) | 47 会话、329 消息、私人菜谱、记忆、手记和图片的只读快照与内容核对 |
 | [0.2.2 界面细节与发布整理](records/2026-10-27-release-0.2.2.md) | 自填选项、连续计时表面、居中收餐操作、历史版本拆分与明确授权日志规则 |
 | [剩余设置页与专注底栏统一](records/2026-10-27-settings-completion-focus.md) | 通用分组平铺、日志与关于、跨页提示、专注底栏融合及宽窄屏验证 |
 | [浏览器批注：控件与设置布局](records/2026-10-27-ui-feedback.md) | 11 条批注、快捷键、居中拖动条、勾选对比、设置分组、图形组件、用量合并与间距 |
@@ -88,6 +112,10 @@
 | [清洗 Phase 1 基线](records/data-cleaning-baseline.md) | 初始范围、单条冒烟、浏览器测试与当时未实现项 |
 
 ## 历史计划与分析
+
+### 2026-10-27
+
+- [账号、管理平台与 Docker 初始计划](plans/2026-10-27-accounts-admin-docker.md)：保留初始拆分，执行中的 PostgreSQL、金额额度和时间要求以最新设计与验收为准。
 
 ### 2026-10-22
 

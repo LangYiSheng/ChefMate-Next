@@ -2,6 +2,7 @@
 
 import json
 import sqlite3
+from .database import Database
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -17,8 +18,9 @@ def _model(value):
 
 
 class UsageRepository:
-    def __init__(self, path: Path | str, *, now=None):
-        self.path = Path(path)
+    def __init__(self, path: Path | str | Database, *, now=None):
+        self.database = Database.coerce(path)
+        self.path = self.database.path
         self.path.parent.mkdir(parents=True, exist_ok=True)
         self._now = now or (lambda: datetime.now(timezone.utc))
         with self._connect() as db:
@@ -29,9 +31,7 @@ class UsageRepository:
             db.execute("CREATE INDEX IF NOT EXISTS model_usage_day ON model_usage_ledger(day)")
 
     def _connect(self):
-        connection = sqlite3.connect(self.path, timeout=10)
-        connection.row_factory = sqlite3.Row
-        return connection
+        return self.database.connect(row_factory=sqlite3.Row, timeout=10)
 
     def record(self, session_id, turn_id, usage, *, model="", created_at=None, status="running"):
         if not session_id or not turn_id or not isinstance(usage, dict):
@@ -45,6 +45,7 @@ class UsageRepository:
                 round_number = index + 1
             calls[round_number] = normalize_usage_call({
                 "round": round_number, "model": _model(item.get("model") or model),
+                "provider_attempts": number(item.get("provider_attempts")) or None,
                 **{key: number(item.get(key)) for key in TOKEN_FIELDS},
                 "total_tokens_source": item.get("total_tokens_source")})
         attempts = max(number(usage.get("attempted_calls")) or 0, number(usage.get("model_calls")) or 0, len(calls))
@@ -78,6 +79,8 @@ class UsageRepository:
                         # its operands, then derive once; never add turn totals.
                         updated.update(total_tokens=None, total_tokens_source=None)
                     merged[round_number] = normalize_usage_call(updated)
+                    merged[round_number]["provider_attempts"] = max(
+                        number(call.get("provider_attempts")) or 0, number(earlier.get("provider_attempts")) or 0) or None
                     if call["model"] == "unknown" and earlier.get("model"):
                         merged[round_number]["model"] = earlier["model"]
                 calls = merged

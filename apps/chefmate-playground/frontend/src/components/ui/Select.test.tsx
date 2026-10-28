@@ -11,6 +11,15 @@ function Example(props: Partial<SelectProps> = {}) {
 afterEach(() => vi.unstubAllGlobals());
 
 describe('themed Select', () => {
+  it('carries trigger typography into a body portal instead of reverting to popup defaults', async () => {
+    render(<Example/>);
+    const trigger = screen.getByRole('combobox', {name: '用餐方式'});
+    trigger.style.fontSize = '18px'; trigger.style.lineHeight = '27px';
+    fireEvent.click(trigger);
+    const list = screen.getByRole('listbox');
+    expect(list.parentElement).toBe(document.body);
+    await waitFor(() => expect(list).toHaveStyle({fontSize: '18px', lineHeight: '27px'}));
+  });
   it('uses a labelled combobox and real themed options, preserving form name/value without a native select', () => {
     const rendered = render(<form><Example/></form>);
     const trigger = screen.getByRole('combobox', {name: '用餐方式'});

@@ -57,6 +57,9 @@ class AgentTools(RetrievalEvidence):
             return any(self.skills.enabled(skill) for skill in binding.values())
         return not binding or self.skills.enabled(binding)
 
+    def _memory_tool_names(self):
+        return {name for name, binding in self._tool_skills.items() if binding == "personal-memory"}
+
     def _model_tools(self, context):
         """Bind executable operations; keep registered schemas for validating closed history."""
         stage = context.ui_context.get("stage", "idea")
@@ -64,6 +67,8 @@ class AgentTools(RetrievalEvidence):
         result = []
         for tool in self.tools:
             if not self._tool_skill_available(tool.name):
+                continue
+            if not context.memory_enabled and tool.name in self._memory_tool_names():
                 continue
             spec = self._extra_tools.get(tool.name)
             if spec and not spec.model_visible:
@@ -104,6 +109,8 @@ class AgentTools(RetrievalEvidence):
                 if skill and not self.skills.enabled(skill):
                     return {"status": "skill_disabled", "skill": skill,
                             "message": "对应厨房技能已关闭，此工具没有执行；可以在设置中开启技能。"}
+            if not context.memory_enabled and name in self._memory_tool_names():
+                return {"status": "memory_disabled", "message": "个人偏好与长期记忆已关闭，此工具没有执行。"}
             history = self._serialize_messages(messages or [])
             call = {"name": name, "id": call_id, "args": kwargs}
             if name in _TOOL_DESCRIPTIONS:
@@ -167,6 +174,10 @@ class AgentTools(RetrievalEvidence):
                 if not isinstance(plain, dict):
                     raise ValueError("Tool result must be a mapping")
                 if plain.get("status") == "ok":
+                    if spec.required_skill == "personal-memory":
+                        # Historical search results also enter ToolMessages even
+                        # when they do not replace the compact memory context.
+                        context.memory_accessed = True
                     if spec.required_skill == "personal-memory" and isinstance(plain.get("memory"), dict):
                         memory = plain["memory"]
                         refreshed = {key: memory[key] for key in

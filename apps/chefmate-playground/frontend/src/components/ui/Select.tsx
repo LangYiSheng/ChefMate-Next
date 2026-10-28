@@ -10,7 +10,7 @@ export type SelectProps = {
   'aria-label'?: string; 'aria-labelledby'?: string; 'aria-describedby'?: string; 'aria-invalid'?: AriaAttributes['aria-invalid'];
   onBlur?: FocusEventHandler<HTMLButtonElement>;
 };
-type Placement = {left: number; top: number; width: number; maxHeight: number; side: 'above' | 'below'};
+type Placement = {left: number; top: number; width: number; maxHeight: number; side: 'above' | 'below'; fontSize: string; lineHeight: string};
 
 export function Select({value, onValueChange, options, id, name, required, disabled, placeholder = '请选择', className = '', onBlur, ...aria}: SelectProps) {
   const unique = useId(), triggerId = id || `${unique}-select`, popupId = `${unique}-listbox`, errorId = `${unique}-error`;
@@ -52,7 +52,8 @@ export function Select({value, onValueChange, options, id, name, required, disab
       const side = below < Math.min(desired, 160) && above > below ? 'above' : 'below';
       const maxHeight = Math.max(0, Math.min(320, height - margin * 2, side === 'above' ? above : below));
       const popupWidth = Math.min(Math.max(rect.width, 160), Math.max(0, width - margin * 2));
-      const next: Placement = {left: Math.max(left + margin, Math.min(rect.left, right - popupWidth - margin)), top: side === 'above' ? Math.max(top + margin, rect.top - gap - Math.min(desired, maxHeight)) : Math.min(rect.bottom + gap, bottom - margin), width: popupWidth, maxHeight, side};
+      const typography = getComputedStyle(anchor);
+      const next: Placement = {left: Math.max(left + margin, Math.min(rect.left, right - popupWidth - margin)), top: side === 'above' ? Math.max(top + margin, rect.top - gap - Math.min(desired, maxHeight)) : Math.min(rect.bottom + gap, bottom - margin), width: popupWidth, maxHeight, side, fontSize: typography.fontSize, lineHeight: typography.lineHeight};
       setPlacement(previous => previous && Object.keys(next).every(key => previous[key as keyof Placement] === next[key as keyof Placement]) ? previous : next);
     };
     const outside = (event: Event) => {const node = event.target as Node; if (!anchor.contains(node) && !list.contains(node)) close();};
@@ -105,7 +106,7 @@ export function Select({value, onValueChange, options, id, name, required, disab
     {name && <input type="hidden" name={name} value={value} disabled={disabled}/>}
     {required && <input className="ui-select-validity" tabIndex={-1} aria-hidden="true" type="text" value={selected && value !== '' ? 'selected' : ''} required disabled={disabled} onChange={() => {}} onInvalid={event => {event.preventDefault(); setInvalid(true); trigger.current?.focus({preventScroll: true});}}/>}
     {invalid && <span id={errorId} className="ui-select-error" role="alert">请选择一项。</span>}
-    {open && createPortal(<div ref={popup} id={popupId} role="listbox" className="ui-select-popup" aria-labelledby={aria['aria-labelledby'] || triggerId} data-side={placement?.side} onClick={event => event.stopPropagation()} onPointerDown={event => event.stopPropagation()} style={placement ? {left: placement.left, top: placement.top, width: placement.width, maxHeight: placement.maxHeight} : {visibility: 'hidden'}}>
+    {open && createPortal(<div ref={popup} id={popupId} role="listbox" className="ui-select-popup" aria-labelledby={aria['aria-labelledby'] || triggerId} data-side={placement?.side} onClick={event => event.stopPropagation()} onPointerDown={event => event.stopPropagation()} style={placement ? {left: placement.left, top: placement.top, width: placement.width, maxHeight: placement.maxHeight, fontSize: placement.fontSize, lineHeight: placement.lineHeight} : {visibility: 'hidden'}}>
       {options.map((option, index) => <div ref={node => {optionRefs.current[index] = node;}} id={`${popupId}-${index}`} role="option" aria-selected={option.value === value} aria-disabled={option.disabled || undefined} data-active={active === index || undefined} className="ui-select-option" key={`${option.value}-${index}`} onPointerMove={() => {if (!option.disabled) setActive(index);}} onPointerDown={event => event.preventDefault()} onClick={() => choose(index)}><span>{option.label}</span>{option.value === value && <Icon name="check"/>}</div>)}
     </div>, portalHost)}
   </span>;

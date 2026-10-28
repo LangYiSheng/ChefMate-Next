@@ -11,7 +11,7 @@ from test_app import Agent, Service
 
 
 def config(tmp_path):
-    return PlaygroundConfig(sessions_database=tmp_path / "sessions.db", api_key="old-private-key",
+    return PlaygroundConfig(auth_enabled=False, sessions_database=tmp_path / "sessions.db", api_key="old-private-key",
                             model="old-model", base_url="https://old.example/v1")
 
 

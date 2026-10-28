@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 import json
-import sqlite3
+import hashlib
+from .database import Database
 from pathlib import Path
 from typing import Annotated, Literal
 
@@ -17,14 +18,15 @@ class MemoryConflict(ValueError):
 
 
 class MemoryRepository:
-    """A single local profile; assistant writes never replace user-authored notes.
+    """An account profile; assistant writes never replace user-authored notes.
 
-    Revision checks run under SQLite's write transaction, so another browser,
+    Revision checks run under a serialized write transaction, so another browser,
     conversation or process cannot silently overwrite a newer preference.
     """
 
-    def __init__(self, path: Path, journal=None):
-        self.path = Path(path)
+    def __init__(self, path: Path | Database, journal=None):
+        self.database = Database.coerce(path)
+        self.path = self.database.path
         self.journal = journal
         self.path.parent.mkdir(parents=True, exist_ok=True)
         with self._connect() as connection:
@@ -33,15 +35,21 @@ class MemoryRepository:
                                "enabled INTEGER NOT NULL, user_notes TEXT NOT NULL, summary TEXT NOT NULL, "
                                "updated_at TEXT NOT NULL, summary_source TEXT)")
             connection.execute("INSERT OR IGNORE INTO personal_memory VALUES(1,0,1,'','',?,NULL)", (now(),))
+            connection.execute("CREATE TABLE IF NOT EXISTS kitchen_profile ("
+                               "id INTEGER PRIMARY KEY CHECK(id=1), source_revision TEXT NOT NULL, "
+                               "body TEXT NOT NULL, updated_at TEXT NOT NULL)")
 
     def _connect(self):
-        return sqlite3.connect(self.path, timeout=5)
+        return self.database.connect(timeout=5)
 
     @staticmethod
     def _read(connection):
         row = connection.execute("SELECT revision,enabled,user_notes,summary,updated_at,summary_source "
                                  "FROM personal_memory WHERE id=1").fetchone()
-        return dict(zip(("revision", "enabled", "user_notes", "summary", "updated_at", "summary_source"), row))
+        result = dict(zip(("revision", "enabled", "user_notes", "summary", "updated_at", "summary_source"), row))
+        profile = connection.execute("SELECT body FROM kitchen_profile WHERE id=1").fetchone()
+        result["kitchen_profile"] = json.loads(profile[0]) if profile else {}
+        return result
 
     def snapshot(self) -> dict:
         with self._connect() as connection:
@@ -49,7 +57,7 @@ class MemoryRepository:
         result["enabled"] = bool(result["enabled"])
         return result
 
-    def _update(self, expected_revision, changes, *, cancelled=None, active_turn=None):
+    def _update(self, expected_revision, changes, *, cancelled=None, active_turn=None, clear_kitchen_profile=False):
         if type(expected_revision) is not int or expected_revision < 0:
             raise ValueError("记忆版本无效。")
         with self._connect() as connection:
@@ -66,6 +74,9 @@ class MemoryRepository:
             if cancelled is not None and cancelled.is_set():
                 return {"status": "turn_closed", "message": "本轮已停止，没有修改长期记忆。"}
             state.update(changes, revision=state["revision"] + 1, updated_at=now())
+            if clear_kitchen_profile:
+                connection.execute("UPDATE kitchen_profile SET body='{}',updated_at=? WHERE id=1", (now(),))
+                state["kitchen_profile"] = {}
             connection.execute("UPDATE personal_memory SET revision=?,enabled=?,user_notes=?,summary=?,"
                                "updated_at=?,summary_source=? WHERE id=1",
                                tuple(state[key] for key in ("revision", "enabled", "user_notes", "summary",
@@ -96,13 +107,39 @@ class MemoryRepository:
                             cancelled=cancelled, active_turn=active_turn)
 
     def clear(self, expected_revision: int) -> dict:
-        return self._update(expected_revision, {"user_notes": "", "summary": "", "summary_source": None})
+        return self._update(expected_revision, {"user_notes": "", "summary": "", "summary_source": None},
+                            clear_kitchen_profile=True)
+
+    def sync_kitchen_profile(self, profile: dict, *, source_revision: str | None = None) -> dict:
+        """Project an explicitly consented account profile without replacing notes.
+
+        Keeping the source fingerprint after clearing prevents an ordinary page
+        refresh from silently restoring a profile the user just removed.
+        """
+        if not isinstance(profile, dict) or set(profile) - {"display_name", "cooking_level", "household_size", "preferences"}:
+            raise ValueError("厨房档案字段无效。")
+        body = json.dumps(profile, ensure_ascii=False, sort_keys=True, allow_nan=False)
+        if len(body) > 2000:
+            raise ValueError("厨房档案过长。")
+        if source_revision is not None and (not isinstance(source_revision, str) or len(source_revision) > 200):
+            raise ValueError("厨房档案来源版本无效。")
+        revision = hashlib.sha256(json.dumps([source_revision, profile], sort_keys=True, ensure_ascii=False).encode()).hexdigest()
+        with self._connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            previous = connection.execute("SELECT source_revision FROM kitchen_profile WHERE id=1").fetchone()
+            if previous and previous[0] == revision:
+                return self._read(connection)
+            connection.execute("INSERT INTO kitchen_profile VALUES(1,?,?,?) ON CONFLICT(id) DO UPDATE SET "
+                               "source_revision=excluded.source_revision,body=excluded.body,updated_at=excluded.updated_at",
+                               (revision, body, now()))
+            connection.execute("UPDATE personal_memory SET revision=revision+1,updated_at=? WHERE id=1", (now(),))
+            return self._read(connection)
 
     def context(self) -> dict:
         state = self.snapshot()
         if not state["enabled"]:
             return {}
-        return {key: state[key] for key in ("revision", "user_notes", "summary", "updated_at")}
+        return {key: state[key] for key in ("revision", "user_notes", "summary", "updated_at", "kitchen_profile")}
 
     @staticmethod
     def _snippet(text, query, length=450):
@@ -122,7 +159,7 @@ class MemoryRepository:
         needle = query.casefold()
         items = []
         with self._connect() as connection:
-            has_sessions = connection.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='sessions'").fetchone()
+            has_sessions = "sessions" in self.database.tables(connection=connection)
             rows = connection.execute("SELECT id,state FROM sessions ORDER BY updated_at DESC,id LIMIT 250").fetchall() if has_sessions else []
         for identity, raw in rows:
             state = json.loads(raw)

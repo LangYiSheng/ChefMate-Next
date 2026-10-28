@@ -1,0 +1,97 @@
+import {useEffect, useRef, useState} from 'react';
+import {api} from '../../runtime/http';
+import {Icon} from '../../components/Icon';
+import {Dialog} from '../../components/Dialog';
+import type {AccountUser} from './types';
+import {QuotaOverview} from './QuotaOverview';
+import {Field} from '../settings/SettingsFields';
+import {AccountLeavePrompt, useAccountLeaveGuard} from './leave-guard';
+import {ProfileActivity} from './ProfileActivity';
+import './personal-account.css';
+
+export type AccountSection = 'profile' | 'quota' | 'security';
+const noChange = () => {};
+export function daysInKitchen(createdAt: string, today = new Date()) {
+  const joined = new Date(createdAt);
+  if (!Number.isFinite(joined.getTime())) return null;
+  const day = (date: Date) => Date.UTC(date.getFullYear(), date.getMonth(), date.getDate());
+  return Math.max(1, Math.floor((day(today) - day(joined)) / 86400000) + 1);
+}
+export function AccountPanel({user, refresh, notify, section = 'profile', active = true, embedded = false, onDirty = noChange, onBusy = noChange, onDirtySections = noChange}: {
+  user: AccountUser; refresh: () => Promise<void>; notify: (message: string) => void; logout?: () => Promise<void>;
+  section?: AccountSection; active?: boolean; embedded?: boolean; onDirty?: (dirty: boolean) => void; onBusy?: (busy: boolean) => void; onDirtySections?: (sections: Record<AccountSection, boolean>) => void;
+}) {
+  const [name, setName] = useState(user.display_name), [baseline, setBaseline] = useState(user.display_name);
+  const [editingName, setEditingName] = useState(false), [confirmedName, setConfirmedName] = useState(user.display_name);
+  const [currentPassword, setCurrentPassword] = useState(''), [password, setPassword] = useState(''), [confirm, setConfirm] = useState('');
+  const [busy, setBusy] = useState(''), [error, setError] = useState(''), [message, setMessage] = useState(''), [reload, setReload] = useState(false);
+  const alive = useRef(true), working = useRef(false), refreshRef = useRef(refresh); refreshRef.current = refresh;
+  const owner = useRef(user.id), profileDirty = name !== baseline, securityDirty = Boolean(currentPassword || password || confirm), dirty = profileDirty || securityDirty;
+  const {pendingLeave, setPendingLeave} = useAccountLeaveGuard(!embedded && dirty, !embedded && Boolean(busy), setError);
+  useEffect(() => {alive.current = true; return () => {alive.current = false;};}, []);
+  useEffect(() => {onDirty(dirty);}, [dirty, onDirty]);
+  useEffect(() => {onDirtySections({profile: profileDirty, security: securityDirty, quota: false});}, [profileDirty, securityDirty, onDirtySections]);
+  useEffect(() => {onBusy(Boolean(busy));}, [busy, onBusy]);
+  useEffect(() => {
+    setConfirmedName(user.display_name);
+    if (owner.current !== user.id || !profileDirty || name === user.display_name) {setName(user.display_name); setBaseline(user.display_name); owner.current = user.id;}
+  }, [user.id, user.display_name]);
+  useEffect(() => {if (!active || section !== 'profile') setEditingName(false);}, [active, section]);
+  useEffect(() => {
+    if (!active) return;
+    void Promise.resolve(refreshRef.current()).catch(problem => {if (alive.current && problem.name !== 'AbortError') setError(problem.message);});
+  }, [active, section, user.id]);
+  async function run(kind: string, action: () => Promise<void>, success: string) {
+    if (working.current) return;
+    working.current = true; setBusy(kind); setError(''); setMessage('');
+    try {await action(); if (alive.current) {setMessage(success); notify(success);}}
+    catch (problem) {if (alive.current && (problem as Error).name !== 'AbortError') setError((problem as Error).message);}
+    finally {working.current = false; if (alive.current) setBusy('');}
+  }
+  const readLatest = () => {setName(confirmedName); setBaseline(confirmedName); setReload(false); void run('refresh', refresh, '账号信息已更新。');};
+  const closeName = (discard = false) => {
+    if (working.current) {setError('正在保存，完成后就可以关闭。'); return;}
+    if (discard) {setName(confirmedName); setBaseline(confirmedName);}
+    setEditingName(false); setError('');
+  };
+  const heading = {profile: ['个人资料', '让小锅搭子用你喜欢的方式称呼你。'], quota: ['我的额度', '查看可用比例与会员窗口恢复状态。'], security: ['账号安全', '管理登录密码，保护自己的厨房资料。']}[section];
+  const kitchenDays = daysInKitchen(user.created_at);
+  return <section className={'account-page account-settings-panel' + (embedded ? ' is-embedded' : '')} data-account-section={section} aria-label={heading[0]} hidden={!active}>
+    {!embedded && <header className="account-page-heading"><div><h1>{heading[0]}</h1><p>{heading[1]}</p></div></header>}
+    <div className="account-inline-toolbar">{section === 'profile' && <div className="account-name-shortcut"><span>称呼</span><strong>{confirmedName || user.username}</strong><button type="button" className="icon-button" aria-label="编辑称呼" title={profileDirty ? '继续编辑未保存的称呼' : '编辑称呼'} disabled={Boolean(busy)} onClick={() => {setEditingName(true); setError(''); setMessage('');}}><Icon name="notebook-pen"/>{profileDirty && <span className="account-name-draft" aria-label="有未保存修改"/>}</button></div>}<button type="button" className="text-button" disabled={Boolean(busy)} onClick={() => profileDirty ? setReload(true) : readLatest()}><Icon name="refresh-cw"/>读取最新</button></div>
+    {error && !editingName && <p className="error-box" role="alert">{error}</p>}{message && <p className="account-success" role="status">{message}</p>}
+    {section === 'profile' && <>
+      <section className="account-profile-overview" aria-label="账号身份"><div className="account-profile-heading"><span className="account-avatar" aria-hidden="true">{(confirmedName || user.username).slice(0, 1).toLocaleUpperCase()}</span><div><h2>{confirmedName || user.username}</h2><p className="account-profile-handle">@{user.username}</p></div></div>
+        <dl className="account-identity-details"><div><dt>厨房身份</dt><dd>{user.role === 'admin' ? '管理员' : '厨房伙伴'}</dd></div><div><dt>加入厨房</dt><dd>{kitchenDays == null ? '尚未记录' : <><strong>{kitchenDays.toLocaleString('zh-CN')}</strong> 天</>}</dd></div></dl>
+      </section>
+      <ProfileActivity owner={user.id} active={active}/>
+    </>}
+    {section === 'quota' && <QuotaOverview quota={user.quota} onRefresh={refresh}/>}
+    {section === 'security' && <form className="account-edit-form account-security-form" aria-label="更新密码" onSubmit={event => {event.preventDefault(); if (password !== confirm) {setError('两次新密码不一致，请重新核对。'); return;} void run('password', async () => {
+      await api('/api/auth/password', {method: 'PATCH', body: JSON.stringify({current_password: currentPassword, new_password: password})});
+      if (alive.current) {setCurrentPassword(''); setPassword(''); setConfirm('');} await refresh();
+    }, '密码已更新。');}}>
+      <div className="account-security-note"><Icon name="shield-check"/><div><h2>更新登录密码</h2><p>请使用独立的密码。更新后，其他设备需要重新登录。</p></div></div>
+      <Field label="当前密码" type="password" autoComplete="current-password" value={currentPassword} required maxLength={128} onChange={setCurrentPassword} disabled={Boolean(busy)}/>
+      <Field label="新密码" type="password" autoComplete="new-password" value={password} required minLength={10} maxLength={128} onChange={setPassword} disabled={Boolean(busy)} hint="至少 10 位，请使用独立的密码。"/>
+      <Field label="确认新密码" type="password" autoComplete="new-password" value={confirm} required minLength={10} maxLength={128} onChange={setConfirm} disabled={Boolean(busy)}/>
+      <div className="account-edit-actions"><button className="primary-button" type="submit" disabled={Boolean(busy)}>{busy === 'password' ? '正在更新…' : '更新密码'}</button></div>
+    </form>}
+    {editingName && active && section === 'profile' && <Dialog title="编辑称呼" className="account-name-dialog" onClose={() => closeName()}><form className="account-name-form" aria-label="个人资料" onSubmit={event => {
+      event.preventDefault(); if (!name.trim() || !profileDirty || working.current) return;
+      void run('profile', async () => {
+        const result = await api<{user: AccountUser}>('/api/auth/profile', {method: 'PATCH', body: JSON.stringify({display_name: name.trim()})});
+        if (alive.current) {setName(result.user.display_name); setBaseline(result.user.display_name); setConfirmedName(result.user.display_name);}
+        try {await refresh();} catch (problem) {throw new Error(`称呼已保存，账号信息暂未同步。请读取最新。${(problem as Error).message}`);}
+        if (alive.current) setEditingName(false);
+      }, '个人资料已保存。');
+    }}>
+      <Field label="称呼" value={name} required maxLength={40} onChange={setName} disabled={Boolean(busy)} hint="这个称呼会作为 ChefMate 对你的称呼告诉模型，不受个人偏好开关影响。"/>
+      {profileDirty && baseline !== user.display_name && <p className="account-name-conflict" role="status">称呼已在其他页面更新。你的草稿仍保留，保存会使用当前填写的称呼。</p>}
+      {error && <p className="error-box" role="alert">{error}</p>}
+      <div className="account-edit-actions"><button className="secondary-button" type="button" disabled={Boolean(busy)} onClick={() => closeName(true)}>取消</button><button className="primary-button" type="submit" disabled={Boolean(busy) || !name.trim() || !profileDirty}>{busy === 'profile' ? '正在保存…' : '保存资料'}</button></div>
+    </form></Dialog>}
+    {!embedded && <AccountLeavePrompt action={pendingLeave} onCancel={() => setPendingLeave(null)}/>}
+    {reload && <Dialog title="重新读取账号资料？" onClose={() => setReload(false)}><p>会放弃尚未保存的称呼，读取服务器中的最新资料。</p><div className="account-form-actions"><button type="button" className="secondary-button" onClick={() => setReload(false)}>继续编辑</button><button type="button" className="primary-button" onClick={readLatest}>放弃并读取</button></div></Dialog>}
+  </section>;
+}
