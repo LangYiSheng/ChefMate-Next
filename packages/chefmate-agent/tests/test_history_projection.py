@@ -112,6 +112,44 @@ def test_an_orphan_historical_delta_remains_a_delta_without_inventing_a_base_sna
     assert json.loads(projected[0].content) == receipt
 
 
+@pytest.mark.parametrize("field", ["pending_question", "last_answer"])
+def test_new_explicit_null_is_distinct_from_an_absent_legacy_field(field):
+    before = {"revision": 1, "stage": "prep", "components": [], "recent_actions": []}
+    after = {**before, "revision": 2, field: None}
+    projected = ChefMateAgent._request_snapshot_delta(before, after)
+    assert field in projected and projected[field] is None
+    assert projected.get("snapshot_kind") != "delta"
+    assert ChefMateAgent._merge_snapshot(before, projected) == after
+    # An omitted field stays absent; a known non-null value can still be
+    # explicitly cleared by the ordinary delta, without inheriting old data.
+    omitted = {**before, "revision": 2}
+    assert field not in ChefMateAgent._merge_snapshot(before, ChefMateAgent._request_snapshot_delta(before, omitted))
+    known = {**before, field: {"id": "previous-answer"}}
+    cleared = ChefMateAgent._request_snapshot_delta(known, after)
+    assert cleared["snapshot_kind"] == "delta" and cleared[field] is None
+    assert ChefMateAgent._merge_snapshot(known, cleared) == after
+    assert field not in before
+
+
+def test_a_sparse_legacy_delta_followed_by_a_full_snapshot_reconstructs_null_fields_exactly():
+    sparse = {"snapshot_kind": "delta", "revision": 1, "stage": "prep", "components": [], "recent_actions": []}
+    after = {"revision": 2, "stage": "prep", "components": [], "recent_actions": [],
+        "pending_question": None, "last_answer": None}
+    receipt = {"status": "ok", "ui_snapshot": sparse}
+    source = [HumanMessage(content="旧轮次没有保存完整界面"),
+        AIMessage(content="", tool_calls=[{"id": "legacy", "name": "get_cooking_workspace", "args": {}}]),
+        ToolMessage(content=json.dumps(receipt), name="get_cooking_workspace", tool_call_id="legacy"),
+        HumanMessage(content="当前没有待回答问题，继续备菜", additional_kwargs={"chefmate_ui_context": after})]
+    original = copy.deepcopy([message.model_dump() for message in source])
+    projected = ChefMateAgent._model_messages(source)
+    old_receipt = json.loads(projected[2].content)
+    current = json.loads(projected[3].content.split(MARKER)[1])
+    assert old_receipt == receipt
+    restored = ChefMateAgent._merge_snapshot(ChefMateAgent._merge_snapshot(None, old_receipt["ui_snapshot"]), current)
+    assert restored == after and current.get("snapshot_kind") != "delta"
+    assert [message.model_dump() for message in source] == original
+
+
 def test_malformed_results_and_non_workspace_evidence_are_not_summarized():
     evidence = {"status": "ok", "snapshot": {"data_version": "original", "imported_at": "exact"},
         "recipe": {"recipe_id": "real", "ingredients": [{"ingredient_id": "shrimp", "raw_name": "虾仁"}],

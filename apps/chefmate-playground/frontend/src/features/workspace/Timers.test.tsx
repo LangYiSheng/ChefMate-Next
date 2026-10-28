@@ -30,6 +30,80 @@ beforeEach(() => {
 afterEach(() => { ids.forEach(id => workspaceStore.remove(id)); ids.length = 0; });
 
 describe('timer hosts retained across scene changes', () => {
+  it('keeps keyboard focus on the new timer after the manual form is removed', async () => {
+    const id = seed();
+    vi.spyOn(workspaceStore, 'dispatch').mockImplementation(async () => {
+      receiveTimer(id, 2, { id: 'manual-soup', label: '厨房计时', seconds: 180, remaining_seconds: 180, status: 'running' });
+      return { status: 'ok' };
+    });
+    render(<KitchenTimers sessionId={id} />);
+    fireEvent.click(screen.getByRole('button', { name: '打开厨房计时' }));
+    fireEvent.click(screen.getByRole('button', { name: '添加计时器' }));
+    const start = screen.getByRole('button', { name: '开始计时' }); start.focus();
+    await act(async () => fireEvent.click(start));
+    expect(screen.queryByRole('textbox', { name: '计时名称' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '暂停厨房计时' })).toHaveFocus();
+  });
+
+  it('does not move composer focus when a timer starts outside the manual form', () => {
+    const id = seed(); render(<Hosts sessionId={id} focus />);
+    const composer = screen.getByRole('textbox', { name: '专注草稿' }); composer.focus();
+    act(() => receiveTimer(id, 2, { id: 'assistant-soup', label: '汤', seconds: 180, remaining_seconds: 180, status: 'running' }));
+    expect(within(screen.getByTestId('focus-host')).getByRole('dialog', { name: '厨房计时' })).toBeInTheDocument();
+    expect(document.activeElement).toBe(composer);
+  });
+
+  it('preserves the composer focus if the user moves away while a manual timer is saving', async () => {
+    const id = seed(); let complete!: () => void;
+    vi.spyOn(workspaceStore, 'dispatch').mockImplementation(() => new Promise(resolve => {
+      complete = () => {
+        receiveTimer(id, 2, { id: 'manual-soup', label: '厨房计时', seconds: 180, remaining_seconds: 180, status: 'running' });
+        resolve({ status: 'ok' });
+      };
+    }));
+    render(<Hosts sessionId={id} focus />);
+    const host = within(screen.getByTestId('focus-host'));
+    fireEvent.click(host.getByRole('button', { name: '打开厨房计时' }));
+    fireEvent.click(host.getByRole('button', { name: '添加计时器' }));
+    const start = host.getByRole('button', { name: '开始计时' }); start.focus(); fireEvent.click(start);
+    const composer = screen.getByRole('textbox', { name: '专注草稿' }); composer.focus();
+    await act(async () => complete());
+    expect(host.getByRole('button', { name: '暂停厨房计时' })).toBeInTheDocument();
+    expect(document.activeElement).toBe(composer);
+  });
+
+  it.each(['ended', 'acknowledged'])('returns focus to the panel controls when a timer is %s', async reason => {
+    const id = seed();
+    receiveTimer(id, 2, { id: 'soup', label: '热汤', seconds: 180, remaining_seconds: reason === 'ended' ? 180 : 0, status: reason === 'ended' ? 'running' : 'finished' });
+    vi.spyOn(workspaceStore, 'dispatch').mockImplementation(async () => {
+      receiveTimer(id, 3, { id: 'soup', label: '热汤', seconds: 180, status: 'cancelled' });
+      return { status: 'ok' };
+    });
+    render(<KitchenTimers sessionId={id} />);
+    fireEvent.click(screen.getByRole('button', { name: /厨房计时：热汤/ }));
+    const remove = screen.getByRole('button', { name: reason === 'ended' ? '结束热汤' : '确认热汤时间到' }); remove.focus();
+    await act(async () => fireEvent.click(remove));
+    expect(screen.getByRole('button', { name: '添加计时器' })).toHaveFocus();
+  });
+
+  it('keeps the new focus when a timer finishes saving after the user leaves its controls', async () => {
+    const id = seed(); let complete!: () => void;
+    receiveTimer(id, 2, { id: 'soup', label: '热汤', seconds: 180, remaining_seconds: 180, status: 'running' });
+    vi.spyOn(workspaceStore, 'dispatch').mockImplementation(() => new Promise(resolve => {
+      complete = () => {
+        receiveTimer(id, 3, { id: 'soup', label: '热汤', seconds: 180, status: 'cancelled' });
+        resolve({ status: 'ok' });
+      };
+    }));
+    render(<Hosts sessionId={id} focus />);
+    const host = within(screen.getByTestId('focus-host'));
+    fireEvent.click(host.getByRole('button', { name: /厨房计时：热汤/ }));
+    const end = host.getByRole('button', { name: '结束热汤' }); end.focus(); fireEvent.click(end);
+    const composer = screen.getByRole('textbox', { name: '专注草稿' }); composer.focus();
+    await act(async () => complete());
+    expect(document.activeElement).toBe(composer);
+  });
+
   it('still scrolls to an inspected timer when the target is marked without a background panel', () => {
     const id = seed(), timers: Timer[] = [{id: 'first', label: '汤', seconds: 300, remaining_seconds: 300, status: 'running'}, {id: 'later', label: '米饭', seconds: 600, remaining_seconds: 600, status: 'running'}];
     workspaceStore.receive(id, {workspace: {revision: 2, stage: 'cooking'}, views: [{id: 'timers', kind: 'timers', revision: 2, editable: true, data: {timers}}]});

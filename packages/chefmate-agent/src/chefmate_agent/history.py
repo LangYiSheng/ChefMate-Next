@@ -104,10 +104,12 @@ class HistoryBoundary:
         previous = cls._model_snapshot(previous)
         old = {item.get("id", item.get("kind")): item for item in previous.get("components", [])}
         fresh = {item.get("id", item.get("kind")): item for item in current.get("components", [])}
-        # A full snapshot safely represents field removal or arbitrary list
-        # reordering, without introducing another patch dialect for rare cases.
+        # Legacy deltas compare .get(), which cannot distinguish an absent key
+        # from a newly explicit null. A full snapshot preserves that distinction,
+        # field removal and arbitrary ordering without changing stored receipts.
         merged_order = [identity for identity in old if identity in fresh] + [identity for identity in fresh if identity not in old]
-        if set(previous) - set(current) or merged_order != list(fresh):
+        adds_null = any(key not in previous and value is None for key, value in current.items())
+        if set(previous) - set(current) or adds_null or merged_order != list(fresh):
             return current
         result = cls._snapshot_delta(previous, current)
         result.pop("components", None)
