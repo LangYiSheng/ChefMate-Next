@@ -111,15 +111,24 @@ def test_postgres_accounts_concurrent_quota_and_price_snapshot(postgres_database
     with ThreadPoolExecutor(max_workers=4) as pool:
         results = list(pool.map(reserve, range(4)))
     admitted = [value for value in results if value is not None]
-    assert len(admitted) == 1
-    turn_id = "turn-" + str(admitted[0])
+    # A positive tail admits a final operation even below its full estimate:
+    # collateral is 60 + 40, never four copies of the same remaining money.
+    assert len(admitted) == 2
+    reserved = accounts.get_user(user["id"])["quota"]
+    assert reserved["reserved_cost_micros"] == 100
+    assert reserved["funds"]["available_micros"] == 0
     accounts.update_pricing(admin["id"], {"input_per_million": "200"})
-    accounts.settle_usage(user["id"], turn_id, {"attempted_calls": 1, "calls": [
-        {"input_tokens": 20, "output_tokens": 10, "cached_tokens": 5, "total_tokens": 30}]})
+    for index in admitted:
+        accounts.settle_usage(user["id"], f"turn-{index}", {"attempted_calls": 1, "calls": [
+            {"input_tokens": 20, "output_tokens": 10, "cached_tokens": 5, "total_tokens": 30}]})
     quota = accounts.get_user(user["id"])["quota"]
-    assert quota["used_tokens"] == 30
-    assert quota["used_cost_micros"] == 75
+    assert quota["used_tokens"] == 60
+    assert quota["used_cost_micros"] == 150
     assert quota["reserved_tokens"] == 0
+    assert quota["reserved_cost_micros"] == 0
+    assert quota["funds"]["available_micros"] == 0
+    with pytest.raises(QuotaExceeded):
+        accounts.reserve_usage(user["id"], "after-tail-settlement", tokens=1, cost_micros=1)
     assert type(quota["used_tokens"]) is int
     assert accounts.audit_log()[0]["id"] > 0
     with accounts._connect() as connection:

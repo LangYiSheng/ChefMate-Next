@@ -11,7 +11,7 @@ from .models import (
     RecipeDetailData,
     UserActionRequest,
 )
-from .support import DomainConflict, _stamp, _validation_details
+from .support import DomainConflict, _finite, _stamp, _validation_details
 
 
 class UserActions:
@@ -74,8 +74,13 @@ class UserActions:
                 if state.stage not in {"planning", "prep"}:
                     raise DomainConflict("stage_conflict", "请先回到备料或选菜阶段调整份量。")
                 recipe = self._find_recipe(state, payload["recipe_id"])
+                previous = recipe.target_servings if recipe.target_servings is not None else recipe.recipe.get("servings")
                 recipe.target_servings = payload["servings"]
                 recipe.portion_override = True
+                # A repeated confirmation may make the existing batch size an
+                # explicit override, but it does not represent a new batch.
+                if _finite(previous) and previous == payload["servings"]:
+                    return None
                 for item in self._recipe_view(recipe, state).ingredients:
                     state.prep_status[item.id] = "pending"
                 # A changed batch needs fresh execution confirmation; old completed steps cannot finish new quantities.
