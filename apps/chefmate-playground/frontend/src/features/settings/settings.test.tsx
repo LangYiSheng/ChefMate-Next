@@ -292,14 +292,17 @@ describe('React settings transactions', () => {
     fireEvent.click(screen.getByRole('button', {name: '重新读取个人偏好'})); expect(await screen.findByLabelText('你希望记住的事')).toHaveValue('清淡');
   });
   it('puts account categories first, retains nickname drafts across categories and guards logout', async () => {
+    Object.defineProperty(HTMLDialogElement.prototype, 'showModal', {configurable: true, value() {this.setAttribute('open', '');}});
+    Object.defineProperty(HTMLDialogElement.prototype, 'close', {configurable: true, value() {this.removeAttribute('open');}});
     const account = {id: 'a', username: 'testcook', display_name: '小厨', role: 'user' as const, developer_allowed: false, disabled: false, onboarding_completed: true, created_at: '', profile: {}, quota: {cost_limit_micros: 5_000_000, used_tokens: 10, used_cost_micros: 0, reserved_tokens: 0, reserved_cost_micros: 0}};
     render(<Settings account={account} refreshAccount={vi.fn().mockResolvedValue(undefined)} scope="personal" initialSection="account-profile" onClose={vi.fn()}/>);
+    fireEvent.click(await screen.findByRole('button', {name: '编辑称呼'}));
     fireEvent.change(await screen.findByLabelText('称呼'), {target: {value: '还没保存'}});
     const categoryButtons = [...screen.getByRole('navigation', {name: '设置分类'}).querySelectorAll('button')]; expect(categoryButtons.slice(0, 3).map(button => button.textContent?.replace('•', ''))).toEqual(['个人资料', '我的额度', '账号安全']);
     expect(categoryButtons[0].querySelector('[aria-label="有未保存修改"]')).toBeInTheDocument(); expect(categoryButtons[2].querySelector('[aria-label="有未保存修改"]')).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', {name: '我的额度'})); expect(await screen.findByRole('heading', {name: '我的额度'})).toBeVisible(); expect(screen.queryByRole('button', {name: '退出登录'})).not.toBeInTheDocument();
     expect(screen.getByRole('navigation', {name: '设置分类'}).querySelectorAll('[aria-current="page"]')).toHaveLength(1); expect(screen.getByRole('button', {name: '我的额度'})).toHaveAttribute('aria-current', 'page'); expect(screen.getByRole('button', {name: '外观与对话'})).not.toHaveAttribute('aria-current');
-    fireEvent.click(screen.getByRole('button', {name: /个人资料/})); expect(screen.getByLabelText('称呼')).toHaveValue('还没保存'); expect(screen.queryByRole('combobox', {name: '下厨经验'})).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', {name: /个人资料/})); fireEvent.click(screen.getByRole('button', {name: '编辑称呼'})); expect(screen.getByLabelText('称呼')).toHaveValue('还没保存'); expect(screen.queryByRole('combobox', {name: '下厨经验'})).not.toBeInTheDocument();
     const resume = vi.fn(); let accepted = true; act(() => {accepted = window.dispatchEvent(new CustomEvent('chefmate:before-page-change', {cancelable: true, detail: {page: 'logout', resume}}));});
     expect(accepted).toBe(false); expect(screen.getByRole('alertdialog')).toBeVisible(); fireEvent.click(screen.getByRole('button', {name: '继续编辑'})); expect(resume).not.toHaveBeenCalled();
   });

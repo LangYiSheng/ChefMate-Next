@@ -63,7 +63,7 @@ describe('settings grouped navigation', () => {
     vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {const top = positions[this.id] || 0; return {x: 0, y: top, width: 900, height: 80, top, left: 0, right: 900, bottom: top + 80, toJSON: () => ({})};});
     function Example({more = false}: {more?: boolean}) {
       const container = useRef<HTMLDivElement>(null);
-      return <div ref={container} id="root"><div data-settings-document><section id="first" data-settings-index="0.2.1 更新">第一段</section><section id="second" data-settings-index="0.2.0 更新">第二段</section><section hidden id="hidden" data-settings-index="隐藏的分类">不应进入目录</section>{more && <section id="third" data-settings-index="更早记录">新加载段落</section>}</div><SettingsIndex container={container} section="changelog"/></div>;
+      return <div ref={container} id="root"><div data-settings-document><section id="first" data-settings-index="0.2.1 更新">第一段</section><section id="second" data-settings-index="0.2.0 更新">第二段</section><section hidden id="hidden" data-settings-index="隐藏的分类">不应进入目录</section>{more && <section id="third" data-settings-index="更早记录">新加载段落</section>}</div><SettingsIndex container={container} section="memory"/></div>;
     }
     const rendered = render(<Example/>), root = rendered.container.querySelector<HTMLDivElement>('#root')!, scroll = vi.fn();
     root.scrollTo = scroll; root.scrollTop = 40;
@@ -78,24 +78,23 @@ describe('settings grouped navigation', () => {
     expect(await within(index).findByRole('button', {name: '更早记录'})).toBeInTheDocument();
   });
 
-  it('adds direct targets for the latest release sections while keeping historical releases compact', async () => {
+  it('indexes release versions without repeating subtitles or child sections', async () => {
     const titles = ['对话', '界面', '菜谱', '开发者'];
     request.mockResolvedValue({current_version: '0.2.1', releases: [{version: '0.2.1', title: '本次更新', sections: titles.map(title => ({title, items: ['具体变化']}))}, {version: '0.2.0', title: '之前更新', sections: [{title: '历史分节', items: ['保留历史内容']}]}]});
-    vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {const top = this.id === 'log-root' ? 100 : this.id === 'settings-release-0-group-3' ? 1000 : 0; return {x: 0, y: top, width: 900, height: 80, top, left: 0, right: 900, bottom: top + 80, toJSON: () => ({})};});
+    vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {const top = this.id === 'log-root' ? 100 : this.id === 'settings-release-1' ? 1000 : 0; return {x: 0, y: top, width: 900, height: 80, top, left: 0, right: 900, bottom: top + 80, toJSON: () => ({})};});
     function Example() {
       const container = useRef<HTMLDivElement>(null);
       return <div ref={container} id="log-root"><div data-settings-document><SettingsInsights section="changelog" refresh={0}/></div><SettingsIndex container={container} section="changelog"/></div>;
     }
     const rendered = render(<Example/>), root = rendered.container.querySelector<HTMLDivElement>('#log-root')!, scroll = vi.fn(); root.scrollTo = scroll; root.scrollTop = 40;
     const index = await screen.findByRole('navigation', {name: '当前设置目录'});
-    for (const [number, title] of titles.entries()) {
-      expect(within(index).getByRole('button', {name: title})).toBeInTheDocument();
-      expect(root.querySelector(`#settings-release-0-group-${number}`)).toHaveAttribute('data-settings-index', title);
+    expect(within(index).getAllByRole('button').map(button => button.textContent)).toEqual(['0.2.1', '0.2.0']);
+    for (const title of [...titles, '历史分节', '本次更新', '之前更新', '更新记录']) {
+      expect(within(index).queryByRole('button', {name: title})).not.toBeInTheDocument();
     }
-    expect(within(index).queryByRole('button', {name: '历史分节'})).not.toBeInTheDocument();
-    expect(within(index).getAllByRole('button')).toHaveLength(7);
-    fireEvent.click(within(index).getByRole('button', {name: '开发者'}));
+    expect(root.querySelector('#settings-release-0-group-3')).toHaveTextContent('开发者');
+    fireEvent.click(within(index).getByRole('button', {name: '0.2.0'}));
     expect(scroll).toHaveBeenCalledWith({top: 924, behavior: 'smooth'});
-    expect(within(index).getByRole('button', {name: '开发者'})).toHaveAttribute('aria-current', 'location');
+    expect(within(index).getByRole('button', {name: '0.2.0'})).toHaveAttribute('aria-current', 'location');
   });
 });

@@ -173,32 +173,32 @@ describe('Account and administrator controls', () => {
     expect(screen.getByLabelText('新用户默认金额额度（元）')).toHaveValue(7.5); expect(screen.getByRole('button', {name: '保存注册与默认额度'})).toBeEnabled();
   });
   it('keeps an unsaved account profile until the owner explicitly discards it', () => {
-    render(<AccountPanel user={user()} refresh={vi.fn()} logout={vi.fn()} notify={vi.fn()}/>); fireEvent.change(screen.getByLabelText('称呼'), {target: {value: '还没保存的称呼'}});
+    render(<AccountPanel user={user()} refresh={vi.fn()} logout={vi.fn()} notify={vi.fn()}/>); fireEvent.click(screen.getByRole('button', {name: '编辑称呼'})); fireEvent.change(screen.getByLabelText('称呼'), {target: {value: '还没保存的称呼'}});
     const resume = vi.fn(), attempt = () => {let accepted = true; act(() => {accepted = window.dispatchEvent(new CustomEvent('chefmate:before-page-change', {cancelable: true, detail: {page: 'chat', resume}}));}); return accepted;};
     expect(attempt()).toBe(false); fireEvent.click(screen.getByRole('button', {name: '继续编辑'})); expect(screen.getByLabelText('称呼')).toHaveValue('还没保存的称呼'); expect(resume).not.toHaveBeenCalled();
     expect(attempt()).toBe(false); fireEvent.click(screen.getByRole('button', {name: '放弃修改'})); expect(resume).toHaveBeenCalledOnce();
   });
   it('protects a profile draft on account refresh and reads once after an explicit discard', async () => {
     const refresh = vi.fn().mockResolvedValue(undefined);
-    render(<AccountPanel user={user()} refresh={refresh} logout={vi.fn()} notify={vi.fn()}/>); await waitFor(() => expect(refresh).toHaveBeenCalledOnce()); refresh.mockClear(); fireEvent.change(screen.getByLabelText('称呼'), {target: {value: '未保存的小厨'}});
+    render(<AccountPanel user={user()} refresh={refresh} logout={vi.fn()} notify={vi.fn()}/>); await waitFor(() => expect(refresh).toHaveBeenCalledOnce()); refresh.mockClear(); fireEvent.click(screen.getByRole('button', {name: '编辑称呼'})); fireEvent.change(screen.getByLabelText('称呼'), {target: {value: '未保存的小厨'}});
     fireEvent.click(screen.getByRole('button', {name: '读取最新'})); fireEvent.click(screen.getByRole('button', {name: '继续编辑'})); expect(refresh).not.toHaveBeenCalled(); expect(screen.getByLabelText('称呼')).toHaveValue('未保存的小厨');
     fireEvent.click(screen.getByRole('button', {name: '读取最新'})); fireEvent.click(screen.getByRole('button', {name: '放弃并读取'})); await waitFor(() => expect(refresh).toHaveBeenCalledOnce()); expect(screen.getByLabelText('称呼')).toHaveValue('小晚');
   });
   it('keeps a local profile draft while a new wallet and remote profile arrive', () => {
     const refresh = vi.fn().mockResolvedValue(undefined), view = render(<AccountPanel user={user()} refresh={refresh} logout={vi.fn()} notify={vi.fn()}/>);
-    fireEvent.change(screen.getByLabelText('称呼'), {target: {value: '未保存的小厨'}});
+    fireEvent.click(screen.getByRole('button', {name: '编辑称呼'})); fireEvent.change(screen.getByLabelText('称呼'), {target: {value: '未保存的小厨'}});
     view.rerender(<AccountPanel user={user({display_name: '服务器新称呼', quota: {...user().quota, used_cost_micros: 500000}})} refresh={refresh} logout={vi.fn()} notify={vi.fn()}/>);
     expect(screen.getByLabelText('称呼')).toHaveValue('未保存的小厨'); expect(screen.getByRole('button', {name: '保存资料'})).toBeEnabled();
   });
   it('incorporates remote consent revocation while preserving an unrelated nickname draft', () => {
     const first = user({profile: {...user().profile, use_for_ai: true}}), refresh = vi.fn().mockResolvedValue(undefined);
-    const view = render(<AccountPanel user={first} refresh={refresh} logout={vi.fn()} notify={vi.fn()}/>); fireEvent.change(screen.getByLabelText('称呼'), {target: {value: '未保存的小厨'}});
+    const view = render(<AccountPanel user={first} refresh={refresh} logout={vi.fn()} notify={vi.fn()}/>); fireEvent.click(screen.getByRole('button', {name: '编辑称呼'})); fireEvent.change(screen.getByLabelText('称呼'), {target: {value: '未保存的小厨'}});
     view.rerender(<AccountPanel user={{...first, profile: {...first.profile, use_for_ai: false}}} refresh={refresh} logout={vi.fn()} notify={vi.fn()}/>);
     expect(screen.getByLabelText('称呼')).toHaveValue('未保存的小厨'); expect(screen.queryByRole('switch')).not.toBeInTheDocument();
   });
   it('marks an existing draft clean when a refreshed server profile has the same values', () => {
     const refresh = vi.fn().mockResolvedValue(undefined), view = render(<AccountPanel user={user()} refresh={refresh} logout={vi.fn()} notify={vi.fn()}/>);
-    fireEvent.change(screen.getByLabelText('称呼'), {target: {value: '已经保存的小厨'}});
+    fireEvent.click(screen.getByRole('button', {name: '编辑称呼'})); fireEvent.change(screen.getByLabelText('称呼'), {target: {value: '已经保存的小厨'}});
     view.rerender(<AccountPanel user={user({display_name: '已经保存的小厨'})} refresh={refresh} logout={vi.fn()} notify={vi.fn()}/>);
     let accepted = false; act(() => {accepted = window.dispatchEvent(new CustomEvent('chefmate:before-page-change', {cancelable: true, detail: {page: 'chat', resume: vi.fn()}}));});
     expect(accepted).toBe(true); expect(screen.queryByRole('dialog', {name: '保留未保存的修改？'})).not.toBeInTheDocument();
@@ -207,9 +207,45 @@ describe('Account and administrator controls', () => {
     request.mockResolvedValue({user: user()}); const account = user(); account.profile = {...account.profile, use_for_ai: true, preferences: ['喜欢家常菜']};
     render(<AccountPanel user={account} refresh={vi.fn()} logout={vi.fn()} notify={vi.fn()}/>);
     expect(screen.queryByRole('switch')).not.toBeInTheDocument(); expect(screen.queryByRole('combobox')).not.toBeInTheDocument();
-    fireEvent.change(screen.getByLabelText('称呼'), {target: {value: '新的称呼'}}); fireEvent.click(screen.getByRole('button', {name: '保存资料'}));
+    fireEvent.click(screen.getByRole('button', {name: '编辑称呼'})); expect(screen.getByText(/不受个人偏好开关影响/)).toBeVisible(); fireEvent.change(screen.getByLabelText('称呼'), {target: {value: '新的称呼'}}); fireEvent.click(screen.getByRole('button', {name: '保存资料'}));
     await waitFor(() => expect(request).toHaveBeenCalledWith('/api/auth/profile', {method: 'PATCH', body: JSON.stringify({display_name: '新的称呼'})}));
-    expect(screen.getByText(/不受个人偏好开关影响/)).toBeVisible();
+  });
+  it('keeps nickname editing compact and retains Escape drafts while explicit Cancel discards them', () => {
+    render(<AccountPanel user={user()} refresh={vi.fn().mockResolvedValue(undefined)} notify={vi.fn()}/>);
+    expect(screen.queryByLabelText('称呼')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button',{name:'编辑称呼'}));
+    fireEvent.change(screen.getByLabelText('称呼'),{target:{value:'临时称呼'}});
+    expect(screen.getByRole('heading',{name:'小晚'})).toBeVisible();
+    fireEvent(screen.getByRole('dialog',{name:'编辑称呼'}),new Event('cancel',{bubbles:true,cancelable:true}));
+    expect(screen.queryByRole('dialog',{name:'编辑称呼'})).not.toBeInTheDocument();
+    expect(screen.getByLabelText('有未保存修改')).toBeVisible();
+    fireEvent.click(screen.getByRole('button',{name:'编辑称呼'}));
+    expect(screen.getByLabelText('称呼')).toHaveValue('临时称呼');
+    fireEvent.click(screen.getByRole('button',{name:'取消'}));
+    expect(screen.queryByRole('dialog',{name:'编辑称呼'})).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('有未保存修改')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button',{name:'编辑称呼'})); expect(screen.getByLabelText('称呼')).toHaveValue('小晚');
+  });
+  it('keeps a failed nickname write in one editable dialog with one error', async () => {
+    request.mockImplementation((path: string) => path === '/api/auth/profile' ? Promise.reject(new Error('保存暂时失败')) : Promise.resolve({daily:[]}));
+    render(<AccountPanel user={user()} refresh={vi.fn().mockResolvedValue(undefined)} notify={vi.fn()}/>);
+    fireEvent.click(screen.getByRole('button',{name:'编辑称呼'})); fireEvent.change(screen.getByLabelText('称呼'),{target:{value:'新的小厨'}});
+    fireEvent.click(screen.getByRole('button',{name:'保存资料'}));
+    expect(await screen.findByRole('alert')).toHaveTextContent('保存暂时失败'); expect(screen.getAllByRole('alert')).toHaveLength(1);
+    expect(screen.getByLabelText('称呼')).toHaveValue('新的小厨'); expect(screen.getByRole('button',{name:'保存资料'})).toBeEnabled();
+    expect(screen.getByRole('heading',{name:'小晚'})).toBeVisible();
+  });
+  it('preserves a server-confirmed nickname when the follow-up account refresh fails', async () => {
+    request.mockImplementation((path: string) => Promise.resolve(path === '/api/auth/profile' ? {user:user({display_name:'已经保存的小厨'})} : {daily:[]}));
+    const refresh = vi.fn().mockResolvedValueOnce(undefined).mockRejectedValueOnce(new Error('账号同步断线'));
+    render(<AccountPanel user={user()} refresh={refresh} notify={vi.fn()}/>);
+    await waitFor(() => expect(refresh).toHaveBeenCalledOnce());
+    fireEvent.click(screen.getByRole('button',{name:'编辑称呼'})); fireEvent.change(screen.getByLabelText('称呼'),{target:{value:'已经保存的小厨'}});
+    fireEvent.click(screen.getByRole('button',{name:'保存资料'}));
+    expect(await screen.findByRole('alert')).toHaveTextContent('称呼已保存，账号信息暂未同步');
+    expect(screen.getByRole('heading',{name:'已经保存的小厨'})).toBeVisible(); expect(screen.getByLabelText('称呼')).toHaveValue('已经保存的小厨');
+    fireEvent.click(screen.getByRole('button',{name:'取消'})); fireEvent.click(screen.getByRole('button',{name:'编辑称呼'}));
+    expect(screen.getByLabelText('称呼')).toHaveValue('已经保存的小厨'); expect(screen.getByRole('button',{name:'保存资料'})).toBeDisabled();
   });
   it('keeps password confirmation and server refresh intact with the shared settings fields', async () => {
     request.mockResolvedValue({ok: true}); const refresh = vi.fn().mockResolvedValue(undefined); render(<AccountPanel section="security" user={user()} refresh={refresh} notify={vi.fn()}/>);

@@ -84,7 +84,9 @@ describe('product information and release notes', () => {
     expect(within(sources).getByText('原始实现')).toBeVisible();
     expect(within(sources).getByText('后续实现')).toBeVisible();
     expect(within(sources).getByText('6694b51')).toHaveAttribute('title', included);
-    expect(view.container.querySelector('#settings-release-0-group-0')).toHaveAttribute('data-settings-index', '界面');
+    expect(release).toHaveAttribute('data-settings-index', '0.2.1');
+    expect(view.container.querySelector('#settings-release-0-group-0')).toHaveTextContent('界面');
+    expect(view.container.querySelector('#settings-release-0-group-0')).not.toHaveAttribute('data-settings-index');
   });
 
   it('shows the API build identity and real counts alongside the full privacy and nutrition boundaries', async () => {

@@ -49,11 +49,11 @@ function ReleaseSources({release}: {release: any}) {
 
 function ReleaseNotes({data}: {data: any}) {
   const titleId = useId();
-  return <section className="product-release-log" id={`${titleId}-releases`} data-settings-index="更新记录" aria-labelledby={titleId}><h2 className="visually-hidden" id={titleId}>更新记录</h2>
-    {(data.releases || []).map((release: any, index: number) => <article className="product-release" id={`settings-release-${index}`} data-settings-index={`${release.version} · ${release.title}`} key={`${release.version}-${index}`} aria-label={`${release.version} 版本更新`}>
+  return <section className="product-release-log" id={`${titleId}-releases`} aria-labelledby={titleId}><h2 className="visually-hidden" id={titleId}>更新记录</h2>
+    {(data.releases || []).map((release: any, index: number) => <article className="product-release" id={`settings-release-${index}`} data-settings-index={release.version} key={`${release.version}-${index}`} aria-label={`${release.version} 版本更新`}>
       <header className="product-release-meta"><h2>{release.version}</h2>{release.version === data.current_version && <span className="product-current-version">当前版本</span>}{release.date && <time dateTime={release.date}>{release.date}</time>}</header>
       <h3 className="product-release-title">{release.title}</h3>{release.summary && <p className="product-release-summary">{release.summary}</p>}
-      <div className="product-release-sections">{(release.sections || []).map((group: any, groupIndex: number) => <section className="product-release-section" id={index === 0 ? `settings-release-${index}-group-${groupIndex}` : undefined} data-settings-index={index === 0 ? group.title : undefined} key={`${group.title}-${groupIndex}`}><h4>{group.title}</h4><ul>{(group.items || []).map((item: string, itemIndex: number) => <li key={itemIndex}>{item}</li>)}</ul></section>)}</div>
+      <div className="product-release-sections">{(release.sections || []).map((group: any, groupIndex: number) => <section className="product-release-section" id={index === 0 ? `settings-release-${index}-group-${groupIndex}` : undefined} key={`${group.title}-${groupIndex}`}><h4>{group.title}</h4><ul>{(group.items || []).map((item: string, itemIndex: number) => <li key={itemIndex}>{item}</li>)}</ul></section>)}</div>
       <ReleaseSources release={release}/>
     </article>)}
     {!data.releases?.length && <p className="settings-note">还没有发布更新记录。</p>}
