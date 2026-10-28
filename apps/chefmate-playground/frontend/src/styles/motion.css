@@ -62,6 +62,6 @@ button {
   .starter-card:hover,.recipe-result:hover{transform:translateY(-2px)}
 }
 @media(prefers-reduced-motion:reduce){
-  *,*::before,*::after{animation:none!important;transition:none!important;scroll-behavior:auto!important}
+  *,*::before,*::after,*::backdrop{animation:none!important;transition:none!important;scroll-behavior:auto!important}
   button:active,.primary-navigation button:active .icon,.settings-link:active .icon,.starter-use:hover .icon,.starter-card:hover,.recipe-result:hover{transform:none}
 }

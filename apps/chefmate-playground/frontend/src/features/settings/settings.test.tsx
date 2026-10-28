@@ -16,6 +16,12 @@ const fixture = () => ({revision: revision(1), api_key_set: true, model: {base_u
 const preferences = () => ({revision: revision(100), initialized: true, values: {...normalizeAppearance(), reply_suggestions: true, reply_suggestion_count: 3}});
 const choose = (label: string, option: string) => {fireEvent.click(screen.getByRole('combobox', {name: label})); fireEvent.click(screen.getByRole('option', {name: option}));};
 beforeEach(() => {localStorage.clear(); request.mockReset(); readPreferences.mockReset(); savePreferences.mockReset(); readPreferences.mockResolvedValue(preferences()); savePreferences.mockImplementation(async changes => ({...preferences(), revision: revision(101), values: {...preferences().values, ...changes}})); request.mockImplementation((path: string) => Promise.resolve(path === '/api/settings' ? fixture() : {ready: true, model: 'test-model', database: {ready: true}}));});
+beforeEach(() => {
+  Object.defineProperty(HTMLDialogElement.prototype, 'showModal', {configurable: true, value(this: HTMLDialogElement) {
+    this.setAttribute('open', ''); this.querySelector<HTMLElement>('input:not(:disabled),button:not(:disabled)')?.focus();
+  }});
+  Object.defineProperty(HTMLDialogElement.prototype, 'close', {configurable: true, value(this: HTMLDialogElement) {this.removeAttribute('open');}});
+});
 afterEach(() => vi.unstubAllGlobals());
 
 describe('React settings transactions', () => {
@@ -142,6 +148,82 @@ describe('React settings transactions', () => {
     fireEvent.click(screen.getByRole('button', {name: '返回工作台'}));
     expect(close).not.toHaveBeenCalled(); fireEvent.click(screen.getByRole('button', {name: '放弃修改'}));
     expect(close).toHaveBeenCalledOnce(); expect(navigation?.defaultPrevented).toBe(false); expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
+  });
+
+  it.each([
+    ['返回工作台', 'continue'], ['返回工作台', 'cancel'],
+    ['重新读取', 'continue'], ['重新读取', 'cancel'],
+  ])('restores focus to %s after dismissing the unsaved confirmation with %s', async (triggerName, dismissal) => {
+    const close = vi.fn(); render(<Settings onClose={close}/>); await screen.findByLabelText('显示模式');
+    choose('显示模式', '深色');
+    const trigger = screen.getByRole('button', {name: triggerName}); trigger.focus(); fireEvent.click(trigger);
+    const confirmation = screen.getByRole('alertdialog', {name: '保留未保存的修改？'});
+    const keepEditing = screen.getByRole('button', {name: '继续编辑'});
+    expect(keepEditing).toHaveFocus();
+    if (dismissal === 'cancel') fireEvent(confirmation, new Event('cancel', {cancelable: true})); else fireEvent.click(keepEditing);
+    expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
+    expect(trigger).toHaveFocus();
+    expect(confirmation.tagName).toBe('DIALOG');
+    expect(screen.getByRole('combobox', {name: '显示模式'})).toHaveTextContent('深色');
+    expect(screen.getByRole('button', {name: '保存修改'})).toBeEnabled();
+    expect(close).not.toHaveBeenCalled(); expect(savePreferences).not.toHaveBeenCalled();
+  });
+
+  async function acceptedReload(immediate = false) {
+    const view = render(<Settings onClose={vi.fn()}/>); await screen.findByLabelText('显示模式'); choose('显示模式', '深色');
+    let resolve!: (value: ReturnType<typeof fixture>) => void, reject!: (reason: Error) => void;
+    const pending = new Promise<ReturnType<typeof fixture>>((accepted, failed) => {resolve = accepted; reject = failed;});
+    request.mockImplementation((path: string) => path === '/api/settings' ? immediate ? Promise.resolve(fixture()) : pending : Promise.resolve({ready: true}));
+    const trigger = screen.getByRole('button', {name: '重新读取'}); trigger.focus(); fireEvent.click(trigger);
+    fireEvent.click(screen.getByRole('button', {name: '放弃修改'}));
+    if (!immediate) expect(trigger).toBeDisabled();
+    return {view, trigger, resolve, reject};
+  }
+
+  it('restores the accepted reload entry after its asynchronous read finishes', async () => {
+    const {trigger, resolve} = await acceptedReload();
+    await act(async () => resolve(fixture()));
+    expect(trigger).toBeEnabled(); expect(trigger).toHaveFocus();
+    expect(screen.getByRole('combobox', {name: '显示模式'})).toHaveTextContent('浅色');
+    expect(screen.getByRole('button', {name: '保存修改'})).toBeDisabled();
+  });
+
+  it('restores the accepted reload entry even when the read resolves immediately', async () => {
+    const {trigger} = await acceptedReload(true);
+    await waitFor(() => expect(trigger).toBeEnabled());
+    expect(trigger).toHaveFocus();
+  });
+
+  it('restores the reload entry after an error while retaining the unsaved draft', async () => {
+    const {trigger, reject} = await acceptedReload();
+    await act(async () => reject(new Error('本次读取失败')));
+    expect(trigger).toBeEnabled(); expect(trigger).toHaveFocus();
+    expect(screen.getAllByText('本次读取失败').length).toBeGreaterThan(0);
+    expect(screen.getByRole('combobox', {name: '显示模式'})).toHaveTextContent('深色');
+    expect(screen.getByRole('button', {name: '保存修改'})).toBeEnabled();
+  });
+
+  it.each([false, true])('does not reclaim focus when the user moves away during reload (then blurs: %s)', async blur => {
+    const {trigger, resolve} = await acceptedReload();
+    const other = screen.getByRole('button', {name: '返回工作台'}); other.focus(); if (blur) other.blur();
+    await act(async () => resolve(fixture()));
+    expect(trigger).not.toHaveFocus();
+    if (blur) expect(document.body).toHaveFocus(); else expect(other).toHaveFocus();
+  });
+
+  it('does not focus the reused reload button after the selected section changes', async () => {
+    const {view, trigger, resolve} = await acceptedReload();
+    view.rerender(<Settings initialSection="keyboard" onClose={vi.fn()}/>);
+    await act(async () => resolve(fixture()));
+    expect(screen.getByRole('heading', {name: '快捷键'})).toBeVisible();
+    expect(trigger).not.toHaveFocus();
+  });
+
+  it('does not restore a reload trigger after settings have unmounted', async () => {
+    const {view, trigger, resolve} = await acceptedReload();
+    view.unmount(); const focus = vi.spyOn(trigger, 'focus');
+    await act(async () => resolve(fixture()));
+    expect(focus).not.toHaveBeenCalled();
   });
 
   it('retains memory edits between sections and uses the memory revision for save and clear', async () => {

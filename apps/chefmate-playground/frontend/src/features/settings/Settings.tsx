@@ -1,6 +1,7 @@
 import {Fragment, useCallback, useEffect, useRef, useState} from 'react';
 import {api} from '../../runtime/http';
 import {Icon} from '../../components/Icon';
+import {Dialog} from '../../components/Dialog';
 import {readUiPreferences, saveUiPreferences, type UiPreferencesSnapshot} from '../preferences/client';
 import {AppearanceSettings} from './AppearanceSettings';
 import {MemorySettings} from './MemorySettings';
@@ -37,6 +38,7 @@ const sections = [
 const navigationGroups: Record<string, string> = {'account-profile': '我的账号', display: '偏好', model: '智能体', context: '高级设置', changelog: '产品信息'};
 const sectionTabs: Record<string, readonly string[]> = {display: ['配色与字体', '对话显示', '对话建议'], keyboard: ['发送消息', '浏览与返回'], cooking: ['计时规则', '声音提醒'], model: ['连接信息', '连接方式'], components: ['组件管理'], usage: ['用量概览', '按模型统计'], context: ['信息容量'], runtime: ['等待与重试', '操作预算'], developer: ['调试信息'], changelog: ['更新记录']};
 export type SettingsProps = {onClose: () => void; onSaved?: () => void; onAccount?: () => void; notify?: (message: string) => void; scope?: 'personal' | 'admin'; initialSection?: string; onSectionChange?: (section: string) => void; apiBase?: string; developerAllowed?: boolean; account?: AccountUser; refreshAccount?: () => Promise<void>};
+type ReloadFocus = {trigger: HTMLButtonElement; section: string; sequence: number};
 const noNotify = () => {};
 const noRefresh = async () => {};
 
@@ -56,6 +58,8 @@ export function Settings({onClose, onSaved, scope, initialSection = 'display', o
   const [notice, setNotice] = useState(''), [error, setError] = useState(false), [confirmation, setConfirmation] = useState<null | {text: string; action: () => void}>(null), [insightRefresh, setInsightRefresh] = useState(0);
   const form = useRef<HTMLFormElement>(null), content = useRef<HTMLDivElement>(null), alive = useRef(true), working = useRef(false), allowedNavigation = useRef(false), loadAbort = useRef<AbortController | null>(null), loadSequence = useRef(0), testAbort = useRef<AbortController | null>(null);
   const pageContent = useRef<HTMLDivElement>(null);
+  const reloadTrigger = useRef<HTMLButtonElement>(null), reloadIntent = useRef<ReloadFocus | null>(null);
+  const [reloadFocusRequest, setReloadFocusRequest] = useState<ReloadFocus | null>(null);
   usePageArrival(pageContent, current);
   const pendingPreferences = useRef<UiPreferencesSnapshot | null>(null), displayRevisionRef = useRef(displayRevision); displayRevisionRef.current = displayRevision;
   const draftsRef = useRef(drafts), baselineRef = useRef(baselines); draftsRef.current = drafts; baselineRef.current = baselines;
@@ -104,6 +108,27 @@ export function Settings({onClose, onSaved, scope, initialSection = 'display', o
     finally {if (epoch === loadSequence.current) {working.current = false; loadAbort.current = null; pendingPreferences.current = null; if (alive.current) setBusy(false);}}
   }, [apiBase]);
   useEffect(() => {alive.current = true; void load(); return () => {alive.current = false; loadSequence.current++; loadAbort.current?.abort(); testAbort.current?.abort(); working.current = false;};}, [load]);
+  const reloadConfirmed = async (section: string, trigger: HTMLButtonElement) => {
+    const intent = {trigger, section, sequence: loadSequence.current + 1}; reloadIntent.current = intent;
+    await load(section);
+    if (reloadIntent.current !== intent) return;
+    if (!alive.current || currentRef.current !== section || loadSequence.current !== intent.sequence || reloadTrigger.current !== trigger) {reloadIntent.current = null; return;}
+    // A separate render also handles reads that finish before a busy frame commits.
+    setReloadFocusRequest(intent);
+  };
+  useEffect(() => {
+    const moved = (event: FocusEvent) => {if (reloadIntent.current && event.target !== reloadIntent.current.trigger) reloadIntent.current = null;};
+    const cancel = () => {reloadIntent.current = null;};
+    document.addEventListener('focusin', moved); document.addEventListener('pointerdown', cancel); window.addEventListener('blur', cancel);
+    return () => {cancel(); document.removeEventListener('focusin', moved); document.removeEventListener('pointerdown', cancel); window.removeEventListener('blur', cancel);};
+  }, []);
+  useEffect(() => {
+    if (!reloadFocusRequest || locked) return;
+    const intent = reloadFocusRequest; setReloadFocusRequest(null);
+    if (reloadIntent.current !== intent) return;
+    reloadIntent.current = null;
+    if (alive.current && current === intent.section && loadSequence.current === intent.sequence && reloadTrigger.current === intent.trigger && intent.trigger.isConnected && !intent.trigger.disabled && document.activeElement === document.body) intent.trigger.focus({preventScroll: true});
+  }, [reloadFocusRequest, locked, current]);
   useEffect(() => {
     const receive = (event: Event) => {
       const snapshot = (event as CustomEvent<UiPreferencesSnapshot>).detail;
@@ -216,8 +241,8 @@ export function Settings({onClose, onSaved, scope, initialSection = 'display', o
       <MemorySettings active={current === 'memory'} onDirty={setMemoryDirty} onBusy={setMemoryBusy}/>
       {account && <AccountPanel user={account} refresh={refreshAccount} notify={notify} active={current.startsWith('account-')} embedded section={(current.startsWith('account-') ? current.slice(8) : 'profile') as AccountSection} onDirty={setAccountDirty} onBusy={setAccountBusy} onDirtySections={setAccountDirtySections}/>}
       </>}
-    </div></div></div>{current !== 'memory' && !current.startsWith('account-') && <footer className="settings-footer"><span id="save-state" hidden={!locked && !dirtySections.includes(current) && !error} role="status" data-state={locked ? 'busy' : dirtySections.includes(current) ? 'dirty' : error ? 'error' : 'saved'}><Icon name={locked ? 'loader-circle' : dirtySections.includes(current) ? 'circle-alert' : error ? 'circle-x' : 'circle-check'}/><span>{locked ? testing ? '正在验证原生工具调用…' : '正在处理设置…' : dirtySections.includes(current) ? '当前页有未保存修改' : notice || '设置已同步'}</span></span><div><button type="button" className="text-button" disabled={locked} onClick={() => {if (['usage', 'changelog', 'about'].includes(current)) setInsightRefresh(value => value + 1); else if (dirtySections.includes(current)) setConfirmation({text: '放弃当前页未保存的修改，读取最新配置？其他分类的草稿会保留。', action: () => {void load(current);}}); else void load(current);}}>重新读取</button>{!readOnly && <button type="button" className="primary-button" disabled={!loaded || locked || !dirtySections.includes(current)} onClick={save}>保存修改</button>}</div></footer>}</section>
-    {confirmation && <div className="react-confirm-backdrop" onKeyDown={event => {if (event.key === 'Escape') setConfirmation(null); if (event.key === 'Tab') {const targets = Array.from(event.currentTarget.querySelectorAll<HTMLButtonElement>('button:not(:disabled)')); const first = targets[0], last = targets.at(-1); if (event.shiftKey && document.activeElement === first || !event.shiftKey && document.activeElement === last) {event.preventDefault(); (event.shiftKey ? last : first)?.focus();}}}}><div className="react-confirm" role="alertdialog" aria-modal="true" aria-labelledby="settings-confirm-title"><h2 id="settings-confirm-title">保留未保存的修改？</h2><p>{confirmation.text}</p><div><button autoFocus type="button" className="secondary-button" onClick={() => setConfirmation(null)}>继续编辑</button><button type="button" className="primary-button" onClick={() => {const action = confirmation.action; setConfirmation(null); action();}}>放弃修改</button></div></div></div>}
+    </div></div></div>{current !== 'memory' && !current.startsWith('account-') && <footer className="settings-footer"><span id="save-state" hidden={!locked && !dirtySections.includes(current) && !error} role="status" data-state={locked ? 'busy' : dirtySections.includes(current) ? 'dirty' : error ? 'error' : 'saved'}><Icon name={locked ? 'loader-circle' : dirtySections.includes(current) ? 'circle-alert' : error ? 'circle-x' : 'circle-check'}/><span>{locked ? testing ? '正在验证原生工具调用…' : '正在处理设置…' : dirtySections.includes(current) ? '当前页有未保存修改' : notice || '设置已同步'}</span></span><div><button ref={reloadTrigger} type="button" className="text-button" disabled={locked} onClick={event => {if (['usage', 'changelog', 'about'].includes(current)) setInsightRefresh(value => value + 1); else if (dirtySections.includes(current)) {const trigger = event.currentTarget; setConfirmation({text: '放弃当前页未保存的修改，读取最新配置？其他分类的草稿会保留。', action: () => {void reloadConfirmed(current, trigger);}});} else void load(current);}}>重新读取</button>{!readOnly && <button type="button" className="primary-button" disabled={!loaded || locked || !dirtySections.includes(current)} onClick={save}>保存修改</button>}</div></footer>}</section>
+    {confirmation && <Dialog className="react-confirm" role="alertdialog" title="保留未保存的修改？" onClose={() => setConfirmation(null)}><p>{confirmation.text}</p><div><button type="button" className="secondary-button" onClick={() => setConfirmation(null)}>继续编辑</button><button type="button" className="primary-button" onClick={() => {const action = confirmation.action; setConfirmation(null); action();}}>放弃修改</button></div></Dialog>}
   </div>;
 }
 export default Settings;
