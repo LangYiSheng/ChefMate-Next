@@ -1,7 +1,7 @@
 /* Personal account forms use the same rows and surfaces as the settings editor. */
 .account-settings-panel:is([data-account-section=profile],[data-account-section=security]){max-width:none;width:100%;padding:0;overflow:visible;height:auto;container-type:normal}
-.account-settings-panel:is([data-account-section=profile],[data-account-section=security])>*{max-width:none;margin-inline:0}
-.account-settings-panel[data-account-section=quota]{max-width:none;width:100%;padding:0;overflow:visible;height:auto;container-type:normal}.account-settings-panel[data-account-section=quota]>*{max-width:none;margin-inline:0}
+.account-settings-panel:is([data-account-section=profile],[data-account-section=security])>:not(dialog){max-width:none;margin-inline:0}
+.account-settings-panel[data-account-section=quota]{max-width:none;width:100%;padding:0;overflow:visible;height:auto;container-type:normal}.account-settings-panel[data-account-section=quota]>:not(dialog){max-width:none;margin-inline:0}
 .account-settings-panel .account-inline-toolbar{margin:0 0 20px;display:flex;justify-content:flex-end;align-items:center;gap:18px;min-height:34px;flex-wrap:wrap}
 .account-settings-panel .account-profile-overview{display:flex;flex-direction:column;align-items:center;gap:34px;padding:22px 0 0;margin:0 0 36px;border:0;border-radius:0;background:transparent;text-align:center}
 .account-settings-panel .account-profile-heading{display:flex;flex-direction:column;align-items:center;gap:18px;min-width:0;margin:0;padding:0}

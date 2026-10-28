@@ -31,7 +31,7 @@ input[role=switch]{appearance:none;width:36px;height:22px;border:0;border-radius
 input[role=switch]::after{content:'';position:absolute;top:4px;left:4px;width:14px;height:14px;border-radius:50%;background:var(--color-muted);transition:transform var(--motion-normal) var(--ease-spring),background var(--motion-fast) var(--ease-settle)}
 input[role=switch]:checked{background:var(--color-accent)}
 input[role=switch]:checked::after{background:var(--color-on-accent);transform:translateX(14px)}
-.session-dialog{width:min(440px,calc(100vw - 32px));max-height:calc(100dvh - 32px);padding:26px;border:0;border-radius:16px;background:var(--color-canvas);color:var(--color-text);box-shadow:0 18px 60px var(--color-shadow);overflow:auto}
+.session-dialog{inset:0;margin:auto;width:min(440px,calc(100vw - 32px));max-height:calc(100dvh - 32px);padding:26px;border:0;border-radius:16px;background:var(--color-canvas);color:var(--color-text);box-shadow:0 18px 60px var(--color-shadow);overflow:auto}
 .session-dialog::backdrop{background:var(--color-overlay);backdrop-filter:blur(2px)}
 .session-dialog h2{font-size:1.375rem;margin:0 0 14px}.session-dialog p{font:0.9375rem/1.85 var(--font-ui);color:var(--color-muted)}
 .session-dialog form>input{width:100%;margin:4px 0 16px}.session-dialog-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:20px}
