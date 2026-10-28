@@ -206,8 +206,10 @@ def test_reservations_are_atomic_across_concurrent_admission(accounts):
             return False
     with ThreadPoolExecutor(max_workers=4) as pool:
         results = list(pool.map(admit, range(4)))
-    assert sum(results) == 1
-    assert accounts.get_user(user["id"])["quota"]["reserved_tokens"] == 60
+    assert sum(results) == 2
+    quota = accounts.get_user(user["id"])["quota"]
+    assert quota["reserved_tokens"] == 120
+    assert quota["reserved_cost_micros"] == 100 and quota["balance_micros"] == 0
 
 
 def test_resize_excludes_its_previous_bound_but_includes_other_turns(accounts):
@@ -236,8 +238,10 @@ def test_concurrent_reservation_growth_cannot_overbook(accounts):
             return False
     with ThreadPoolExecutor(max_workers=2) as pool:
         results = list(pool.map(resize, ("first", "second")))
-    assert sum(results) == 1
-    assert accounts.get_user(user["id"])["quota"]["reserved_tokens"] == 61
+    assert sum(results) == 2
+    quota = accounts.get_user(user["id"])["quota"]
+    assert quota["reserved_tokens"] == 120
+    assert quota["reserved_cost_micros"] == 100 and quota["balance_micros"] == 0
 
 
 def test_observed_provider_overrun_is_recorded_but_cannot_admit_the_next_call(accounts):
@@ -582,11 +586,12 @@ def test_money_balance_counts_known_estimated_and_reserved_without_double_chargi
     assert quota["used_cost_micros"] == 15 and quota["estimated_cost_micros"] == 200
     assert quota["balance_micros"] == quota["remaining_cost_micros"] == 785
     assert len(accounts.get_usage(user["id"])) == 2
-    with pytest.raises(QuotaExceeded):
-        accounts.reserve_usage(user["id"], "too-much", cost_micros=786)
-    accounts.reserve_usage(user["id"], "exact-balance", cost_micros=785)
+    accounts.reserve_usage(user["id"], "last-positive", cost_micros=786)
     assert accounts.get_user(user["id"])["quota"]["balance_micros"] == 0
-    accounts.release_usage(user["id"], "exact-balance")
+    assert accounts.get_user(user["id"])["quota"]["reserved_cost_micros"] == 785
+    with pytest.raises(QuotaExceeded):
+        accounts.reserve_usage(user["id"], "no-balance", cost_micros=1)
+    accounts.release_usage(user["id"], "last-positive")
     assert accounts.get_user(user["id"])["quota"]["balance_micros"] == 785
 
 

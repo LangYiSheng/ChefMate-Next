@@ -46,7 +46,27 @@ def test_reported_round_releases_unused_headroom_for_followup_tool_round(tmp_pat
     assert quota["used_tokens"] == 70 and quota["reserved_tokens"] == 0
 
 
-def test_missing_output_does_not_release_unknown_bound_or_allow_next_round(tmp_path):
+def test_small_positive_balance_allows_last_tool_round_until_actual_zero(tmp_path):
+    accounts, user, meter = policy(tmp_path, limit=2)
+    turn = ActiveTurn("tiny-tail", "session", "request", "hello")
+    meter.begin(turn)
+    meter.before_model(turn, {"round": 1, "utf8_bytes": 20})
+    assert accounts.get_user(user["id"])["quota"]["reserved_cost_micros"] == 2
+    first = observed(input_tokens=1, output_tokens=0)
+    meter.observe(turn, first)
+    assert accounts.get_user(user["id"])["quota"]["balance_micros"] == 1
+    meter.before_model(turn, {"round": 2, "utf8_bytes": 20})
+    combined = {"calls": first["calls"] + observed(2, 1, 0)["calls"], "attempted_calls": 2}
+    meter.observe(turn, combined)
+    assert accounts.get_user(user["id"])["quota"]["balance_micros"] == 0
+    with pytest.raises(_AgentFailure, match="额度"):
+        meter.before_model(turn, {"round": 3, "utf8_bytes": 20})
+    meter.finish(turn, combined, model="fixture", status="completed")
+    quota = accounts.get_user(user["id"])["quota"]
+    assert quota["used_cost_micros"] == 2 and quota["reserved_cost_micros"] == 0
+
+
+def test_missing_output_keeps_unknown_bound_and_last_positive_headroom_is_usable(tmp_path):
     accounts, user, meter = policy(tmp_path)
     turn = ActiveTurn("unknown-turn", "session", "request", "hello")
     meter.begin(turn)
@@ -54,11 +74,14 @@ def test_missing_output_does_not_release_unknown_bound_or_allow_next_round(tmp_p
     usage = {"calls": [{"round": 1, "input_tokens": 25}], "attempted_calls": 1}
     meter.observe(turn, usage)
     assert accounts.get_user(user["id"])["quota"]["reserved_tokens"] == 2196
+    meter.before_model(turn, {"round": 2, "utf8_bytes": 20})
+    quota = accounts.get_user(user["id"])["quota"]
+    assert quota["reserved_cost_micros"] == 2700 and quota["balance_micros"] == 0
     with pytest.raises(_AgentFailure, match="额度"):
-        meter.before_model(turn, {"round": 2, "utf8_bytes": 20})
+        meter.before_model(turn, {"round": 3, "utf8_bytes": 20})
     meter.finish(turn, usage, model="fixture", status="error")
     quota = accounts.get_user(user["id"])["quota"]
-    assert quota["used_tokens"] == 0 and quota["estimated_tokens"] == 2196
+    assert quota["used_tokens"] == 0 and quota["estimated_tokens"] == 4392
 
 
 def test_parallel_turn_still_competes_with_released_headroom(tmp_path):
@@ -70,9 +93,12 @@ def test_parallel_turn_still_competes_with_released_headroom(tmp_path):
     meter.observe(first, observed())
     meter.begin(second)
     meter.before_model(second, {"round": 1, "utf8_bytes": 20})
+    meter.before_model(first, {"round": 2, "utf8_bytes": 20})
     with pytest.raises(_AgentFailure, match="额度"):
-        meter.before_model(first, {"round": 2, "utf8_bytes": 20})
-    assert accounts.get_user(user["id"])["quota"]["reserved_tokens"] == 2226
+        meter.before_model(second, {"round": 2, "utf8_bytes": 20})
+    quota = accounts.get_user(user["id"])["quota"]
+    assert quota["reserved_tokens"] == 4422
+    assert quota["reserved_cost_micros"] == 2700 and quota["balance_micros"] == 0
     meter.abort(first)
     meter.abort(second)
 

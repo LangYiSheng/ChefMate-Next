@@ -267,9 +267,13 @@ class EntitlementsLedger:
         current = db.execute("SELECT COALESCE(SUM(amount_micros),0) FROM account_budget_allocations "
             "WHERE user_id=? AND turn_id=? AND state='reserved'", (row["id"], turn_id)).fetchone()[0]
         funds = self.snapshot(db, row)
-        if not observed and funds["available_micros"] is not None and (amount - current > funds["available_micros"] or
-                current == 0 and funds["available_micros"] == 0):
-            raise _errors()[1]()
+        available = funds["available_micros"]
+        # Estimates must not strand a small positive balance. Admit one final
+        # operation and collateralize only the money that remains. Actual costs
+        # still settle in full, including any final-operation overrun. Other
+        # concurrent operations cannot reuse this collateral.
+        if not observed and available == 0 and (amount > current or current == 0):
+            raise _errors()[1].from_funds(funds)
         if portions is None:
             # Legacy callers represent one provider operation. Runtime callers
             # supply per-model-round portions so time-bound refunds are exact.
@@ -280,15 +284,30 @@ class EntitlementsLedger:
         old = {item[0] for item in db.execute("SELECT portion_id FROM account_budget_portions WHERE user_id=? AND turn_id=?",
                                            (row["id"], turn_id)).fetchall()}
         existing_by_portion = {}
+        allocations_by_portion = {}
         for portion in dict.fromkeys([*portions, *sorted(old)]):
-            desired = portions.get(portion, 0)
             allocations = db.execute("SELECT * FROM account_budget_allocations WHERE user_id=? AND turn_id=? "
                 "AND portion_id=? AND state='reserved' ORDER BY ordinal", (row["id"], turn_id, portion)).fetchall()
             existing = sum(item["amount_micros"] for item in allocations)
             existing_by_portion[portion] = existing
+            allocations_by_portion[portion] = allocations
+        if not observed and available is not None:
+            # Retain each existing round before distributing the remaining
+            # collateral to new/growing rounds. Reordered dictionaries must not
+            # move already admitted costs to a different membership window.
+            targets = {portion: min(existing, portions.get(portion, 0))
+                       for portion, existing in existing_by_portion.items()}
+            headroom = max(0, current + available - sum(targets.values()))
+            for portion, desired in portions.items():
+                added = min(headroom, desired - targets[portion])
+                targets[portion] += added
+                headroom -= added
+            portions = targets
+        for portion, existing in existing_by_portion.items():
+            desired = portions.get(portion, 0)
             if desired < existing:
                 release = existing - desired
-                for item in reversed(allocations):
+                for item in reversed(allocations_by_portion[portion]):
                     value = min(release, item["amount_micros"])
                     db.execute("UPDATE account_budget_allocations SET amount_micros=amount_micros-? WHERE id=?", (value, item["id"]))
                     release -= value

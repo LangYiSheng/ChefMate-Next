@@ -1,6 +1,7 @@
 import {useCallback, useEffect, useRef, useState, type ReactNode} from 'react';
 import {api, bindHttpAccount, HttpError} from '../../runtime/http';
 import {chefStore} from '../../runtime/store';
+import {QUOTA_CHANGED, QUOTA_STORAGE_KEY} from '../../runtime/quota-events';
 import {workspaceStore} from '../workspace/store';
 import {applyAppearance} from '../settings/appearance';
 import {resetUiPreferenceCache} from '../preferences/client';
@@ -78,20 +79,51 @@ export function AccountGate({children}: Props) {
   }, [accept, refresh]);
   useEffect(() => {
     alive.current = true; void refresh().catch(() => undefined);
+    let quotaRetry: ReturnType<typeof setTimeout> | undefined, quotaVersion = 0;
+    const refreshQuota = () => {
+      const owner = userRef.current?.id, version = ++quotaVersion;
+      if (!owner) return;
+      clearTimeout(quotaRetry);
+      const attempt = (remaining: number) => {
+        void refresh().catch(reason => {
+          if (remaining && (reason as Error).name !== 'AbortError' && alive.current && quotaVersion === version && userRef.current?.id === owner)
+            quotaRetry = setTimeout(() => attempt(remaining - 1), 1500);
+        });
+      };
+      attempt(2);
+    };
     const invalid = () => {
       if (!userRef.current || verifyingSession.current) return;
       verifyingSession.current = true; epoch.current++; setExpired(true); setSession(null); setChecking(true);
       void refresh().catch(() => undefined).finally(() => {verifyingSession.current = false;});
     };
     const storage = (event: StorageEvent) => {
+      if (event.key === QUOTA_STORAGE_KEY) {
+        try {if (JSON.parse(event.newValue || '{}').accountId === userRef.current?.id) refreshQuota();} catch { /* Ignore malformed notifications. */ }
+        return;
+      }
       if (event.key !== ACCOUNT_KEY) return;
       epoch.current++; setSession(null); setChecking(true); userRef.current = null; chefStore.dispose();
       void refresh().catch(() => undefined);
     };
     const visible = () => {if (document.visibilityState !== 'hidden') void refresh().catch(() => undefined);};
-    window.addEventListener('chefmate:session-expired', invalid); window.addEventListener('storage', storage); window.addEventListener('focus', visible);
-    return () => {alive.current = false; epoch.current++; window.removeEventListener('chefmate:session-expired', invalid); window.removeEventListener('storage', storage); window.removeEventListener('focus', visible);};
+    const quotaChanged = (event: Event) => {
+      const owner = (event as CustomEvent<{accountId?: string}>).detail?.accountId;
+      if (userRef.current && (!owner || owner === userRef.current.id)) refreshQuota();
+    };
+    window.addEventListener('chefmate:session-expired', invalid); window.addEventListener('storage', storage); window.addEventListener('focus', visible); window.addEventListener(QUOTA_CHANGED, quotaChanged); document.addEventListener('visibilitychange', visible);
+    return () => {alive.current = false; epoch.current++; quotaVersion++; clearTimeout(quotaRetry); window.removeEventListener('chefmate:session-expired', invalid); window.removeEventListener('storage', storage); window.removeEventListener('focus', visible); window.removeEventListener(QUOTA_CHANGED, quotaChanged); document.removeEventListener('visibilitychange', visible);};
   }, [accept, refresh]);
+  useEffect(() => {
+    if (!session?.user) return;
+    const boundaries = session.user.quota.funds?.memberships.filter(member => member.status === 'active')
+      .flatMap(member => [member.expires_at, member.week.resets_at, member.five_hour.resets_at])
+      .filter((value): value is string => Boolean(value)).map(value => new Date(value).getTime()).filter(value => value > Date.now()) || [];
+    const next = Math.min(Infinity, ...boundaries);
+    if (!Number.isFinite(next)) return;
+    const timer = setTimeout(() => {void refresh().catch(() => undefined);}, Math.min(2_147_000_000, Math.max(0, next - Date.now()) + 1000));
+    return () => clearTimeout(timer);
+  }, [session?.user, refresh]);
   if (checking || switching) return <main className="account-loading" aria-label="正在打开 ChefMate"><Brand className="account-brand-mark"/><p role="status">{switching ? '正在整理你的厨房…' : '正在打开小锅搭子…'}</p></main>;
   if (error && !session) return <main className="account-loading"><Brand className="account-brand-mark"/><h1>厨房暂时没有连上</h1><p role="alert">{error}</p><button className="primary-button" onClick={() => {setChecking(true); void refresh().catch(() => undefined);}}>重新连接</button></main>;
   if (!session?.user) return <AuthScreen registrationEnabled={session?.registration_enabled !== false} expired={expired} onAccepted={async user => {setExpired(false); await accept({user, registration_enabled: session?.registration_enabled});}}/>;

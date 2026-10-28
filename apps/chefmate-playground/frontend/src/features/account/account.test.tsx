@@ -218,11 +218,11 @@ describe('Account and administrator controls', () => {
     fireEvent.change(screen.getByLabelText('确认新密码'), {target: {value: 'next-test-password'}}); fireEvent.submit(screen.getByRole('form', {name: '更新密码'})); await screen.findByText('密码已更新。'); expect(request).toHaveBeenCalledWith('/api/auth/password', {method: 'PATCH', body: JSON.stringify({current_password: 'current-test-password', new_password: 'next-test-password'})});
     for (const label of ['当前密码', '新密码', '确认新密码']) expect(screen.getByLabelText(label)).toHaveValue('');
   });
-  it('deducts reported, unreported and reserved money from the remaining allowance', () => {
+  it('updates personal allowance only from confirmed usage, keeping reservations provisional', () => {
     const account = user(); account.quota = {...account.quota, cost_limit_micros: 10_000_000, used_cost_micros: 1_000_000, reserved_cost_micros: 1_000_000, estimated_tokens: 2000, estimated_cost_micros: 2_000_000, quota_used_cost_micros: 3_000_000};
     render(<AccountPanel section="quota" user={account} refresh={vi.fn()} logout={vi.fn()} notify={vi.fn()}/>);
-    expect(screen.getByRole('heading', {name: '60%'})).toBeVisible(); expect(screen.getByRole('progressbar', {name: '基础额度可用比例'})).toHaveAttribute('value', '60'); expect(screen.queryByText(/¥/)).not.toBeInTheDocument();
-    expect(screen.queryByRole('progressbar', {name: /Token/})).not.toBeInTheDocument(); expect(screen.getByText(/待核对用量暂计入使用/)).toBeInTheDocument();
+    expect(screen.getByRole('heading', {name: '90%'})).toBeVisible(); expect(screen.getByRole('progressbar', {name: '基础额度可用比例'})).toHaveAttribute('aria-valuetext', '90%可用'); expect(screen.queryByText(/¥/)).not.toBeInTheDocument();
+    expect(screen.queryByRole('progressbar', {name: /Token/})).not.toBeInTheDocument(); expect(screen.getByText(/预占额度不会提前减少/)).toBeInTheDocument();
   });
   it('edits user permissions separately from the dedicated monetary entitlement editor', async () => {
     const maximumQuotaUser = user({quota: {...user().quota, cost_limit_micros: 1_000_000_000_000_000}});
@@ -246,7 +246,7 @@ describe('Account and administrator controls', () => {
     const view = render(<AccountPanel section="quota" user={account} refresh={vi.fn()} logout={vi.fn()} notify={vi.fn()}/>);
     expect(screen.getByRole('heading', {name: '0%'})).toBeVisible();
     view.rerender(<AccountPanel section="quota" user={{...account, quota: {...account.quota, cost_limit_micros: null}}} refresh={vi.fn()} logout={vi.fn()} notify={vi.fn()}/>);
-    expect(screen.getByRole('heading', {name: '∞'})).toBeVisible(); expect(screen.queryByRole('progressbar')).not.toBeInTheDocument(); expect(screen.queryByText(/Token 额度|¥/)).not.toBeInTheDocument();
+    expect(screen.getByRole('heading', {name: '不限'})).toBeVisible(); expect(screen.queryByRole('progressbar')).not.toBeInTheDocument(); expect(screen.queryByText(/Token 额度|¥/)).not.toBeInTheDocument();
   });
   it('keeps provider observations and unreported-usage estimates visible as separate quantities', async () => {
     const pricing = {revision: 1, currency: 'CNY', input_per_million: '1', output_per_million: '2', cached_input_per_million: '0.1'}, summary = {turns: 2, total_tokens: 333, input_tokens: 300, output_tokens: 33, cost_micros: 1000, incomplete_turns: 1, estimated_tokens: 2000, estimated_cost_micros: 3000};

@@ -1,0 +1,42 @@
+import {act, render, screen, waitFor} from '@testing-library/react';
+import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest';
+import {AccountGate} from './AccountGate';
+import {QUOTA_CHANGED, QUOTA_STORAGE_KEY} from '../../runtime/quota-events';
+import type {AccountUser} from './types';
+const {request} = vi.hoisted(() => ({request:vi.fn()}));
+vi.mock('../../runtime/http',async () => ({...await vi.importActual('../../runtime/http'),api:request}));
+vi.mock('../../runtime/store',() => ({chefStore:{resetForAccount:vi.fn(),dispose:vi.fn()}}));
+vi.mock('../workspace/store',() => ({workspaceStore:{resetForAccount:vi.fn()}}));
+const user: AccountUser = {id:'quota-owner',username:'cook',display_name:'小厨',role:'user',developer_allowed:false,disabled:false,onboarding_completed:true,created_at:'',profile:{},quota:{cost_limit_micros:5000000,used_cost_micros:0,reserved_cost_micros:0,used_tokens:0,reserved_tokens:0}};
+beforeEach(() => {localStorage.clear(); request.mockReset();});
+afterEach(() => {vi.useRealTimers();});
+describe('settled quota synchronization', () => {
+  it('refreshes terminal-turn and same-account cross-tab updates without remounting the workspace', async () => {
+    let used = 0;
+    request.mockImplementation(() => Promise.resolve({user:{...user,quota:{...user.quota,used_cost_micros:used}}}));
+    render(<AccountGate>{account => <output aria-label="已确认用量">{account.quota.used_cost_micros}</output>}</AccountGate>);
+    await screen.findByLabelText('已确认用量');
+    used = 120;
+    act(() => window.dispatchEvent(new CustomEvent(QUOTA_CHANGED,{detail:{accountId:user.id}})));
+    await waitFor(() => expect(screen.getByLabelText('已确认用量')).toHaveTextContent('120'));
+    const reads = request.mock.calls.length;
+    act(() => window.dispatchEvent(new StorageEvent('storage',{key:QUOTA_STORAGE_KEY,newValue:JSON.stringify({accountId:'someone-else'})})));
+    expect(request).toHaveBeenCalledTimes(reads);
+    used = 140;
+    act(() => window.dispatchEvent(new StorageEvent('storage',{key:QUOTA_STORAGE_KEY,newValue:JSON.stringify({accountId:user.id})})));
+    await waitFor(() => expect(screen.getByLabelText('已确认用量')).toHaveTextContent('140'));
+    used = 160;
+    act(() => document.dispatchEvent(new Event('visibilitychange')));
+    await waitFor(() => expect(screen.getByLabelText('已确认用量')).toHaveTextContent('160'));
+  });
+  it('retries a transient settlement-refresh failure without discarding the signed-in workspace', async () => {
+    request.mockResolvedValue({user});
+    render(<AccountGate>{account => <output aria-label="已确认用量">{account.quota.used_cost_micros}</output>}</AccountGate>);
+    await screen.findByLabelText('已确认用量'); vi.useFakeTimers();
+    request.mockRejectedValueOnce(new Error('暂时断线')).mockResolvedValue({user:{...user,quota:{...user.quota,used_cost_micros:200}}});
+    await act(async () => window.dispatchEvent(new CustomEvent(QUOTA_CHANGED,{detail:{accountId:user.id}})));
+    expect(screen.getByLabelText('已确认用量')).toHaveTextContent('0');
+    await act(async () => vi.advanceTimersByTimeAsync(1500));
+    expect(screen.getByLabelText('已确认用量')).toHaveTextContent('200');
+  });
+});

@@ -42,6 +42,12 @@ class QuotaExceeded(AccountError):
     def __init__(self, detail="可用额度不足，请联系管理员调整额度。"):
         super().__init__(402, detail)
 
+    @classmethod
+    def from_funds(cls, funds):
+        held = funds["permanent"]["reserved_micros"] + sum(
+            member["reserved_micros"] for member in funds["memberships"])
+        return cls("剩余额度正在用于当前对话，请等待结算后再试。") if held else cls()
+
 
 def _timestamp(now=None):
     instant = now or datetime.now(timezone.utc)
@@ -111,8 +117,9 @@ def _price(value):
 class AccountsRepository:
     """Database transactions serialize identity changes and quota admission.
 
-    ``reserve_usage`` accepts the caller's upper bound for an entire turn. It
-    atomically refuses admission beyond the monetary budget. ``settle_usage`` replaces
+    ``reserve_usage`` accepts the caller's estimate for an entire turn. Positive
+    balances admit an operation even when that estimate exceeds the remaining
+    money; the ledger collateralizes only what remains. ``settle_usage`` replaces
     the reservation with observed provider tokens and its admission-time prices.
     Unknown usage is explicitly retained; it never becomes a measured zero.
     """
@@ -245,10 +252,12 @@ class AccountsRepository:
                             (row["id"],)).fetchone()
         # Expiry ends permission to make further calls, but cannot erase an
         # admitted provider cost. Recovery converts these bounds into estimates.
-        pending = db.execute("SELECT COALESCE(SUM(tokens),0) tokens,COALESCE(SUM(cost_micros),0) cost "
+        pending = db.execute("SELECT COALESCE(SUM(tokens),0) tokens "
                              "FROM account_reservations WHERE user_id=?", (row["id"],)).fetchone()
         funds = self.entitlements.snapshot(db, row)
         balance = funds["available_micros"]
+        collateral = funds["permanent"]["reserved_micros"] + sum(
+            member["reserved_micros"] for member in funds["memberships"])
         return {"token_limit": None, "cost_limit_micros": funds["permanent"]["total_micros"], "currency": "CNY",
                 "funds": funds,
                 "balance_micros": balance, "remaining_cost_micros": balance,
@@ -257,7 +266,7 @@ class AccountsRepository:
                 "estimated_tokens": totals["estimated_tokens"], "estimated_cost_micros": totals["estimated_cost"],
                 "quota_used_tokens": totals["tokens"] + totals["estimated_tokens"],
                 "quota_used_cost_micros": totals["cost"] + totals["estimated_cost"],
-                "reserved_tokens": pending["tokens"], "reserved_cost_micros": pending["cost"],
+                "reserved_tokens": pending["tokens"], "reserved_cost_micros": collateral,
                 "incomplete_turns": totals["incomplete"]}
 
     def _public(self, db, row):
@@ -597,7 +606,7 @@ class AccountsRepository:
         return current
 
     def reserve_usage(self, user_id, reservation_id, *, tokens=1, cost_micros=0, ttl_seconds=900, pricing_override=None):
-        """Reserve an explicit upper bound, retaining prices until settlement."""
+        """Retain an estimate/prices and collateralize the available balance."""
         if not isinstance(reservation_id, str) or not 1 <= len(reservation_id) <= 200:
             raise AccountError(422, "用量请求标识无效。")
         if type(tokens) is not int or tokens < 1 or type(cost_micros) is not int or cost_micros < 0:
@@ -624,7 +633,7 @@ class AccountsRepository:
             if quota["cost_limit_micros"] is not None and not pricing.get("configured", False):
                 raise AccountError(503, "管理员尚未配置模型计价，请联系管理员。")
             if quota["balance_micros"] is not None and quota["balance_micros"] == 0:
-                raise QuotaExceeded()
+                raise QuotaExceeded.from_funds(quota["funds"])
             self.entitlements.resize(db, row, reservation_id, cost_micros)
             expires = _timestamp(instant + timedelta(seconds=max(60, min(3600, ttl_seconds))))
             db.execute("INSERT INTO account_reservations VALUES(?,?,?,?,?,?,?)", (
@@ -635,8 +644,9 @@ class AccountsRepository:
     def resize_usage(self, user_id, reservation_id, *, tokens, cost_micros, observed=False, cost_portions=None):
         """Atomically replace this turn's reservation before a model call.
 
-        The bound is cumulative for the entire turn. Its old reservation is
-        excluded from the comparison, while other admitted turns remain counted.
+        The estimate is cumulative for the entire turn. Its old collateral is
+        reusable, while other admitted turns remain counted. A final operation
+        may exceed its collateral; its real cost is never silently discarded.
         ``observed=True`` records already incurred provider usage even beyond a
         cap; it never authorizes another model call and has no HTTP endpoint.
         """

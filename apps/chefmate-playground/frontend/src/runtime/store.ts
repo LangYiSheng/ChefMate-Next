@@ -1,5 +1,6 @@
 import { accountHeaders, HttpError, normalizeSession, normalizeToolCall, notifyAccountBoundary, readEvents, requestJson, safeText } from './http';
 import { BrowserAttachments, imageMetadata, prepareImage, releaseImages } from './attachments';
+import {notifyQuotaChanged} from './quota-events';
 import type { ApiData, AttachmentPersistence, Continuation, ImageDraft, Message, RunState, RuntimeState, SendOptions, Session, StorageLike, StoreOptions, WorkspaceAdapter } from './types';
 
 const DRAFTS_KEY = 'chefmate:react-drafts';
@@ -22,6 +23,7 @@ interface ActiveRun extends RunState {
   failed: boolean;
   httpRejected: boolean;
   accepted: boolean;
+  quotaNotified?: boolean;
   terminalStatus?: string;
   retryable?: boolean;
 }
@@ -285,7 +287,9 @@ export class ChefStore {
       let session = normalizeSession(await this.request(url(id)));
       if (!this.valid(lifecycle) || this.sessionEpoch.get(id) !== epoch || this.active.has(id) || this.deleted.has(id)) return;
       if ((this.metadata.get(id)?.version || 0) !== metadataVersion) session = { ...session, ...this.metadata.get(id)!.values };
+      const wasRunning = Boolean(this.state.cache[id]?.running || this.state.runs[id]?.recovering || this.state.sessions.some(item => item.id === id && item.running));
       this.setCache(id, session); this.adapter?.setRunning?.(id, Boolean(session.running));
+      if (wasRunning && !session.running) notifyQuotaChanged();
       this.reconcileSubmission(id, session);
       if (!session.running && this.state.runs[id]?.recovering) this.emit({ runs: omit(this.state.runs, id) });
       this.reconcileContinuation(id, session);
@@ -485,6 +489,11 @@ export class ChefStore {
     });
     if (event.type === 'ui_action') this.receiveDisplayActions(run.sessionId, [event.action]);
     if (event.type === 'result') this.receiveDisplayActions(run.sessionId, (event.result || event).actions);
+    // The server emits done after monetary settlement. Do not wait for the
+    // separate canonical-session read, which can be delayed by the connection.
+    if (event.type === 'done' && !run.quotaNotified && this.valid(run.lifecycle) && this.active.get(run.sessionId) === run) {
+      run.quotaNotified = true; notifyQuotaChanged();
+    }
   }
 
   sendMessage = async (text?: string, options: SendOptions = {}): Promise<{ error?: string; accepted?: boolean }> => {
@@ -623,6 +632,7 @@ export class ChefStore {
     this.active.delete(id);
     this.emit({ runs: omit(this.state.runs, id) });
     this.adapter?.setRunning?.(id, recovery);
+    if (!recovery && !run.quotaNotified) notifyQuotaChanged();
     void Promise.resolve(this.adapter?.refresh?.(id)).catch(() => undefined);
     if (recovery) this.schedulePoll(id);
     void this.loadSessions().catch(() => undefined);

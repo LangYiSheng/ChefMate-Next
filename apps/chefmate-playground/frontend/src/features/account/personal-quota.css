@@ -2,5 +2,3 @@
 @media(min-width:1700px){.pquota-hero{padding:36px 40px}}
 @media(max-width:700px){.pquota-hero{gap:24px;padding:24px}.pquota-ring{width:138px;height:138px}.pquota-hero-copy h3,.react-settings .pquota-hero-copy h3{font-size:1.125rem}.pquota-window-grid{grid-template-columns:1fr;gap:22px}.pquota-membership,.pquota-permanent{padding:20px}}
 @media(max-width:470px){.pquota-hero{align-items:start;flex-direction:column;gap:22px}.pquota-ring{width:140px;height:140px}.pquota-section-title>span{font-size:.6875rem}.pquota-membership>header{gap:10px}.pquota-membership .ui-badge{font-size:.625rem}}
-@media(prefers-reduced-motion:no-preference){.pquota-ring{animation:quota-settle var(--motion-slow) var(--ease-settle) both}.pquota-section{animation:surface-arrive var(--motion-slow) var(--ease-settle) both}.pquota-section:nth-of-type(3){animation-delay:45ms}}
-@keyframes quota-settle{from{opacity:0;transform:scale(.97)}to{opacity:1;transform:scale(1)}}

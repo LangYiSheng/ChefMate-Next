@@ -6,10 +6,17 @@ import type {AccountUser} from './types';
 import {QuotaOverview} from './QuotaOverview';
 import {Field} from '../settings/SettingsFields';
 import {AccountLeavePrompt, useAccountLeaveGuard} from './leave-guard';
+import {ProfileActivity} from './ProfileActivity';
 import './personal-account.css';
 
 export type AccountSection = 'profile' | 'quota' | 'security';
 const noChange = () => {};
+export function daysInKitchen(createdAt: string, today = new Date()) {
+  const joined = new Date(createdAt);
+  if (!Number.isFinite(joined.getTime())) return null;
+  const day = (date: Date) => Date.UTC(date.getFullYear(), date.getMonth(), date.getDate());
+  return Math.max(1, Math.floor((day(today) - day(joined)) / 86400000) + 1);
+}
 export function AccountPanel({user, refresh, notify, section = 'profile', active = true, embedded = false, onDirty = noChange, onBusy = noChange, onDirtySections = noChange}: {
   user: AccountUser; refresh: () => Promise<void>; notify: (message: string) => void; logout?: () => Promise<void>;
   section?: AccountSection; active?: boolean; embedded?: boolean; onDirty?: (dirty: boolean) => void; onBusy?: (busy: boolean) => void; onDirtySections?: (sections: Record<AccountSection, boolean>) => void;
@@ -40,13 +47,14 @@ export function AccountPanel({user, refresh, notify, section = 'profile', active
   }
   const readLatest = () => {setName(user.display_name); setBaseline(user.display_name); setReload(false); void run('refresh', refresh, '账号信息已更新。');};
   const heading = {profile: ['个人资料', '让小锅搭子用你喜欢的方式称呼你。'], quota: ['我的额度', '查看可用比例与会员窗口恢复状态。'], security: ['账号安全', '管理登录密码，保护自己的厨房资料。']}[section];
+  const kitchenDays = daysInKitchen(user.created_at);
   return <section className={'account-page account-settings-panel' + (embedded ? ' is-embedded' : '')} data-account-section={section} aria-label={heading[0]} hidden={!active}>
     {!embedded && <header className="account-page-heading"><div><h1>{heading[0]}</h1><p>{heading[1]}</p></div></header>}
     <div className="account-inline-toolbar"><button type="button" className="text-button" disabled={Boolean(busy)} onClick={() => profileDirty ? setReload(true) : readLatest()}><Icon name="refresh-cw"/>读取最新</button></div>
     {error && <p className="error-box" role="alert">{error}</p>}{message && <p className="account-success" role="status">{message}</p>}
     {section === 'profile' && <>
-      <section className="account-profile-overview" aria-label="账号身份"><div className="account-profile-heading"><span className="account-avatar" aria-hidden="true">{(user.display_name || user.username).slice(0, 1).toLocaleUpperCase()}</span><div><h2>{user.display_name || user.username}</h2><p><span className="ui-badge">{user.role === 'admin' ? '管理员' : '厨房伙伴'}</span></p></div></div>
-        <dl className="account-identity-details"><div><dt>登录账号</dt><dd>{user.username}</dd></div><div><dt>加入厨房</dt><dd>{user.created_at ? new Date(user.created_at).toLocaleDateString('zh-CN') : '尚未记录'}</dd></div></dl>
+      <section className="account-profile-overview" aria-label="账号身份"><div className="account-profile-heading"><span className="account-avatar" aria-hidden="true">{(user.display_name || user.username).slice(0, 1).toLocaleUpperCase()}</span><div><h2>{user.display_name || user.username}</h2><p className="account-profile-handle">@{user.username}</p></div></div>
+        <dl className="account-identity-details"><div><dt>厨房身份</dt><dd>{user.role === 'admin' ? '管理员' : '厨房伙伴'}</dd></div><div><dt>加入厨房</dt><dd>{kitchenDays == null ? '尚未记录' : <><strong>{kitchenDays.toLocaleString('zh-CN')}</strong> 天</>}</dd></div></dl>
       </section>
       <form className="account-edit-form account-identity-form" aria-label="个人资料" onSubmit={event => {event.preventDefault(); void run('profile', async () => {
         const result = await api<{user: AccountUser}>('/api/auth/profile', {method: 'PATCH', body: JSON.stringify({display_name: name.trim()})});
@@ -56,6 +64,7 @@ export function AccountPanel({user, refresh, notify, section = 'profile', active
         <Field label="称呼" value={name} required maxLength={40} onChange={setName} disabled={Boolean(busy)} hint="这个称呼会作为 ChefMate 对你的称呼告诉模型，不受个人偏好开关影响。"/>
         <div className="account-edit-actions"><button className="primary-button" type="submit" disabled={Boolean(busy) || !name.trim() || !profileDirty}>{busy === 'profile' ? '正在保存…' : '保存资料'}</button></div>
       </form>
+      <ProfileActivity owner={user.id} active={active}/>
     </>}
     {section === 'quota' && <QuotaOverview quota={user.quota} onRefresh={refresh}/>}
     {section === 'security' && <form className="account-edit-form account-security-form" aria-label="更新密码" onSubmit={event => {event.preventDefault(); if (password !== confirm) {setError('两次新密码不一致，请重新核对。'); return;} void run('password', async () => {

@@ -162,8 +162,12 @@ def test_concurrent_reservation_cannot_overbook_shared_window(billing):
         except QuotaExceeded:
             return False
     with ThreadPoolExecutor(max_workers=2) as pool:
-        assert sum(pool.map(attempt, ("first", "second"))) == 1
-    assert funds(billing)["available_micros"] == 20
+        assert sum(pool.map(attempt, ("first", "second"))) == 2
+    value = funds(billing)
+    assert value["available_micros"] == 0
+    assert value["memberships"][0]["reserved_micros"] == 100
+    with pytest.raises(QuotaExceeded):
+        store.reserve_usage(user["id"], "third", cost_micros=1)
     store.release_usage(user["id"], "first")
     store.release_usage(user["id"], "second")
     assert funds(billing)["available_micros"] == 100
@@ -276,8 +280,90 @@ def test_actual_overrun_becomes_debt_and_new_credit_covers_it(billing):
     assert funds(billing)["permanent"]["overdrawn_micros"] == 10
     credit(billing, 15)
     assert funds(billing)["available_micros"] == 5
+    store.reserve_usage(user["id"], "last-positive", cost_micros=6)
+    assert funds(billing)["available_micros"] == 0
+    assert funds(billing)["permanent"]["reserved_micros"] == 5
     with pytest.raises(QuotaExceeded):
-        store.reserve_usage(user["id"], "too-much", cost_micros=6)
+        store.reserve_usage(user["id"], "nothing-left", cost_micros=1)
+
+
+def test_one_micro_balance_can_admit_a_large_estimate_then_settles_exact_cost(billing):
+    store, _, user, _ = billing
+    base(billing, 1)
+    store.reserve_usage(user["id"], "last-micro", tokens=100, cost_micros=100)
+    quota = store.get_user(user["id"])["quota"]
+    assert quota["reserved_cost_micros"] == 1 and quota["funds"]["permanent"]["used_micros"] == 0
+    assert store.reservation_pricing(user["id"], "last-micro")["configured"]
+    with pytest.raises(QuotaExceeded, match="等待结算"):
+        store.reserve_usage(user["id"], "concurrent", cost_micros=1)
+    usage = {"calls": [{"input_tokens": 2, "output_tokens": 0, "total_tokens": 2}]}
+    store.settle_usage(user["id"], "last-micro", usage)
+    store.settle_usage(user["id"], "last-micro", usage)
+    value = funds(billing)
+    assert value["permanent"]["used_micros"] == 2
+    assert value["permanent"]["overdrawn_micros"] == 1 and value["available_micros"] == 0
+    with pytest.raises(QuotaExceeded, match="联系管理员"):
+        store.reserve_usage(user["id"], "after-zero", cost_micros=1)
+
+
+def test_zero_real_cost_releases_the_last_balance_without_marking_it_used(billing):
+    store, _, user, _ = billing
+    base(billing, 1)
+    store.reserve_usage(user["id"], "free-response", cost_micros=100)
+    store.settle_usage(user["id"], "free-response", {"calls": [{"input_tokens": 0, "output_tokens": 0, "total_tokens": 0}]})
+    value = funds(billing)
+    assert value["permanent"]["used_micros"] == 0 and value["available_micros"] == 1
+    store.reserve_usage(user["id"], "still-positive", cost_micros=100)
+    assert funds(billing)["permanent"]["reserved_micros"] == 1
+
+
+def test_capped_estimate_retains_membership_base_topup_order_and_refunds_exactly(billing):
+    store, admin, user, _ = billing
+    base(billing, 1)
+    member(billing, weekly=2, hourly=2)
+    credit(billing, 1)
+    store.reserve_usage(user["id"], "last-funds", tokens=100, cost_micros=100)
+    held = funds(billing)
+    assert held["memberships"][0]["reserved_micros"] == 2
+    assert [source["reserved_micros"] for source in held["permanent"]["sources"]] == [1, 1]
+    store.settle_usage(user["id"], "last-funds", {"calls": [{"input_tokens": 7, "output_tokens": 0, "total_tokens": 7}]})
+    value = funds(billing)
+    assert value["memberships"][0]["used_micros"] == 2
+    assert [source["used_micros"] for source in value["permanent"]["sources"]] == [4, 1]
+    assert value["permanent"]["overdrawn_micros"] == 3
+    store.reconcile_usage(admin["id"], user["id"], "last-funds", revision=0, final_cost_micros=1, reason="核对最终费用")
+    refunded = funds(billing)
+    assert refunded["memberships"][0]["used_micros"] == 1
+    assert refunded["permanent"]["used_micros"] == 0 and refunded["available_micros"] == 3
+
+
+def test_recovery_keeps_full_unknown_estimate_after_last_balance_was_collateralized(billing):
+    store, _, user, clock = billing
+    base(billing, 1)
+    store.reserve_usage(user["id"], "unknown-last", tokens=100, cost_micros=100)
+    assert funds(billing)["permanent"]["reserved_micros"] == 1
+    reopened = AccountsRepository(store.database, now=lambda: clock[0])
+    assert reopened.recover_reservations() == 1
+    quota = reopened.get_user(user["id"])["quota"]
+    assert quota["reserved_cost_micros"] == 0
+    assert quota["estimated_cost_micros"] == 100
+    assert quota["funds"]["permanent"]["overdrawn_micros"] == 99
+
+
+def test_concurrent_last_micro_is_collateralized_once(billing):
+    store, _, user, _ = billing
+    base(billing, 1)
+
+    def attempt(index):
+        try:
+            store.reserve_usage(user["id"], f"tail-{index}", cost_micros=100)
+            return True
+        except QuotaExceeded:
+            return False
+
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        assert sum(pool.map(attempt, range(4))) == 1
+    assert funds(billing)["permanent"]["reserved_micros"] == 1
 
 
 def test_grants_are_idempotent_and_reusing_request_with_different_body_is_conflict(billing):

@@ -1,4 +1,4 @@
-import {fireEvent, render, screen, waitFor, within} from '@testing-library/react';
+import {act, fireEvent, render, screen, waitFor, within} from '@testing-library/react';
 import {beforeEach, describe, expect, it, vi} from 'vitest';
 import {AccountMenu} from './AccountMenu';
 import type {AccountUser} from './types';
@@ -13,7 +13,7 @@ describe('account shortcut card', () => {
     fireEvent.keyDown(trigger, {key: 'ArrowDown'}); const dialog = screen.getByRole('dialog', {name: '账号快捷菜单'});
     expect(trigger).toHaveAttribute('aria-expanded', 'true'); expect(within(dialog).getByRole('button', {name: '查看我的额度'})).toHaveFocus();
     await waitFor(() => expect(request).toHaveBeenCalledWith('/api/auth/quota', expect.objectContaining({signal: expect.any(AbortSignal)})));
-    expect(within(dialog).getByText('90%')).toBeVisible(); expect(dialog).not.toHaveTextContent(/¥|元/);
+    expect(within(dialog).getByText('剩余 90%')).toBeVisible(); expect(dialog).not.toHaveTextContent(/¥|元/);
     fireEvent.keyDown(dialog, {key: 'End'}); expect(within(dialog).getByRole('button', {name: '退出账户'})).toHaveFocus();
     fireEvent.keyDown(dialog, {key: 'Escape'}); expect(screen.queryByRole('dialog')).not.toBeInTheDocument(); expect(trigger).toHaveFocus();
   });
@@ -25,5 +25,16 @@ describe('account shortcut card', () => {
   it('closes on an outside pointer and invokes logout only from its explicit action', () => {
     const callbacks = actions(); render(<><button>外面的控件</button><AccountMenu account={account} {...callbacks}/></>); fireEvent.click(screen.getByRole('button', {name: '账号菜单：小厨'})); fireEvent.pointerDown(screen.getByRole('button', {name: '外面的控件'})); expect(screen.queryByRole('dialog')).not.toBeInTheDocument(); expect(callbacks.onLogout).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole('button', {name: '账号菜单：小厨'})); fireEvent.click(screen.getByRole('button', {name: '退出账户'})); expect(callbacks.onLogout).toHaveBeenCalledOnce();
+  });
+  it('keeps a newly settled balance when an older menu read arrives late', async () => {
+    let resolve!: (value: unknown) => void;
+    request.mockImplementation(() => new Promise(accept => {resolve = accept;}));
+    const view = render(<AccountMenu account={account} {...actions()}/>);
+    fireEvent.click(screen.getByRole('button',{name:'账号菜单：小厨'}));
+    view.rerender(<AccountMenu account={{...account,quota:{...account.quota,used_cost_micros:1_500_000}}} {...actions()}/>);
+    expect(screen.getByText('剩余 70%')).toBeVisible();
+    await act(async () => resolve({quota:account.quota}));
+    expect(screen.getByText('剩余 70%')).toBeVisible();
+    expect(screen.queryByText('剩余 90%')).not.toBeInTheDocument();
   });
 });

@@ -31,7 +31,7 @@ export function usageCalendar(data: any) {
   return {days, offset, columns: Math.ceil((offset + days.length) / 7), clipped: start > requested};
 }
 export const usageDayLabel = (day: any) => day.status === 'empty' ? `${day.date} · 没有模型请求` : day.status === 'unknown' ? `${day.date} · ${day.calls} 次请求，Token未报告` : `${day.date} · ${tokenText(day.value)} Token${day.status === 'partial' ? '（已知小计）' : ''} · ${day.calls} 次请求`;
-function UsageCalendar({data}: {data: any}) {
+export function UsageCalendar({data}: {data: any}) {
   const calendar = usageCalendar(data), [selected, setSelected] = useState(calendar.days.length - 1), refs = useRef<(HTMLButtonElement | null)[]>([]), scroller = useRef<HTMLDivElement>(null);
   useEffect(() => {setSelected(calendar.days.length - 1); if (scroller.current) scroller.current.scrollLeft = scroller.current.scrollWidth;}, [data]);
   const months: {column: number; label: string}[] = []; let previousMonth = '';

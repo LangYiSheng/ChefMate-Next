@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState} from 'react';
 import {api} from '../../runtime/http';
+import {usePageArrival} from '../settings/page-arrival';
 import {Icon} from '../../components/Icon';
 import {Dialog} from '../../components/Dialog';
 import {Select} from '../../components/ui/Select';
@@ -12,6 +13,7 @@ import {EntitlementManager} from './EntitlementManager';
 import {RegistrationPolicy, type RegistrationPolicyValue} from './RegistrationPolicy';
 import {UsageDetails} from './UsageDetails';
 import './admin-layout.css';
+import {AdminListControls, AdminPagination, paginateAdminRows} from './AdminListControls';
 
 
 type Tab = 'overview' | 'users' | 'runtime' | 'context' | 'components' | 'models' | 'data' | 'audit';
@@ -25,9 +27,12 @@ const cleanSummary: Summary = {turns: 0, total_tokens: 0, input_tokens: 0, outpu
 export function AdminPanel({user, refreshAccount, notify}: {user: AccountUser; refreshAccount: () => Promise<void>; notify: (message: string) => void; onClose: () => void}) {
   const [tab, setTab] = useState<Tab>('overview'), [users, setUsers] = useState<AccountUser[]>([]), [usage, setUsage] = useState<UsageReport | null>(null), [data, setData] = useState<DataReport | null>(null);
   const [loading, setLoading] = useState(true), [error, setError] = useState(''), [query, setQuery] = useState(''), [edit, setEdit] = useState<AccountUser | null>(null), [reset, setReset] = useState<AccountUser | null>(null), [fundsUser, setFundsUser] = useState<AccountUser | null>(null);
+  const [listFilter, setListFilter] = useState(''), [roleFilter, setRoleFilter] = useState(''), [page, setPage] = useState(1), [pageSize, setPageSize] = useState(20);
   const [status, setStatus] = useState<Record<string, any> | null>(null);
   const autonomous = ['models', 'runtime', 'context', 'components', 'audit'].includes(tab);
   const [generation, setGeneration] = useState(0);
+  const reading = useRef<HTMLDivElement>(null);
+  usePageArrival(reading, `${tab}-${!autonomous && loading ? 'loading' : 'ready'}`);
   const [policy, setPolicy] = useState<RegistrationPolicyValue | null>(null);
   const [usageUser, setUsageUser] = useState<AccountUser | null>(null);
   const usageButtons = useRef(new Map<string, HTMLButtonElement>()), closedUsageUser = useRef<string | null>(null);
@@ -55,16 +60,33 @@ export function AdminPanel({user, refreshAccount, notify}: {user: AccountUser; r
     notify('用户设置已保存。');
   };
   const summary = usage?.summary || cleanSummary;
-  const shownUsers = users.filter(item => `${item.username} ${item.display_name}`.toLocaleLowerCase().includes(query.toLocaleLowerCase().trim()));
+  const matchesUser = (item: AccountUser) => `${item.username} ${item.display_name}`.toLocaleLowerCase().includes(query.toLocaleLowerCase().trim()) && (!roleFilter || item.role === roleFilter);
+  const userRows = users.filter(item => matchesUser(item) && (!listFilter || (listFilter === 'disabled' ? item.disabled : listFilter === 'developer' ? item.developer_allowed : !item.disabled)));
+  const usageRows = (usage?.users || []).filter(item => matchesUser(item.user) && (!listFilter || (listFilter === 'incomplete' ? item.incomplete_turns > 0 : listFilter === 'active' ? item.turns > 0 : item.turns === 0)));
+  const dataByUser = new Map(data?.items.map(item => [item.user_id, item]));
+  const dataRows = users.filter(item => {const record = dataByUser.get(item.id); return matchesUser(item) && (!listFilter || (listFilter === 'active' ? record?.active : listFilter === 'uncreated' ? !record : record && !record.active));});
+  const listRows = tab === 'users' ? userRows : tab === 'data' ? dataRows : usageRows;
+  const userPagination = paginateAdminRows(tab === 'data' ? dataRows : userRows, page, pageSize);
+  const usagePagination = paginateAdminRows(usageRows, page, pageSize);
+  const pagination = tab === 'overview' ? usagePagination : userPagination;
+  const shownUsers = userPagination.items;
+  const clearFilters = () => {setQuery(''); setListFilter(''); setRoleFilter(''); setPage(1);};
+  const listLabel = tab === 'overview' ? '用户统计' : tab === 'data' ? '用户数据' : '用户';
+  const controls = <AdminListControls label={listLabel} query={query} onQueryChange={value => {setQuery(value); setPage(1);}} onClear={clearFilters}>
+    <label>账号角色<Select aria-label="账号角色筛选" value={roleFilter} onValueChange={value => {setRoleFilter(value); setPage(1);}} options={[{value: '', label: '全部角色'}, {value: 'user', label: '用户'}, {value: 'admin', label: '管理员'}]}/></label>
+    <label>{tab === 'overview' ? '使用情况' : tab === 'data' ? '厨房状态' : '账号状态'}<Select aria-label="列表状态筛选" value={listFilter} onValueChange={value => {setListFilter(value); setPage(1);}} options={tab === 'overview' ? [{value: '', label: '全部使用情况'}, {value: 'active', label: '已有用量'}, {value: 'empty', label: '暂无用量'}, {value: 'incomplete', label: '报告待核对'}] : tab === 'data' ? [{value: '', label: '全部厨房'}, {value: 'active', label: '有请求运行中'}, {value: 'idle', label: '当前空闲'}, {value: 'uncreated', label: '尚未创建'}] : [{value: '', label: '全部状态'}, {value: 'enabled', label: '正常账号'}, {value: 'disabled', label: '已停用'}, {value: 'developer', label: '开发者模式可用'}]}/></label>
+  </AdminListControls>;
+  const listCount = <p className="admin-list-count" role="status">{query || listFilter || roleFilter ? '筛选结果' : '全部用户'} · 共 {listRows.length} 位</p>;
+  const pager = <AdminPagination label={listLabel} page={pagination.page} pages={pagination.pages} pageSize={pageSize} onPage={setPage} onPageSize={value => {setPageSize(value); setPage(1);}}/>;
   const selected = tabs.find(item => item[0] === tab)!;
   const usageCurrency = usage?.pricing?.currency || 'CNY';
   const unpriced = usage?.pricing && [usage.pricing.input_per_million, usage.pricing.output_per_million, usage.pricing.cached_input_per_million].every(value => Number(value) === 0);
-  const chooseTab = (next: Tab) => {if (next === tab) return; const resume = () => {if (!['models','runtime','context','components','audit'].includes(next)) setLoading(true); setTab(next); setQuery('');}; const event = new CustomEvent('chefmate:before-page-change', {cancelable: true, detail: {page: 'admin', resume}}); if (window.dispatchEvent(event)) resume();};
+  const chooseTab = (next: Tab) => {if (next === tab) return; const resume = () => {if (!['models','runtime','context','components','audit'].includes(next)) setLoading(true); setTab(next); clearFilters();}; const event = new CustomEvent('chefmate:before-page-change', {cancelable: true, detail: {page: 'admin', resume}}); if (window.dispatchEvent(event)) resume();};
   const requestReload = () => {const resume = () => {setPolicy(null); reload();}; const event = new CustomEvent('chefmate:before-page-change', {cancelable: true, detail: {page: 'admin-refresh', resume}}); if (window.dispatchEvent(event)) resume();};
   const openUsage = (item: AccountUser) => {const resume = () => {setPolicy(null); reload(); setUsageUser(item);}; const event = new CustomEvent('chefmate:before-page-change', {cancelable: true, detail: {page: 'admin-usage', resume}}); if (window.dispatchEvent(event)) setUsageUser(item);};
   return <section className="admin-page admin-console" data-tab={tab} aria-label="ChefMate 管理平台"><nav className="admin-nav" aria-label="管理分类"><div className="admin-nav-title"><Icon name="shield-check"/><span>管理平台</span></div>{tabs.map(([id, label, icon]) => <button type="button" key={id} aria-current={tab === id ? 'page' : undefined} onClick={() => chooseTab(id)}><Icon name={icon}/><span>{label}</span></button>)}</nav>
     <div className="admin-workspace"><header className="account-page-heading admin-header" key={`heading-${tab}`}><div className="admin-heading-inner"><div><p className="account-eyebrow">ChefMate · 管理员</p><h1>{selected[1]}</h1><p>{({overview: '从真实请求记录了解使用情况与估算成本。', users: '分配额度，管理账号状态与开发者权限。', models: '保存多个模型连接，独立计价与测试，选择其中一个用于对话。', runtime: '配置请求时限、重试次数与工具执行上限。', context: '控制模型上下文与工具结果的大小。', components: '选择助手可以使用的工具与组件。', data: '查看数据状态，按用户备份并重置厨房资料。', audit: '查看账号、权限、额度与计价的管理记录。'} as Record<Tab, string>)[tab]}</p></div>{!autonomous && <button type="button" className="secondary-button" disabled={loading} onClick={requestReload}><Icon name="refresh-cw"/>{loading ? '读取中…' : '刷新'}</button>}</div></header>
-      <div className="admin-content" key={tab}><div className="admin-reading">
+      <div className="admin-content" key={tab}><div className="admin-reading" ref={reading}>
       {error && <div className="error-box" role="alert">{error}<button type="button" onClick={requestReload}>重新读取</button></div>}
       {loading && !autonomous && <p className="panel-loading" role="status">正在读取管理信息…</p>}
       {!loading && !error && tab === 'overview' && usage && <>
@@ -72,22 +94,22 @@ export function AdminPanel({user, refreshAccount, notify}: {user: AccountUser; r
         {summary.incomplete_turns > 0 && <p className="account-notice">模型未完整报告的请求共 {tokens(summary.incomplete_turns)} 轮，原未知用量预估 {tokens(summary.estimated_tokens || 0)} Token。当前未核对金额预估 {money(summary.estimated_cost_micros || 0, usageCurrency)} 已占用金额额度；核对金额不会修改原 Token 报告。</p>}
         {usage.pricing.configured === false ? <p className="account-notice">管理员尚未确认模型计价，有金额额度的用户暂时不能发起模型请求。<button type="button" className="text-button" onClick={() => chooseTab('models')}>设置并确认计价</button></p> : unpriced && <p className="account-notice">当前模型单价已设为零，后续请求不会扣减用户金额额度。这里的金额仍需与模型服务商实际账单核对。<button type="button" className="text-button" onClick={() => chooseTab('models')}>核对模型单价</button></p>}
         <section className="admin-section"><h2>近期每日已报告用量</h2>{usage.daily.length ? <div className="admin-daily-chart" role="img" aria-label={usage.daily.slice(-14).map(item => `${item.date}，已报告 ${tokens(item.total_tokens)} Token${item.estimated_tokens ? `，另计预估 ${tokens(item.estimated_tokens)} Token` : ''}`).join('；')}>{usage.daily.slice(-14).map(item => <div key={item.date}><span className="admin-daily-number">{tokens(item.total_tokens)}</span><div className="admin-daily-track"><span style={{height: `${item.total_tokens > 0 ? Math.max(2, item.total_tokens / Math.max(1, ...usage.daily.slice(-14).map(day => day.total_tokens)) * 100) : 0}%`}}/></div><small>{item.date.slice(5)}</small></div>)}</div> : <div className="admin-empty"><Icon name="chart-no-axes-combined"/><h3>从第一段对话开始积累</h3><p>用户发起模型请求后，这里会显示每日用量。</p></div>}</section>
-        <section className="admin-section"><h2>按用户统计</h2><div className="admin-table-scroll" role="region" tabIndex={0} aria-label="管理数据表格"><table className="admin-table"><thead><tr><th>用户</th><th>轮数</th><th>已报告 Token</th><th>计入金额</th><th>用量报告</th></tr></thead><tbody>{usage.users.map(item => <tr key={item.user.id}><th scope="row"><strong>{item.user.display_name || item.user.username}</strong><small>@{item.user.username}</small></th><td>{tokens(item.turns)}</td><td>{tokens(item.total_tokens)}{Boolean(item.estimated_tokens) && <small>另计预估 {tokens(item.estimated_tokens)}</small>}</td><td>{money(item.cost_micros, usageCurrency)}{Boolean(item.estimated_cost_micros) && <small>另计预估 {money(item.estimated_cost_micros, usageCurrency)}</small>}</td><td>{item.incomplete_turns ? `${tokens(item.incomplete_turns)} 轮不完整` : '完整'}</td></tr>)}{!usage.users.length && <tr><td colSpan={5} className="admin-table-empty">还没有模型用量记录。</td></tr>}</tbody></table></div></section>
+        <section className="admin-section"><h2>按用户统计</h2>{controls}{listCount}<div className="admin-table-scroll" role="region" tabIndex={0} aria-label="管理数据表格"><table className="admin-table"><thead><tr><th>用户</th><th>轮数</th><th>已报告 Token</th><th>计入金额</th><th>用量报告</th></tr></thead><tbody>{usagePagination.items.map(item => <tr key={item.user.id}><th scope="row"><strong>{item.user.display_name || item.user.username}</strong><small>@{item.user.username}</small></th><td>{tokens(item.turns)}</td><td>{tokens(item.total_tokens)}{Boolean(item.estimated_tokens) && <small>另计预估 {tokens(item.estimated_tokens)}</small>}</td><td>{money(item.cost_micros, usageCurrency)}{Boolean(item.estimated_cost_micros) && <small>另计预估 {money(item.estimated_cost_micros, usageCurrency)}</small>}</td><td>{item.incomplete_turns ? `${tokens(item.incomplete_turns)} 轮不完整` : '完整'}</td></tr>)}{!usageRows.length && <tr><td colSpan={5} className="admin-table-empty">没有符合条件的用户用量。</td></tr>}</tbody></table></div>{pager}</section>
       </>}
-      {tab === 'users' && policy && <RegistrationPolicy policy={policy} onSaved={setPolicy}/>}
+      {tab === 'users' && policy && <details className="admin-policy-disclosure" inert={loading || Boolean(error)}><summary><Icon name="users-round"/><span><strong>注册与新用户额度</strong><small>{policy.registration_enabled ? '开放注册' : '已关闭注册'} · 点击调整新用户默认额度</small></span><Icon name="chevron-right"/></summary><RegistrationPolicy policy={policy} onSaved={setPolicy}/></details>}
       {!loading && !error && tab === 'users' && <>
-        <label className="admin-search"><Icon name="search"/><input aria-label="搜索用户" value={query} maxLength={80} onChange={event => setQuery(event.target.value)} placeholder="搜索账号或称呼"/></label>
+        {controls}{listCount}
         <div className="admin-table-scroll" role="region" tabIndex={0} aria-label="管理数据表格"><table className="admin-table"><thead><tr><th>用户</th><th>状态与权限</th><th>累计计入金额</th><th>预留金额</th><th>剩余额度</th><th><span className="visually-hidden">操作</span></th></tr></thead><tbody>{shownUsers.map(item => {const amounts = quotaAmounts(item.quota); return <tr key={item.id}>
           <th scope="row"><strong>{item.display_name || item.username}{item.id === user.id && <span className="ui-badge">你</span>}</strong><small>@{item.username}</small></th>
           <td><span className="ui-badge" data-state={item.disabled ? 'disabled' : 'active'}>{item.disabled ? '已停用' : '正常'}</span><span className="ui-badge">{item.role === 'admin' ? '管理员' : '用户'}</span>{item.developer_allowed && <small>开发者模式可用</small>}</td>
           <td>{money(amounts.charged)}{Boolean(item.quota.estimated_cost_micros) && <small>含预估 {money(item.quota.estimated_cost_micros)}</small>}</td>
           <td>{money(amounts.reserved)}</td><td>{money(amounts.remaining)}</td><td><div className="admin-user-actions"><button type="button" className="secondary-button" aria-label={`管理 ${item.username}`} onClick={() => setEdit(item)}>管理</button><button type="button" className="secondary-button" aria-label={`管理 ${item.username} 的额度`} onClick={() => setFundsUser(item)}>额度</button><button ref={button => {if (button) usageButtons.current.set(item.id, button); else usageButtons.current.delete(item.id);}} type="button" className="text-button" aria-label={`查看 ${item.username} 的用量明细`} onClick={() => openUsage(item)}>用量明细</button></div></td>
         </tr>;})}{!shownUsers.length && <tr><td colSpan={6} className="admin-table-empty">没有找到符合条件的用户。</td></tr>}</tbody></table></div>
-        <p className="account-fineprint">优先使用会员限时额度，再使用永久的新用户额度与充值余额。正在执行的请求会预留金额，窗口到期不会改变已有请求的归属。</p>
+        {pager}<p className="account-fineprint">优先使用会员限时额度，再使用永久的新用户额度与充值余额。正在执行的请求会预留金额，窗口到期不会改变已有请求的归属。</p>
       </>}
       {tab === 'models' && <ModelManager key={generation} notify={notify}/>}
       {(['runtime', 'context', 'components'] as string[]).includes(tab) && <AdminConfigSection key={tab} section={tab as 'runtime'|'context'|'components'} notify={notify}/>}
-      {!loading && !error && tab === 'data' && <><SystemStatus status={status}/><div className="account-notice"><Icon name="database"/>个人资料按账号隔离。重置前会先保存备份，原账号、额度与用量记录会保留。</div>{data && <div className="admin-data-overview"><h2>存储概览</h2><p>{tokens(users.length)} 个账号 · {tokens(data.items.filter(item => item.active).length)} 个厨房正在执行请求</p><p>{data.notice}</p>{data.legacy_data_present && <p className="account-notice">检测到旧工作台资料，已保留在原处。迁移方式见部署文档。</p>}</div>}<div className="admin-table-scroll" role="region" tabIndex={0} aria-label="管理数据表格"><table className="admin-table"><thead><tr><th>用户</th><th>对话 / 菜谱</th><th>手记 / 记忆</th><th>本地附件占用</th><th>操作</th></tr></thead><tbody>{users.map(item => {const record = data?.items.find(entry => entry.user_id === item.id); return <tr key={item.id}><th scope="row"><strong>{item.display_name || item.username}</strong><small>@{item.username}</small></th><td>{tokens(record?.counts.sessions ?? 0)} / {tokens(record?.counts.recipes ?? 0)}</td><td>{tokens(record?.counts.journal ?? 0)} / {tokens(record?.counts.memory ?? 0)}</td><td>{record ? `${(record.bytes / 1024 / 1024).toLocaleString('zh-CN', {maximumFractionDigits: 2})} MB` : '尚未创建'}</td><td><button type="button" className="secondary-button" disabled={record?.active} aria-label={`备份并重置 ${item.username} 的数据`} onClick={() => setReset(item)}>{record?.active ? '有请求运行中' : '备份并重置'}</button></td></tr>;})}</tbody></table></div><p className="account-fineprint">全量服务备份与恢复方法见部署文档。重置不会删除共享菜谱库。</p></>}
+      {!loading && !error && tab === 'data' && <><SystemStatus status={status}/><div className="account-notice"><Icon name="database"/>个人资料按账号隔离。重置前会先保存备份，原账号、额度与用量记录会保留。</div>{data && <div className="admin-data-overview"><h2>存储概览</h2><p>{tokens(users.length)} 个账号 · {tokens(data.items.filter(item => item.active).length)} 个厨房正在执行请求</p><p>{data.notice}</p>{data.legacy_data_present && <p className="account-notice">检测到旧工作台资料，已保留在原处。迁移方式见部署文档。</p>}</div>}{controls}{listCount}<div className="admin-table-scroll" role="region" tabIndex={0} aria-label="管理数据表格"><table className="admin-table"><thead><tr><th>用户</th><th>对话 / 菜谱</th><th>手记 / 记忆</th><th>本地附件占用</th><th>操作</th></tr></thead><tbody>{shownUsers.map(item => {const record = dataByUser.get(item.id); return <tr key={item.id}><th scope="row"><strong>{item.display_name || item.username}</strong><small>@{item.username}</small></th><td>{tokens(record?.counts.sessions ?? 0)} / {tokens(record?.counts.recipes ?? 0)}</td><td>{tokens(record?.counts.journal ?? 0)} / {tokens(record?.counts.memory ?? 0)}</td><td>{record ? `${(record.bytes / 1024 / 1024).toLocaleString('zh-CN', {maximumFractionDigits: 2})} MB` : '尚未创建'}</td><td><button type="button" className="secondary-button" disabled={record?.active} aria-label={`备份并重置 ${item.username} 的数据`} onClick={() => setReset(item)}>{record?.active ? '有请求运行中' : '备份并重置'}</button></td></tr>;})}{!shownUsers.length && <tr><td colSpan={5} className="admin-table-empty">没有找到符合条件的用户。</td></tr>}</tbody></table></div>{pager}<p className="account-fineprint">全量服务备份与恢复方法见部署文档。重置不会删除共享菜谱库。</p></>}
       {tab === 'audit' && <AuditLog key={generation}/>}
       </div></div>
     </div>
