@@ -27,7 +27,7 @@ ChefMate 把这些问题接到同一顿饭上。刷新页面、补充条件、�
 
 这些能力由七个[系统组件](docs/design/agent-ui.md#系统组件)管理。关闭组件会同时撤去对应工具权限，已有记录仍可保留；已有显式组件清单的环境，需要在设置中启用新增组件。
 
-当前 App 版本保持 **0.2.2**。本轮账号、金额管理与 Docker/PostgreSQL 改造见[实现与验收](docs/engineering/records/2026-10-27-accounts-admin-postgresql.md)。已发布的厨房、对话与界面细节见[0.2.2 发布记录](docs/engineering/records/2026-10-27-release-0.2.2.md)及设置中的“版本更新日志”。
+当前 App 版本为 **0.3.0**。账号、会员额度、管理平台、Docker/PostgreSQL 与本轮交互改进见[0.3.0 发布记录](docs/engineering/records/2026-10-28-release-0.3.0.md)。历史版本及提交来源保留在设置中的“版本更新日志”。
 
 ## 试着这样说
 

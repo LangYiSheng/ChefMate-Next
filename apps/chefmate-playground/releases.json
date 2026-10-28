@@ -1,5 +1,163 @@
 [
   {
+    "version": "0.3.0",
+    "date": "2026-10-28",
+    "source": {
+      "branch": "codex/accounts-admin-docker",
+      "commit": "4e55a48ea0952d4870541cf41a9f1472a4a13cad"
+    },
+    "includes": [
+      {
+        "branch": "codex/accounts-admin-docker",
+        "commit": "1aa75cd76e2d9c75a56c8a186617a49c6e7edc2c"
+      },
+      {
+        "branch": "codex/accounts-admin-docker",
+        "commit": "eb4cf923b8fbd10b744bbcd36ec624adeee98f2f"
+      },
+      {
+        "branch": "codex/accounts-admin-docker",
+        "commit": "02be4fc276671e8d4e1f3724e8fd379dff42e2fb"
+      },
+      {
+        "branch": "codex/accounts-admin-docker",
+        "commit": "40a325d7a90a0a8bfc2b23f27851f01f00147827"
+      },
+      {
+        "branch": "codex/accounts-admin-docker",
+        "commit": "1f41b33031643139e6325e704e33e028405f132a"
+      },
+      {
+        "branch": "codex/accounts-admin-docker",
+        "commit": "5857c12201a9bc0c5a9dafd4294efa1e8065a5c8"
+      },
+      {
+        "branch": "codex/accounts-admin-docker",
+        "commit": "894da6f383b383520492b02c6ac11389f3d85326"
+      },
+      {
+        "branch": "codex/accounts-admin-docker",
+        "commit": "5d62f0e7de207b78e4c2d2956bfbc8a41bd591a6"
+      },
+      {
+        "branch": "codex/accounts-admin-docker",
+        "commit": "437bebba497defda673d3ddeaee3340f9a63dd04"
+      },
+      {
+        "branch": "codex/accounts-admin-docker",
+        "commit": "8261a3c473acfb456657cbad29a6199d3ca32c57"
+      },
+      {
+        "branch": "codex/accounts-admin-docker",
+        "commit": "4d82b90ba72a8ce350ee047cd31b3e78163f2330"
+      },
+      {
+        "branch": "codex/accounts-admin-docker",
+        "commit": "207f1e47f28cbd732cba5b97c8eafd5aca9940e3"
+      },
+      {
+        "branch": "codex/accounts-admin-docker",
+        "commit": "96d139057cc01d83f9346def9edecb869fb301f9"
+      },
+      {
+        "branch": "codex/accounts-admin-docker",
+        "commit": "061ae8cc3af0a8b037a126e9aebdbb8ea7cf140b"
+      },
+      {
+        "branch": "codex/accounts-admin-docker",
+        "commit": "cbc19d4bd155072e1b60f76d644f7a9fc510e183"
+      },
+      {
+        "branch": "codex/accounts-admin-docker",
+        "commit": "25544fa64e6b84a7fb0b795b02e5df51d1b6f72c"
+      },
+      {
+        "branch": "codex/accounts-admin-docker",
+        "commit": "bcbc2ca745fe5265c84c7364e568cfa537987a64"
+      },
+      {
+        "branch": "codex/accounts-admin-docker",
+        "commit": "71f06624b79fa692cef1fdc21e026acc08257305"
+      },
+      {
+        "branch": "codex/accounts-admin-docker",
+        "commit": "a4b69c75b2ae12ce5b3df7af4d47207cc46b622a"
+      },
+      {
+        "branch": "codex/accounts-admin-docker",
+        "commit": "263d5f9652d347d9b5d84a3a7ec6af3ac80845fb"
+      },
+      {
+        "branch": "codex/accounts-admin-docker",
+        "commit": "f1ffec0af5918187520a5f003569770b724d2a95"
+      },
+      {
+        "branch": "codex/accounts-admin-docker",
+        "commit": "11dd9cbcf403041f37ebcda106c59d658125f672"
+      },
+      {
+        "branch": "codex/accounts-admin-docker",
+        "commit": "d7d85aeee101d6c24b1ae0b90fa30b23d2f7306b"
+      },
+      {
+        "branch": "codex/accounts-admin-docker",
+        "commit": "4a801d64b3638229980e00e1e87cfe5f33ae875f"
+      }
+    ],
+    "title": "自己的厨房，完整的账号与管理平台",
+    "summary": "加入账号、欢迎引导、会员额度与管理平台，支持多模型连接和 Docker 部署；同时打磨个人设置、做饭流程与多端交互。",
+    "sections": [
+      {
+        "title": "账号与自己的厨房",
+        "items": [
+          "通过账号密码注册和登录，新用户跟随欢迎引导完成初始配置；对话、个人菜谱、食光手记和记忆按账号分别保存。",
+          "账号菜单集中提供个人资料、我的额度、偏好和退出入口；个人资料展示加入天数与 Token 活动，称呼可直接编辑，账号安全支持修改密码。",
+          "个人偏好与长期记忆统一授权开关。称呼用于助手对你的称呼；关闭个性化后，后续模型请求会隐藏旧私人记忆工具中的资料。"
+        ]
+      },
+      {
+        "title": "会员与金额额度",
+        "items": [
+          "新用户默认获得 5 元基础额度，管理员可调整后续注册的默认值，并为用户补充永久额度或开通限时会员。",
+          "会员优先使用，周额度与 5 小时额度同时生效，分别从首次使用起计算固定窗口；窗口额度用尽或会员到期后，接续使用基础额度和充值余额。",
+          "我的额度用百分比呈现会员窗口和永久额度，数字与额度条逐步展开；对话结束后同步核定用量，仍有余额时可继续使用，归零后停止后续请求。",
+          "管理员可查看各额度来源的金额、消耗、窗口与到期状态，并保存多份会员模板。额度发放由管理员操作，暂未接入在线支付。"
+        ]
+      },
+      {
+        "title": "集中管理与独立模型连接",
+        "items": [
+          "管理平台集中管理用户状态、管理员和开发者权限、额度、用量、成本、数据与操作记录；用户相关列表支持搜索、筛选和分页。",
+          "可保存多个模型连接，分别配置提供商、协议、地址、模型名称、密钥和输入输出单价；支持测试连接，每次启用一个模型。",
+          "运行参数、上下文、工具与组件直接在管理平台中配置；数据管理与服务状态合并，支持按用户备份并重置厨房资料。"
+        ]
+      },
+      {
+        "title": "做饭流程更连贯",
+        "items": [
+          "重复确认相同份量时保留已经完成的备菜、步骤和计时进度；完成一餐后按原菜谱再做，会建立独立的新一餐。",
+          "支持“1 小时 30 分钟”等复合计时；时长含糊或给出范围时先确认，避免直接启动错误计时器。",
+          "修改菜谱时只更新指定字段，未指定内容继续保留；需要清空的字段明确处理。精简模型请求中的重复工作区快照，保留原始历史与操作依据。"
+        ]
+      },
+      {
+        "title": "统一布局与细节交互",
+        "items": [
+          "设置与管理平台统一阅读宽度、同级字号、页面入场和柔和色阶；优化宽屏、平板、手机及短横屏的布局与操作空间。",
+          "修正称呼等弹窗的居中，更新目录在宽屏保持侧栏、窄屏隐藏；资料编辑和未保存提示更紧凑，确认与取消后正确恢复操作焦点。",
+          "计时器创建、结束与到时操作保持键盘操作连贯，减少动态效果时同步简化页面和弹窗动画。"
+        ]
+      },
+      {
+        "title": "Docker 与 PostgreSQL 开箱即用",
+        "items": [
+          "Docker 启动应用、账号业务库与共享菜谱库，首次启动自动导入随仓库提供的 358 道基础菜谱。",
+          "在线账号、对话、个人菜谱、记忆等业务数据迁入 PostgreSQL，提供旧 SQLite 迁移与成组备份、校验和恢复流程；离线清洗和 USDA 原始库继续保留原有方式。"
+        ]
+      }
+    ]
+  },
+  {
     "version": "0.2.2",
     "date": "2026-10-27",
     "source": {

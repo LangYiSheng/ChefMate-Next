@@ -2,7 +2,7 @@
 
 先从用户手里的一顿饭认识系统，再沿着工具、状态和数据往里走。
 
-当前 App 版本保持 **0.2.2**。本轮[账号、金额额度与 PostgreSQL 改造](engineering/records/2026-10-27-accounts-admin-postgresql.md)另有实现和验收记录；已发布的厨房、对话与界面改进见[0.2.2 发布记录](engineering/records/2026-10-27-release-0.2.2.md)。下列指南和参考描述当前实现，历史档案按记录日期阅读。
+当前 App 版本为 **0.3.0**。账号、会员额度、管理平台、Docker/PostgreSQL 与本轮交互改进见[0.3.0 发布记录](engineering/records/2026-10-28-release-0.3.0.md)。历史版本及提交来源保留在设置中的“版本更新日志”。
 
 ## 第一次来到项目
 
