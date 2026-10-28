@@ -33,7 +33,7 @@ class Agent:
     def __init__(self):
         self.calls = 0
 
-    async def run_turn(self, messages, on_event=None, cancel_event=None, *, ui_context=None, tool_context=None):
+    async def run_turn(self, messages, on_event=None, cancel_event=None, *, ui_context=None, tool_context=None, memory_enabled=True):
         self.calls += 1
         await on_event({"type": "tool_start", "call_id": "c1", "name": "find_ingredients", "arguments": {}})
         await on_event({"type": "tool_end", "call_id": "c1", "name": "find_ingredients", "result": {"status": "ok"}})
@@ -191,7 +191,7 @@ def test_cancel_before_task_starts_and_same_session_conflict(tmp_path):
 
 def test_failed_retry_does_not_duplicate_user_and_recovery_is_durable(tmp_path):
     class FlakyAgent(Agent):
-        async def run_turn(self, messages, on_event=None, cancel_event=None, *, ui_context=None, tool_context=None):
+        async def run_turn(self, messages, on_event=None, cancel_event=None, *, ui_context=None, tool_context=None, memory_enabled=True):
             if self.calls == 0:
                 self.calls += 1
                 raise RuntimeError("do not reveal a provider token or DSN")
@@ -234,7 +234,7 @@ def test_request_id_cannot_replay_a_different_message(tmp_path):
 
 def test_followup_after_failed_turn_retains_human_intent_without_failed_tool_history(tmp_path):
     class FollowupAgent(Agent):
-        async def run_turn(self, messages, on_event=None, cancel_event=None, *, ui_context=None, tool_context=None):
+        async def run_turn(self, messages, on_event=None, cancel_event=None, *, ui_context=None, tool_context=None, memory_enabled=True):
             if self.calls == 0:
                 self.calls += 1
                 await on_event({"type": "tool_end", "call_id": "failed-turn-tool", "name": "find_ingredients",

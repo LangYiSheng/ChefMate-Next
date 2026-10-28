@@ -31,10 +31,26 @@ class HistoryBoundary:
         return copy.deepcopy(data)
 
     @classmethod
-    def _model_messages(cls, source):
+    def _model_messages(cls, source, *, hidden_tools=()):
         """Deterministic request projection, including saved conversations from before delta snapshots."""
         result, previous = [], None
         for message in source:
+            if isinstance(message, AIMessage) and hidden_tools:
+                calls = [{**call, "args": {}} if call["name"] in hidden_tools else copy.deepcopy(call)
+                         for call in message.tool_calls]
+                invalid = [{**call, "args": "{}"} if call.get("name") in hidden_tools else copy.deepcopy(call)
+                           for call in message.invalid_tool_calls]
+                extra = copy.deepcopy(message.additional_kwargs)
+                for call in extra.get("tool_calls") or []:
+                    function = call.get("function") if isinstance(call, dict) else None
+                    if isinstance(function, dict) and function.get("name") in hidden_tools:
+                        function["arguments"] = "{}"
+                message = message.model_copy(update={"tool_calls": calls, "invalid_tool_calls": invalid,
+                                                      "additional_kwargs": extra})
+            elif isinstance(message, ToolMessage) and message.name in hidden_tools:
+                # Keep the closed call/result pair, never modify its saved receipt.
+                message = message.model_copy(update={"content": _dump({"status": "history_redacted",
+                    "message": "个人偏好与长期记忆已关闭，此历史工具内容未发送。"})})
             snapshot = message.additional_kwargs.get("chefmate_ui_context") if isinstance(message, HumanMessage) else None
             if snapshot:
                 message = message.model_copy(update={"content": message.content +

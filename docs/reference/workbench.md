@@ -259,7 +259,7 @@ uv run --project apps/chefmate-playground chefmate-playground
 同餐更正更新稳定 ID，未知指标为空；读取历史不会补登记，关闭组件不执行自动登记。[完成餐食规则](../../apps/chefmate-playground/src/chefmate_playground/cooked_intake.py)
 
 长期记忆分开保存用户原文与助手摘要，当前明确要求优先，助手不能覆盖用户原文。
-关闭功能后停用对应上下文与工具；个人历史按需检索。[个人数据路由](../../apps/chefmate-playground/src/chefmate_playground/routes/personal.py)
+全局组件与个人开关共同控制记忆授权。关闭后停用对应上下文与新工具调用，并从后续模型请求中隐藏旧的私有记忆/个人历史工具回执及参数；持久记录和普通旧对话保留，昵称仍独立附加。开启时旧私有内容也触发发送前授权复核，发送前撤权会停止本轮。个人历史按需检索。[个人数据路由](../../apps/chefmate-playground/src/chefmate_playground/routes/personal.py)
 
 ## 系统状态、用量与开发者 API
 

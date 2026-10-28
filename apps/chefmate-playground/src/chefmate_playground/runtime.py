@@ -248,6 +248,8 @@ class TurnManager:
             if turn.cancel.is_set():
                 raise asyncio.CancelledError
             arguments = {"on_event": on_event, "cancel_event": turn.cancel}
+            arguments["memory_enabled"] = bool(self.memory is not None and self.memory_enabled()
+                                                and self.memory.snapshot()["enabled"])
             identity = getattr(self, "account_identity", None)
             if identity:
                 arguments["user_identity"] = copy.deepcopy(identity)
@@ -255,7 +257,7 @@ class TurnManager:
                 arguments["image_loader"] = lambda reference: self.images.data_url(turn.session_id, reference)
             if turn.ui_context is not None:
                 arguments.update(ui_context=turn.ui_context, tool_context=turn.host_context)
-            if self.memory is not None and self.memory_enabled():
+            if arguments["memory_enabled"]:
                 context = self.memory.context()
                 if context.get("user_notes") or context.get("summary") or context.get("kitchen_profile"):
                     turn.memory_attached = True

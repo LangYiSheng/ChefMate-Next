@@ -35,6 +35,7 @@ class TurnRuntimeContext:
     failure_policy: FailurePolicy = field(default_factory=FailurePolicy)
     batch_rejections: dict[str, dict] = field(default_factory=dict)
     memory_context: dict = field(default_factory=dict)
+    memory_enabled: bool = True
     memory_accessed: bool = False
     user_identity: dict = field(default_factory=dict)
     context_usage: dict = field(default_factory=dict)
@@ -63,7 +64,15 @@ class ChefMateMiddleware(AgentMiddleware):
 
     async def awrap_model_call(self, request, handler):
         context = request.runtime.context
-        messages = self.owner._model_messages(request.messages)
+        private_tools = self.owner._memory_tool_names()
+        hidden = {name for name in private_tools if not context.memory_enabled
+                  or not self.owner._tool_skill_available(name)}
+        messages = self.owner._model_messages(request.messages, hidden_tools=hidden)
+        forwarded = private_tools - hidden
+        context.memory_accessed = context.memory_accessed or any(
+            isinstance(message, ToolMessage) and message.name in forwarded
+            or isinstance(message, AIMessage) and any(call["name"] in forwarded for call in message.tool_calls)
+            for message in messages)
         if context.user_identity:
             from .boundary import _dump
             for index in range(len(messages) - 1, -1, -1):

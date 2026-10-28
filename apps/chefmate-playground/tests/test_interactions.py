@@ -20,7 +20,7 @@ class FormAgent(Agent):
         super().__init__()
         self.contexts = []
 
-    async def run_turn(self, messages, on_event=None, cancel_event=None, *, ui_context=None, tool_context=None):
+    async def run_turn(self, messages, on_event=None, cancel_event=None, *, ui_context=None, tool_context=None, memory_enabled=True):
         self.contexts.append(copy.deepcopy(ui_context))
         self.calls += 1
         actions = []
@@ -130,7 +130,7 @@ def test_active_model_cannot_overwrite_concurrent_user_edit(tmp_path):
         started, release = asyncio.Event(), asyncio.Event()
 
         class PausedAgent:
-            async def run_turn(self, messages, on_event=None, cancel_event=None, *, ui_context=None, tool_context=None):
+            async def run_turn(self, messages, on_event=None, cancel_event=None, *, ui_context=None, tool_context=None, memory_enabled=True):
                 context = SimpleNamespace(messages=messages, call_id="first")
                 assert tool_context.execute("show_preference_form", {}, context)["status"] == "ok"
                 started.set()
