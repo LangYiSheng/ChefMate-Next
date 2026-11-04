@@ -152,6 +152,9 @@ class ChefMateMiddleware(AgentMiddleware):
                     "errors": [{"loc": [], "type": "dependent_batch"}],
                 }
 
+        await self.owner._emit(context.on_event, {"type": "execution_checkpoint",
+            "messages": self.owner._serialize_messages(state["messages"])})
+
     async def awrap_tool_call(self, request, handler):
         from .boundary import _dump
 
@@ -191,5 +194,7 @@ class ChefMateMiddleware(AgentMiddleware):
             context.skill_events.append(event)
             await self.owner._emit(context.on_event, {"type": "skill_event", **event})
         self.owner._collect_result(call["name"], result, context.view_state)
+        await self.owner._emit(context.on_event, {"type": "execution_tool_result",
+            "message": self.owner._serialize_messages([response])[0]})
         await self.owner._emit(context.on_event, {"type": "tool_end", **record.model_dump(mode="json")})
         return response

@@ -192,6 +192,9 @@ class HistoryBoundary:
                         "tool_call_id": message.tool_call_id}
             elif isinstance(message, AIMessage):
                 item = {"role": "assistant", "content": _text_content(message)}
+                reasoning = message.additional_kwargs.get("reasoning_content")
+                if isinstance(reasoning, str):
+                    item["reasoning_content"] = reasoning
                 if message.tool_calls:
                     item["tool_calls"] = [{"id": call["id"], "type": "function", "function": {
                         "name": call["name"], "arguments": _dump(call["args"]),
@@ -225,6 +228,8 @@ class HistoryBoundary:
                 if not isinstance(images, list) or len(images) > 12:
                     raise _AgentFailure("invalid_history", "图片记录无效或超过系统上限。")
                 clean["images"] = [ImageReference.model_validate(item).model_dump(mode="json") for item in images]
+            if role == "assistant" and isinstance(message.get("reasoning_content"), str):
+                clean["reasoning_content"] = message["reasoning_content"]
             if role == "assistant" and message.get("tool_calls"):
                 clean["tool_calls"] = []
                 for call in message["tool_calls"]:
@@ -280,5 +285,5 @@ class HistoryBoundary:
                 calls = [{"id": call["id"], "name": call["function"]["name"],
                           "args": json.loads(call["function"]["arguments"]), "type": "tool_call"}
                          for call in message.get("tool_calls", [])]
-                result.append(AIMessage(content=message["content"], tool_calls=calls))
+                result.append(AIMessage(content=message["content"], tool_calls=calls, additional_kwargs={"reasoning_content": message["reasoning_content"]} if "reasoning_content" in message else {}))
         return result

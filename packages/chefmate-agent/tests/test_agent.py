@@ -151,6 +151,37 @@ def test_lookup_search_events_and_json_history():
     assert model.closed == 3
 
 
+def test_execution_checkpoints_are_complete_and_precede_tool_execution():
+    core, model, service = agent([tool('find_ingredients', {'queries': ['虾']}), answer()])
+    saved = []
+
+    def event(value):
+        if value['type'] == 'execution_checkpoint':
+            if value['messages'][-1].get('tool_calls'):
+                assert not service.calls
+            saved.append(value['messages'])
+        if value['type'] == 'execution_tool_result':
+            assert len(service.calls) == 1
+            saved[-1].append(value['message'])
+
+    result = asyncio.run(core.run_turn([{'role': 'user', 'content': '查虾'}], event))
+    assert result.status == 'completed'
+    checkpoint = saved[0]
+    assert [m['role'] for m in checkpoint] == ['user', 'assistant', 'tool']
+    resumed, _, resumed_service = agent([answer('已经查过了')])
+    result = asyncio.run(resumed.run_turn([*checkpoint, {'role': 'user', 'content': '继续'}]))
+    assert result.status == 'completed'
+    assert not resumed_service.calls
+
+
+def test_returned_reasoning_survives_checkpoint_serialization():
+    from langchain_core.messages import AIMessage
+    core, _, _ = agent([])
+    serialized = core._serialize_messages([AIMessage(content='结果', additional_kwargs={'reasoning_content': '已有推理'})])
+    normalized = core._prepare_history([*serialized, {'role': 'user', 'content': '继续'}])
+    assert core._to_langchain(normalized)[0].additional_kwargs['reasoning_content'] == '已有推理'
+
+
 def test_followup_preserves_real_order_and_conditions():
     search = {"ingredient_groups": [{"any_of": [SHRIMP]}], "expected_snapshot": SNAPSHOT}
     core, model, service = agent([tool("find_ingredients", {"queries": ["虾"]}),

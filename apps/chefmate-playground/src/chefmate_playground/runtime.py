@@ -10,6 +10,7 @@ from uuid import uuid4
 from chefmate_agent.suggestions import REPLY_SUGGESTIONS_TOOL, finalize_reply_suggestions
 
 from .sessions import SessionRepository, now
+from .continuation import continuation_history, preserve_progress
 from .debug import redact_debug
 from .usage import UsageRepository
 
@@ -63,8 +64,14 @@ class TurnManager:
         self.usage = usage or UsageRepository(repository.database)
         self.account_usage = None
         self.usage.backfill(repository)
+        from .background_jobs import BackgroundJobs
+        self.jobs = BackgroundJobs(repository.database)
         self.active: dict[str, ActiveTurn] = {}
         self._lock = asyncio.Lock()
+
+    @property
+    def has_work(self):
+        return bool(self.active or self.jobs.active)
 
     async def begin(self, session_id: str, message: str, *, retry: bool = False,
                     request_id: str | None = None, ui_snapshot: dict | None = None,
@@ -92,6 +99,11 @@ class TurnManager:
                 raise TurnConflict("这条消息已经被接受，不能重复执行；请同步当前会话。")
             turn = ActiveTurn(str(uuid4()), session_id, request_id or str(uuid4()), message)
             def prepare(current):
+                checkpoint = current.get("execution_checkpoint")
+                resumed_history = None
+                if checkpoint and current.get("last_status") in {"error", "cancelled", "interrupted"}:
+                    resumed_history, uncertain = continuation_history(checkpoint, current.get("interrupted_progress"))
+                    current["uncertain_calls"] = [*current.get("uncertain_calls", []), *uncertain]
                 references = self.images.references(current, image_ids) if self.images else []
                 # This snapshot is rebuilt from the authoritative aggregate, not client recipe/form JSON.
                 snapshot = self.workspace_binding.service(session_id).model_snapshot() if self.workspace_binding else None
@@ -106,6 +118,12 @@ class TurnManager:
                 if retry and not reuse:
                     raise TurnConflict("上一轮已改变，无法重试这条消息；请重新发送。")
                 if not reuse:
+                    prior = current.get("interrupted_progress")
+                    if resumed_history is not None and prior:
+                        current["messages"].append({"id": str(uuid4()), "turn_id": prior.get("id"),
+                            "role": "assistant", "content": prior.get("text", ""), "created_at": now(),
+                            "process": prior.get("process", []), "tool_calls": prior.get("tool_calls", []),
+                            "actions": prior.get("actions", []), "cancelled": True})
                     user = {"id": str(uuid4()), "role": "user", "content": message, "created_at": now(),
                             "request_id": turn.request_id, "turn_id": turn.id}
                     if references:
@@ -122,11 +140,17 @@ class TurnManager:
                                             "status": "starting", "text": "", "process": [],
                                             "tool_calls": [], "actions": [], "ui_context": snapshot})
                 turn.progress = copy.deepcopy(current["active_turn"])
+                if resumed_history is not None:
+                    history = [*resumed_history, {"role": "user", "content": message or "继续", **({"images": references} if references else {})}]
+                    current["execution_checkpoint"] = {"messages": copy.deepcopy(history)}
+                    return history, snapshot
                 last_assistant = next((i for i in range(len(current["messages"]) - 1, -1, -1)
                                        if current["messages"][i].get("role") == "assistant"), -1)
                 pending = [{key: item[key] for key in ("role", "content", "ui_context", "images") if key in item}
                            for item in current["messages"][last_assistant + 1:] if item.get("role") == "user"]
-                return copy.deepcopy([*current["history"], *pending]), snapshot
+                history = copy.deepcopy([*current["history"], *pending])
+                current["execution_checkpoint"] = {"messages": copy.deepcopy(history)}
+                return history, snapshot
             if self.account_usage is not None:
                 self.account_usage.begin(turn)
             try:
@@ -153,6 +177,7 @@ class TurnManager:
                 self.active.pop(turn.session_id, None)
                 try:
                     def fail(state):
+                        preserve_progress(state)
                         state.update(running=False, active_turn=None, last_status="error", last_error=error)
                     self.repository.mutate(turn.session_id, fail)
                 except Exception:
@@ -183,6 +208,27 @@ class TurnManager:
                               created_at=turn.created_at, status=status)
         async def on_event(event):
             payload = copy.deepcopy(event)
+            if payload.get("type") in {"execution_checkpoint", "execution_tool_result"}:
+                def checkpoint(state):
+                    if (state.get("active_turn") or {}).get("id") != turn.id:
+                        return
+                    if payload["type"] == "execution_checkpoint":
+                        state["execution_checkpoint"] = {"messages": payload["messages"]}
+                    else:
+                        messages = state.setdefault("execution_checkpoint", {"messages": history})["messages"]
+                        receipt = payload["message"]
+                        if not any(m.get("tool_call_id") == receipt["tool_call_id"] for m in messages):
+                            messages.append(receipt)
+                self.repository.mutate(turn.session_id, checkpoint)
+                return
+            if payload.get("type") == "tool_start":
+                state = self.repository.get(turn.session_id) or {}
+                spec = getattr(self.agent, "_extra_tools", {}).get(payload.get("name"))
+                if spec and spec.effect in {"write", "mixed", "wait", "presentation"} and any(
+                        c["name"] == payload.get("name") and c["arguments"] == payload.get("arguments")
+                        for c in state.get("uncertain_calls", [])):
+                    from chefmate_agent.boundary import _AgentFailure
+                    raise _AgentFailure("uncertain_write", "上次操作结果尚未确认，已阻止重复执行。请核对当前记录后再操作。")
             if payload.get("type") == "context_usage" and self.account_usage is not None:
                 self.account_usage.before_model(turn, payload.get("context_usage") or {})
             if payload.get("type") == "model_usage" and self.account_usage is not None:
@@ -292,7 +338,15 @@ class TurnManager:
                 question = (visible.get("workspace") or {}).get("pending_question")
                 visible["awaiting_user"] = status == "completed" and bool(question)
                 visible["pending_question"] = question if visible["awaiting_user"] else None
+                if status != "completed":
+                    state["active_turn"] = copy.deepcopy(turn.progress)
+                    preserve_progress(state)
+                    visible["text"] = turn.progress.get("text", "")
+                    visible["tool_calls"] = turn.progress.get("tool_calls", [])
+                    visible["actions"] = turn.progress.get("actions", [])
                 if status == "completed":
+                    state.pop("execution_checkpoint", None)
+                    state.pop("interrupted_progress", None)
                     if self.reply_suggestions and not visible["awaiting_user"]:
                         visible["suggested_replies"] = finalize_reply_suggestions(
                             data.get("suggested_replies"), visible.get("workspace") or turn.ui_context,
@@ -344,6 +398,7 @@ class TurnManager:
             return True
 
     async def close(self) -> None:
+        await self.jobs.close()
         turns = list(self.active.values())
         for turn in turns:
             turn.cancel.set()

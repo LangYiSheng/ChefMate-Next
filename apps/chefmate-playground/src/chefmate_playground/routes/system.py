@@ -55,7 +55,7 @@ def build_router(context: AppContext) -> APIRouter:
     @router.patch("/api/settings")
     async def update_settings(body: SettingsRequest):
         async with context.manager._lock:
-            if context.manager.active and body.section != "cooking":
+            if context.manager.has_work and body.section != "cooking":
                 raise HTTPException(409, "还有对话正在运行，请等它完成后再保存设置。")
             if body.revision != public_settings(context.config, components=context.components)["revision"]:
                 raise HTTPException(409, "设置已在另一页面更新；当前草稿保留，请重新读取后复核。")

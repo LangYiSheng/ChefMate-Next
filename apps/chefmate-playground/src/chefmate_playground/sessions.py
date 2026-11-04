@@ -51,6 +51,8 @@ class SessionRepository:
                 if capture:
                     capture["status"] = "interrupted"
                     self.save_debug_run(session["id"], turn_id, capture)
+                from .continuation import preserve_progress
+                preserve_progress(session)
                 session.update(running=False, active_turn=None, last_status="interrupted",
                                last_error={"code": "interrupted", "message": "服务重启，上一轮已中断。", "retryable": True})
                 self.save(session)
@@ -191,7 +193,7 @@ def public_session(state: dict, *, reply_suggestions: bool = True) -> dict:
     active = next((recipe for recipe in recipes if recipe.get("recipe_id") == workspace.get("active_recipe_id")),
                   recipes[0] if recipes else {})
     question = workspace.get("pending_question") if not state.get("running") else None
-    result = {**{key: value for key, value in state.items() if key not in {"history", "workspace", "image_uploads"}},
+    result = {**{key: value for key, value in state.items() if key not in {"history", "workspace", "image_uploads", "execution_checkpoint", "interrupted_progress", "uncertain_calls"}},
             "awaiting_user": bool(question), "pending_question": question,
             "conversation_state": {"stage": workspace.get("stage", "idea"), "recipe_count": len(recipes),
                 "recipe_names": [recipe.get("recipe", {}).get("name", "菜品") for recipe in recipes],

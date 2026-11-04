@@ -232,7 +232,7 @@ def test_request_id_cannot_replay_a_different_message(tmp_path):
         assert agent.calls == 1
 
 
-def test_followup_after_failed_turn_retains_human_intent_without_failed_tool_history(tmp_path):
+def test_followup_after_failed_turn_retains_intent_and_visible_progress(tmp_path):
     class FollowupAgent(Agent):
         async def run_turn(self, messages, on_event=None, cancel_event=None, *, ui_context=None, tool_context=None, memory_enabled=True):
             if self.calls == 0:
@@ -253,4 +253,4 @@ def test_followup_after_failed_turn_retains_human_intent_without_failed_tool_his
         client.post(uri + "/turn", json={"message": "我想吃虾"})
         result = client.post(uri + "/turn", json={"message": "半小时以内"})
         assert events(result)[-1]["status"] == "completed"
-        assert [item["role"] for item in client.get(uri).json()["messages"]] == ["user", "user", "assistant"]
+        assert [item["role"] for item in client.get(uri).json()["messages"]] == ["user", "assistant", "user", "assistant"]

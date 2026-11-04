@@ -87,7 +87,7 @@ class WorkspacePool:
                 # Bounded resident cache; persisted content is not evicted.
                 if len(self.workspaces) >= 64:
                     idle = next((key for key, value in self.workspaces.items()
-                                 if not value.state.manager.active and not self.inflight.get(key)), None)
+                                 if not value.state.manager.has_work and not self.inflight.get(key)), None)
                     if idle is not None:
                         old = self.workspaces.pop(idle)
                         self.revisions.pop(idle, None)
@@ -106,7 +106,7 @@ class WorkspacePool:
                 async with context.manager._lock:
                     # A global model update is refused while any turn is active.
                     # This fallback also keeps a running turn's bindings stable.
-                    if not context.manager.active:
+                    if not context.manager.has_work:
                         personal = {key: getattr(context.config, key) for key in PERSONAL_PERSISTED}
                         config = replace(self.control.state.context.config, **personal,
                             auth_enabled=False, managed_user=True, sessions_database=context.config.sessions_database,
@@ -144,7 +144,7 @@ class WorkspacePool:
                 self.inflight.pop(user["id"], None)
 
     def busy(self):
-        return any(self.inflight.values()) or any(app.state.manager.active for app in self.workspaces.values())
+        return any(self.inflight.values()) or any(app.state.manager.has_work for app in self.workspaces.values())
 
     async def close(self):
         await asyncio.gather(self.control.state.manager.close(),
@@ -165,7 +165,7 @@ class WorkspacePool:
                         if table in tables:
                             counts[label] = db.execute(f'SELECT COUNT(*) FROM "{table}"').fetchone()[0]
             size = sum(file.stat().st_size for file in path.parent.rglob("*") if file.is_file()) if path.parent.is_dir() else 0
-            active = bool(self.inflight.get(user["id"]) or self.workspaces.get(user["id"]) and self.workspaces[user["id"]].state.manager.active)
+            active = bool(self.inflight.get(user["id"]) or self.workspaces.get(user["id"]) and self.workspaces[user["id"]].state.manager.has_work)
             items.append({"user_id": user["id"], "username": user["username"], "counts": counts,
                           "bytes": size, "active": active})
         return {"items": items, "legacy_data_present": self.legacy_data_present,
@@ -180,7 +180,7 @@ class WorkspacePool:
             raise HTTPException(422, "请准确输入待重置用户的账号。")
         async with self.lock:
             app = self.workspaces.get(user_id)
-            if self.inflight.get(user_id) or app and app.state.manager.active:
+            if self.inflight.get(user_id) or app and app.state.manager.has_work:
                 raise HTTPException(409, "该用户仍有请求运行，请等待结束后再重置。")
             source = self.accounts.tenant_database(user_id).parent
             archive_name = user_id + "-" + datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ") + "-" + uuid4().hex[:8]

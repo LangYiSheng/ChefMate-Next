@@ -1,0 +1,67 @@
+.report-entry-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; margin: 24px 0; }
+.report-entry-grid button { text-align: left; display: grid; gap: 10px; padding: 22px; border-radius: 20px; border: 0; background: color-mix(in srgb, var(--color-accent) 5%, transparent); color: inherit; cursor: pointer; transition: transform .18s; }
+.report-entry-grid button:hover { transform: translateY(-2px); }
+.report-entry-grid span, .report-entry-grid small { color: var(--color-subtle); font-size: 12px; }
+.report-entry-grid strong { font-size: 18px; font-weight: 500; }
+.nutrition-report { display: grid; gap: 22px; animation: report-enter .25s ease-out; }
+.report-heading, .report-section-heading { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 16px; }
+.report-heading h2 { margin: 8px 0; font-size: clamp(22px, 2.4vw, 30px); font-weight: 500; }
+.report-heading p { margin: 0; }
+.report-date-controls, .report-actions, .report-evidence-days { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.react-centers .report-date-controls input { width: 155px; min-width: 0; }
+.report-coverage { display: flex; flex-wrap: wrap; gap: 12px 24px; padding: 14px 0; border: 0; font-size: 13px; }
+.report-coverage strong { font-size: 18px; font-weight: 500; }
+.report-metrics { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin: 0; }
+.report-metrics > div { border: 0; border-radius: 0; padding: 16px 0; min-width: 0; }
+.report-metrics dt { display: grid; gap: 5px; }
+.report-metrics dt small, .report-metrics p, .report-metrics dd small { font-size: 12px; color: var(--color-subtle); }
+.report-metrics dd { font-size: 28px; font-variant-numeric: tabular-nums; margin: 15px 0; }
+.nutrition-report details { font-size: 12px; }
+.nutrition-report summary { cursor: pointer; color: var(--color-subtle); padding: 8px 0; }
+.report-source { width: 100%; border: 0; border: 0; text-align: left; background: transparent; color: inherit; padding: 12px 0; cursor: pointer; line-height: 1.6; overflow-wrap: anywhere; }
+.report-source span { display: block; color: var(--color-subtle); font-size: 12px; }
+.report-panel { border: 0; border-radius: 0; padding: 20px 0; }
+.report-section-heading h3 { margin: 6px 0; font-size: 19px; font-weight: 500; }
+.report-chart { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 12px; margin: 28px 0 16px; }
+.report-chart button { display: grid; justify-items: center; gap: 10px; color: inherit; border: 0; background: transparent; cursor: pointer; padding: 0; min-width: 0; font-size: 12px; }
+.report-chart button:disabled { opacity: .4; cursor: default; }
+.report-chart small { color: var(--color-subtle); font-size: 11px; }
+.report-bar-track { width: min(38px, 85%); height: 120px; display: flex; align-items: end; background: color-mix(in srgb, var(--color-accent) 4%, transparent); border-radius: 7px; overflow: hidden; }
+.report-bar-track i { display: block; width: 100%; background: color-mix(in srgb, var(--color-accent) 65%, transparent); border-radius: 7px; transition: height .3s; }
+.report-bar-track i.partial { background: repeating-linear-gradient(135deg, color-mix(in srgb, var(--color-accent) 60%, transparent) 0 4px, color-mix(in srgb, var(--color-accent) 20%, transparent) 4px 8px); }
+.report-reflection { background: transparent; }
+.report-observations { padding: 0; list-style: none; display: grid; gap: 16px; }
+.report-observations > li { border: 0; padding-top: 12px; line-height: 1.8; }
+.report-observations p { margin: 4px 0; }
+.report-next-step { line-height: 1.8; border: 0; padding-top: 16px; }
+.report-meals { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px 24px; }
+.report-meals h4 { font-size: 14px; font-weight: 500; margin-bottom: 4px; }
+.report-error { padding: 12px; border: 0; border-radius: 12px; }
+.report-loading { padding: 40px 0; color: var(--color-subtle); }
+@keyframes report-enter { from { opacity: 0; transform: translateY(4px); } }
+@media(max-width: 750px) { .report-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); } .report-panel { padding: 16px 0; } .report-entry-grid { grid-template-columns: 1fr; } .report-chart { gap: 5px; } }
+@media(max-width: 420px) { .report-date-controls { gap: 4px; } .react-centers .report-date-controls input { width: 138px; } .report-meals { grid-template-columns: 1fr; } .report-metrics dd { font-size: 24px; } }
+@container center-page (max-width: 750px) { .report-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); } .report-panel { padding: 16px 0; } .report-entry-grid { grid-template-columns: 1fr; } .report-chart { gap: 5px; } }
+@media(prefers-reduced-motion: reduce) { .nutrition-report, .report-bar-track i, .report-entry-grid button { animation: none; transition: none; } }
+
+/* Follow the nutrition overview's surface, title and numeric hierarchy. */
+.react-centers .nutrition-report { margin-top: 28px; gap: 28px; }
+.react-centers .report-heading { align-items: flex-start; }
+.react-centers .report-heading h2 { font-family: var(--font-title); font-weight: var(--font-title-weight); font-size: 1.5rem; }
+.react-centers .report-section-heading h3 { font-family: var(--font-title); font-weight: var(--font-title-weight); font-size: 1.25rem; }
+.react-centers .report-coverage { padding: 10px 0 0; color: var(--color-muted); }
+.react-centers .report-coverage strong { color: var(--color-text); font-weight: 600; }
+.react-centers .report-metrics { margin: 18px 0 0; gap: 24px; }
+.react-centers .report-metrics > div { padding: 0; }
+.react-centers .report-metrics dt { font-weight: 500; }
+.react-centers .report-metrics dt small { font-weight: 400; font-size: 11px; }
+.react-centers .report-metrics dd { font-family: var(--font-numeric); font-weight: 600; font-size: 2rem; margin: 8px 0 4px; }
+.react-centers .report-metrics .intake-energy dd { font-size: 2.5rem; color: var(--color-accent); }
+.react-centers .report-metrics dd small { font-weight: 400; }
+.react-centers .report-panel { padding: 4px 0; }
+.react-centers .report-chart button > span { font-weight: 600; font-family: var(--font-numeric); }
+.react-centers .report-chart time, .react-centers .report-meals h4 { font-weight: 600; }
+.react-centers .report-date-controls .report-week-select { width: 340px; max-width: 100%; font-size: 13px; font-weight: 500; }
+.react-centers .report-date-controls { max-width: 100%; }
+@container center-page (max-width: 750px) { .react-centers .report-metrics { grid-template-columns: repeat(2, minmax(0,1fr)); } }
+@media(max-width: 420px) { .react-centers .report-date-controls .report-week-select { width: 100%; order: -1; } .react-centers .report-metrics dd { font-size: 1.75rem; } .react-centers .report-metrics .intake-energy dd { font-size: 2.125rem; } }
