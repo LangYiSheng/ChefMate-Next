@@ -477,6 +477,8 @@ def create_account_app(config, *, service=None, agent=None):
     app = FastAPI(title="ChefMate", version=current_version(APP_ROOT), lifespan=lifespan,
                   docs_url=None, redoc_url=None, openapi_url=None)
     install_storage_handlers(app)
+    from .speech import mount_speech
+    mount_speech(app, config, pool.accounts)
     app.state.accounts, app.state.pool = pool.accounts, pool
     app.include_router(build_router(pool.accounts, secure_cookie=config.cookie_secure))
     from .routes.entitlements import build_router as entitlements_router

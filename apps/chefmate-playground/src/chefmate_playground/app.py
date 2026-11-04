@@ -144,6 +144,8 @@ def create_workspace_app(
         response.headers["Cache-Control"] = "no-store"
         return response
 
+    from .speech import mount_speech
+    mount_speech(app, settings)
     mount_routes(app, context)
 
     mount_frontend(app, APP_ROOT / "web")

@@ -7,6 +7,8 @@ import { Icon } from './Icon';
 import { ImagePreview, imageURL } from './ImagePreview';
 import { replySuggestions } from './suggestions';
 import { readKeyboardPreferences, shouldSendMessage, subscribeKeyboardPreferences } from '../features/settings/keyboard-preferences';
+import { useSpeech } from './useSpeech';
+import './speech.css';
 export { imageURL } from './ImagePreview';
 
 export type EditorPositions = Map<string, { start: number; end: number }>;
@@ -52,8 +54,15 @@ export function Composer({ state, focus = false, notify, positions }: { state: R
     void document.fonts?.ready.then(() => { if (alive) resizeInput(); });
     return () => { alive = false; observer?.disconnect(); window.removeEventListener('resize', resizeInput); window.removeEventListener('chefmate:appearance', resizeInput); };
   }, [resizeInput, key, Boolean(pending)]);
-  function send() {
-    void chefStore.sendMessage(text).then(result => { if (result.error) notify(result.error); });
+  const speech = useSpeech(key, value => chefStore.setDraft(value), notify);
+  const sending = useRef(false);
+  async function send() {
+    if (sending.current || running || reading || state.preparing || uploading || continuation || !state.status?.ready) return;
+    sending.current = true;
+    try {
+      const value = speech.phase === 'idle' ? text : await speech.stop();
+      if (value !== null) { const result = await chefStore.sendMessage(value); if (result.error) notify(result.error); }
+    } finally { sending.current = false; }
   }
   function attach(files: File[]) {
     void chefStore.uploadImages(files).catch(error => notify(error.message));
@@ -71,7 +80,7 @@ export function Composer({ state, focus = false, notify, positions }: { state: R
     {reading && <div className="turn-status" role="status">正在读取这段对话，读取完成后就可以发送。</div>}
     {!pending && <form className="composer" onSubmit={event => { event.preventDefault(); if (!reading) send(); }}>
       <label className="visually-hidden" htmlFor="composer-input">告诉 ChefMate 你想吃什么</label>
-      <textarea key={key} ref={input} id="composer-input" rows={1} value={text} maxLength={8000} autoComplete="off"
+      <textarea key={key} ref={input} id="composer-input" rows={1} value={text} readOnly={speech.phase !== 'idle'} maxLength={8000} autoComplete="off"
         placeholder="告诉我想吃什么，也可以补充条件…" aria-keyshortcuts={keyboard.send_mode === 'enter' ? 'Enter' : 'Control+Enter Meta+Enter'}
         onChange={event => chefStore.setDraft(event.target.value)}
         onSelect={event => positions?.set(key, { start: event.currentTarget.selectionStart, end: event.currentTarget.selectionEnd })}
@@ -81,8 +90,20 @@ export function Composer({ state, focus = false, notify, positions }: { state: R
       <div className="composer-bottom">
         {state.status?.supports_images && <button type="button" className="attach-button" aria-label="上传图片" title="上传图片 · 自动压缩" disabled={uploading || running || state.preparing} onClick={() => upload.current?.click()}><Icon name="image-plus" /></button>}
         <input ref={upload} type="file" accept="image/jpeg,image/png,image/webp" multiple hidden onChange={event => { attach([...(event.target.files || [])]); event.target.value = ''; }} />
+        <div className="speech-controls">
+          {speech.phase !== 'idle' && <span className={`speech-status ${speech.phase}`} role="status">
+            <span className="speech-wave" aria-hidden="true">{[0.6, 1, 0.8, 1, 0.5].map((scale, i) => <i key={i} style={{ height: `${4 + speech.level * 18 * scale}px`, animationDelay: `${i * 90}ms` }} />)}</span>
+            {speech.phase === 'connecting' ? '正在连接…' : speech.phase === 'finishing' ? '正在完成转写…' : '正在聆听'}
+          </span>}
+          <button type="button" className={`speech-button ${speech.phase}`} aria-label={speech.phase === 'idle' ? '开始语音输入' : '停止语音输入'}
+            title={speech.phase === 'idle' ? '语音输入' : '停止录音，保留文字'} aria-pressed={speech.phase !== 'idle'}
+            disabled={running || reading || state.preparing || uploading || Boolean(continuation) || speech.phase === 'finishing'}
+            onClick={() => { if (speech.phase === 'idle') void speech.start(text); else void speech.stop(); }}>
+            {speech.phase === 'idle' ? <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="1.7" aria-hidden="true"><rect x="9" y="3" width="6" height="12" rx="3"/><path d="M6 10v2a6 6 0 0 0 12 0v-2M12 18v3m-3 0h6"/></svg> : <Icon name={speech.phase === 'finishing' || speech.phase === 'connecting' ? 'loader-circle' : 'square'} />}
+          </button>
+        </div>
         {running ? <button type="button" className="send-button stop-button" aria-label="停止本次执行" disabled={run?.cancelling} onClick={() => void chefStore.cancelTurn().catch(error => notify(error.message))}><Icon name="square" /></button> :
-          <button type="submit" className="send-button" aria-label="发送消息" disabled={!state.status?.ready || reading || state.preparing || uploading || Boolean(continuation) || !text.trim() && !images.length}><Icon name="arrow-up" /></button>}
+          <button type="submit" className="send-button" aria-label="发送消息" disabled={!state.status?.ready || reading || state.preparing || uploading || Boolean(continuation) || speech.phase === 'connecting' || speech.phase === 'finishing' || speech.phase === 'idle' && !text.trim() && !images.length}><Icon name="arrow-up" /></button>}
       </div>
     </form>}
     {preview != null && <ImagePreview images={images} index={preview} sessionId={state.currentId} onIndex={setPreview} onClose={() => setPreview(null)} />}

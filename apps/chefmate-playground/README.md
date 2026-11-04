@@ -40,6 +40,14 @@ uv run --project apps/chefmate-playground chefmate-playground
 
 ## 代码入口
 
+### 语音输入
+
+输入框发送按钮左侧的麦克风支持实时转写。点击停止会保留文字；录音中点击发送会先停止采音、等待最终转写，再发送一次。连接失败或收尾超时保留草稿，切换会话或隐藏页面自动释放麦克风。单次录音最多约三分钟。
+
+服务端从 `CHEFMATE_RUNTIME_DIR/speech.env`（本机默认 `.runtime/speech.env`）或进程环境读取 `CHEFMATE_SPEECH_API_KEY`，可用 `CHEFMATE_SPEECH_RESOURCE_ID` 覆盖默认 `volc.seedasr.sauc.duration`。Docker 中配置文件路径为 `/var/lib/chefmate/speech.env`；密钥不进入前端、镜像或版本库。修改此文件后下一次录音生效。
+
+浏览器需要麦克风权限，远程访问需要 HTTPS。本机 localhost/127.0.0.1 可直接测试。音频以 16 kHz 单声道 PCM 通过已登录、同源 WebSocket 转发至火山引擎，不保存原始录音。语音服务用量由火山引擎计费，当前不纳入 ChefMate 的文本模型额度账本。
+
 | 位置 | 职责 |
 | --- | --- |
 | [app.py](src/chefmate_playground/app.py)、[app_context.py](src/chefmate_playground/app_context.py) | 服务装配、当前依赖与生命周期 |

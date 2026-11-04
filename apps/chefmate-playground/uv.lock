@@ -241,6 +241,7 @@ dependencies = [
     { name = "pillow" },
     { name = "python-dotenv" },
     { name = "uvicorn" },
+    { name = "websockets" },
 ]
 
 [package.optional-dependencies]
@@ -266,6 +267,7 @@ requires-dist = [
     { name = "python-dotenv", specifier = ">=1,<2" },
     { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.12,<1" },
     { name = "uvicorn", specifier = ">=0.30,<1" },
+    { name = "websockets", specifier = ">=15,<17" },
 ]
 provides-extras = ["dev"]
 

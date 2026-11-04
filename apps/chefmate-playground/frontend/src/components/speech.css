@@ -1,0 +1,18 @@
+.speech-controls { display: flex; align-items: center; gap: 10px; margin-left: auto; }
+.speech-controls + .send-button { margin-left: 0; }
+.speech-button { display: grid; place-items: center; width: 36px; height: 36px; border: 0; border-radius: 50%; background: transparent; color: inherit; cursor: pointer; transition: background .2s, transform .2s; }
+.speech-button:hover { background: color-mix(in srgb, currentColor 8%, transparent); }
+.speech-button:active { transform: scale(.92); }
+.speech-button:focus-visible { outline: 2px solid currentColor; outline-offset: 3px; }
+.speech-button:disabled { opacity: .4; cursor: default; }
+.speech-button.recording { color: #c84937; background: #c8493712; animation: speech-pulse 1.8s ease-in-out infinite; }
+.speech-button.connecting svg, .speech-button.finishing svg { animation: speech-spin 1s linear infinite; }
+.speech-status { display: inline-flex; align-items: center; gap: 8px; font-size: 12px; opacity: .75; animation: speech-appear .2s ease-out; }
+.speech-wave { display: flex; gap: 2px; height: 24px; align-items: center; }
+.speech-wave i { width: 3px; border-radius: 3px; background: currentColor; transition: height .15s ease; }
+.connecting .speech-wave i, .finishing .speech-wave i { animation: speech-pulse .8s ease-in-out infinite alternate; }
+@keyframes speech-pulse { 50% { opacity: .5; } }
+@keyframes speech-spin { to { transform: rotate(360deg); } }
+@keyframes speech-appear { from { opacity: 0; transform: translateY(3px); } }
+@media (prefers-reduced-motion: reduce) { .speech-button, .speech-button svg, .speech-status, .speech-wave i { animation: none !important; transition: none; } }
+@media (max-width: 420px) { .speech-status { font-size: 11px; gap: 4px; } .speech-controls { gap: 4px; } }
