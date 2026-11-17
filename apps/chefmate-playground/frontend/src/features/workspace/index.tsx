@@ -42,12 +42,13 @@ export function MessageViews({ message, sessionId, running, onContinue, onRecipe
     const owner = history.findLast(source => messageViews(source).some(candidate => candidate.id === view.id));
     const ownsView = owner ? owner === message || Boolean(owner.id && owner.id === message.id) : !current || view.revision >= current.revision;
     return { view, index, current, live: Boolean(current && ownsView) };
-  });
+  }).filter(item => item.live);
+  if (!items.length) return null;
   const defaults = new Set(items.filter(item => item.view.placement === 'inline').sort((left, right) => Number(Boolean(right.live && right.current?.editable)) - Number(Boolean(left.live && left.current?.editable)) || right.index - left.index).slice(0, limit).map(item => item.view.id));
   return <div className="react-workspace react-inline-workspace">{items.map(({ view, current, live }) => {
     const open = expanded[view.id] ?? defaults.has(view.id);
     if (!open) return <section className="workspace-view-receipt" key={view.id} data-view-id={view.id} data-view-kind={view.kind}>
-      <button className="view-receipt" type="button" aria-expanded={false} onClick={() => setExpanded(values => ({ ...values, [view.id]: true }))}><Icon name="layers" /><span><strong>{view.title || labels[view.kind]}</strong><small>{viewSummary(current || view)}{!live ? ' · 历史记录' : ''}</small></span><Icon name="chevron-down" /></button>
+      <button className="view-receipt" type="button" aria-expanded={false} onClick={() => setExpanded(values => ({ ...values, [view.id]: true }))}><Icon name="layers" /><span><strong>{view.title || labels[view.kind]}</strong><small>{viewSummary(current || view)}</small></span><Icon name="chevron-down" /></button>
       {current && onFocus && <Button className="ui-text-button" aria-label={`全屏查看${view.title || labels[view.kind]}`} onClick={() => onFocus(view.kind)}><Icon name="maximize" /></Button>}
     </section>;
     return <div className="workspace-inline-view" key={view.id}><ViewCard view={live ? current! : view} entry={entry} sessionId={sessionId} historical={!live} onContinue={onContinue} onRecipe={onRecipe} onFocus={onFocus} onCollapse={() => setExpanded(values => ({ ...values, [view.id]: false }))} /></div>;

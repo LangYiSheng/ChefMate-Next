@@ -247,10 +247,11 @@
 .react-cooking-focus[data-active-view=cooking_guide] .focus-content>.ui-cooking_guide{height:100%;min-height:0;flex:1;overflow:hidden}
 .react-cooking-focus[data-active-view=cooking_guide] .ui-cooking-guide{height:100%;min-height:0;overflow:hidden}
 .react-cooking-focus .focus-cooking-layout{display:flex;flex:1;flex-direction:column;gap:8px;min-width:0;min-height:0;overflow:hidden}
-.react-cooking-focus .focus-step-outline{display:flex;flex:none;flex-direction:column;min-width:0;min-height:0;max-height:160px;margin:0;overflow:hidden}
-.react-cooking-focus .focus-step-outline>summary{flex:none}
-.react-cooking-focus .focus-step-outline:not([open]) .focus-step-outline-body{display:none}
-.react-cooking-focus .focus-step-outline-body{flex:1;min-height:0;max-height:128px;overflow:auto;overscroll-behavior:contain;scrollbar-gutter:stable}
+.react-cooking-focus .focus-step-outline{display:flex;flex:none;flex-direction:column;min-width:0;min-height:0;max-height:min(30dvh,45%);margin:0;overflow:hidden;font-size:1rem}
+.react-cooking-focus .focus-outline-toggle{display:flex;flex:none;align-items:center;justify-content:space-between;gap:12px;width:100%;min-height:42px;padding:8px 10px;border:0;background:transparent;color:var(--color-text);text-align:left;font:550 1rem/1.6 var(--font-ui);cursor:pointer}
+.react-cooking-focus .focus-step-outline-body{flex:1;min-height:0;max-height:none;overflow:auto;overscroll-behavior:contain;scrollbar-gutter:stable}
+.react-cooking-focus .focus-step-outline .workflow-step-jump{gap:12px;padding:12px 10px;font-size:1rem;line-height:1.65}
+.react-cooking-focus .focus-step-outline .workflow-step-jump>span:last-child{display:block;overflow:visible;white-space:normal;overflow-wrap:anywhere;-webkit-line-clamp:unset}
 .react-cooking-focus .focus-step-reading{flex:1;min-width:0;min-height:0;overflow:auto;overscroll-behavior:contain;scrollbar-gutter:stable;padding-right:8px}
 .react-cooking-focus .focus-step-reading>.ui-cooking-step{display:block;min-height:0;padding:12px 0 16px}
 .react-cooking-focus .cooking-step-main{display:block;min-height:0}
@@ -259,9 +260,9 @@
 .react-cooking-focus .cooking-step-nav{margin-bottom:0}
 .react-cooking-focus .complete-meal-control{flex:none;margin-top:10px}
 @media(min-width:1000px){
-  .react-cooking-focus .focus-cooking-layout{display:grid;grid-template-columns:220px minmax(0,1fr);grid-template-rows:minmax(0,1fr);gap:26px}
+  .react-cooking-focus .focus-cooking-layout{display:grid;grid-template-columns:minmax(260px,30%) minmax(0,1fr);grid-template-rows:minmax(0,1fr);gap:26px}
   .react-cooking-focus .focus-step-outline{height:100%;max-height:none;border-right:0;padding-right:14px}
-  .react-cooking-focus .focus-step-outline-body{max-height:calc(100% - 36px)}
+  .react-cooking-focus .focus-step-outline-body{max-height:none}
 }
 @media(max-width:600px){
   :is(.react-workspace,.react-cooking-focus) .cooking-list-copy{grid-template-columns:22px minmax(0,1fr);gap:4px 9px;padding:11px 8px}
@@ -273,9 +274,9 @@
   :is(.react-workspace,.react-cooking-focus) .cooking-step-nav .icon{width:16px;height:16px;flex:none}
 }
 @media(max-height:500px) and (min-width:700px){
-  .react-cooking-focus .focus-cooking-layout{display:grid;grid-template-columns:160px minmax(0,1fr);grid-template-rows:minmax(0,1fr);gap:18px}
+  .react-cooking-focus .focus-cooking-layout{display:grid;grid-template-columns:200px minmax(0,1fr);grid-template-rows:minmax(0,1fr);gap:18px}
   .react-cooking-focus .focus-step-outline{height:100%;max-height:none;border-right:0;padding-right:10px}
-  .react-cooking-focus .focus-step-outline-body{max-height:calc(100% - 36px)}
+  .react-cooking-focus .focus-step-outline-body{max-height:none}
   .react-cooking-focus{--focus-gutter:24px}
   .react-cooking-focus .focus-deck{padding:6px var(--focus-gutter)}
   .react-cooking-focus .cooking-guide-tools{gap:4px 12px;margin-bottom:4px}

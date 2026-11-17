@@ -27,18 +27,18 @@ describe('React workspace behavior', () => {
     render(<WorkspacePanel sessionId={id} running={false} onContinue={() => {}} />);
     expect(screen.getByRole('spinbutton', { name: '用餐人数' })).toHaveValue(4); expect(screen.getByRole('button', { name: '保存条件并继续' })).toBeEnabled();
   });
-  it('shows current inline controls, while previous view identities remain read only', () => {
+  it('hides previous view identities and keeps current inline controls', () => {
     const id = seed([form]), older = { ...form, id: 'previous' }, message = { actions: [{ kind: 'show_component', component: older }] };
     const rendered = render(<MessageViews message={message} sessionId={id} running={false} onContinue={() => {}} />);
-    expect(screen.getByText('历史记录')).toBeInTheDocument(); expect(screen.getByRole('spinbutton', { name: '用餐人数' })).toBeDisabled();
+    expect(rendered.container).toBeEmptyDOMElement(); expect(screen.queryByText('在当前任务打开')).not.toBeInTheDocument();
     rendered.rerender(<MessageViews message={{ actions: [{ kind: 'show_component', component: form }] }} sessionId={id} running={false} onContinue={() => {}} />);
     expect(screen.queryByText('历史记录')).not.toBeInTheDocument(); expect(screen.getByRole('spinbutton', { name: '用餐人数' })).toBeEnabled();
   });
-  it('keeps only the latest message owner editable when backend guidance preserves a view identity', () => {
+  it('shows a preserved view identity only in its latest message owner', () => {
     const current = { ...form, revision: 3 }, olderMessage = { id: 'older', role: 'assistant', content: '', actions: [{ kind: 'show_component', component: { ...form, revision: 1 } }] }, latestMessage = { id: 'latest', role: 'assistant', content: '', actions: [{ kind: 'show_component', component: { ...form, revision: 2 } }] }, id = seed([current]);
     const state = chefStore.getSnapshot(); vi.spyOn(chefStore, 'getSnapshot').mockReturnValue({ ...state, cache: { ...state.cache, [id]: { id, title: '测试', messages: [olderMessage, latestMessage] } as any } });
     render(<><MessageViews message={olderMessage} sessionId={id} running={false} onContinue={() => {}} /><MessageViews message={latestMessage} sessionId={id} running={false} onContinue={() => {}} /></>);
-    const inputs = screen.getAllByRole('spinbutton', { name: '用餐人数' }); expect(inputs[0]).toBeDisabled(); expect(inputs[1]).toBeEnabled(); expect(screen.getAllByText('历史记录')).toHaveLength(1);
+    const inputs = screen.getAllByRole('spinbutton', { name: '用餐人数' }); expect(inputs).toHaveLength(1); expect(inputs[0]).toBeEnabled(); expect(screen.queryByText('历史记录')).not.toBeInTheDocument();
   });
   it('surfaces an inline recipe detail in the current workspace focus after the action succeeds', async () => {
     const choice: View = { id: 'choices', kind: 'recipe_choices', revision: 1, editable: true, data: { recipes: [{ recipe_id: 'egg', name: '鸡蛋' }] } }, id = seed([choice]), onFocus = vi.fn();
@@ -115,7 +115,11 @@ describe('React workspace behavior', () => {
     const rendered = render(<CookingFocus sessionId={id} onClose={() => {}} onContinue={() => {}} />);
     const outline = rendered.container.querySelector('.focus-step-outline')!, reading = rendered.container.querySelector('.focus-step-reading')!;
     expect(outline.parentElement).toBe(reading.parentElement); expect(outline.compareDocumentPosition(reading) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    expect(outline).toHaveAttribute('open'); fireEvent.click(within(outline as HTMLElement).getByRole('button', { name: /2加水煮开/ }));
+    const toggle = within(outline as HTMLElement).getByRole('button', { name: '全部步骤大纲' });
+    expect(toggle).toHaveAttribute('aria-expanded', 'true');
+    fireEvent.click(toggle); expect(toggle).toHaveAttribute('aria-expanded', 'false'); expect(within(outline as HTMLElement).queryByRole('list')).not.toBeInTheDocument();
+    fireEvent.click(toggle); expect(toggle).toHaveAttribute('aria-expanded', 'true');
+    fireEvent.click(within(outline as HTMLElement).getByRole('button', { name: /2加水煮开/ }));
     expect(within(reading as HTMLElement).getByText('加水煮开。')).toBeInTheDocument(); expect(dispatch).not.toHaveBeenCalled();
     expect(within(outline as HTMLElement).getByRole('button', { name: /2加水煮开/ })).toHaveAttribute('aria-current', 'step');
   });
