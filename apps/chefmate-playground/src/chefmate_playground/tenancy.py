@@ -555,7 +555,7 @@ def create_account_app(config, *, service=None, agent=None):
     @app.post("/api/admin/settings/test-model")
     async def admin_probe(values: dict, request: Request):
         from decimal import Decimal, ROUND_CEILING
-        from .settings import probe_model, resolve_model
+        from .settings import probe_model, resolve_model, PROBE_INPUT_TOKEN_BUDGET, PROBE_OUTPUT_TOKEN_BUDGET
         try:
             candidate = resolve_model(pool.control.state.context.config, values)
         except ValueError:
@@ -564,10 +564,10 @@ def create_account_app(config, *, service=None, agent=None):
         try:
             reservation = pool.accounts.reserve_usage(user_id, turn_id)
             price = reservation["pricing"]
-            # Two small native-tool requests, each capped at 256 output tokens.
-            cost = int((Decimal(8192) * max(Decimal(price["input_per_million"]), Decimal(price["cached_input_per_million"]))
-                + Decimal(512) * Decimal(price["output_per_million"])).to_integral_value(rounding=ROUND_CEILING))
-            pool.accounts.resize_usage(user_id, turn_id, tokens=8704, cost_micros=cost)
+            # Reserve both native-tool requests, including their reasoning output.
+            cost = int((Decimal(PROBE_INPUT_TOKEN_BUDGET) * max(Decimal(price["input_per_million"]), Decimal(price["cached_input_per_million"]))
+                + Decimal(PROBE_OUTPUT_TOKEN_BUDGET) * Decimal(price["output_per_million"])).to_integral_value(rounding=ROUND_CEILING))
+            pool.accounts.resize_usage(user_id, turn_id, tokens=PROBE_INPUT_TOKEN_BUDGET + PROBE_OUTPUT_TOKEN_BUDGET, cost_micros=cost)
         except AccountError as error:
             pool.accounts.release_usage(user_id, turn_id)
             raise HTTPException(error.status_code, error.detail) from None

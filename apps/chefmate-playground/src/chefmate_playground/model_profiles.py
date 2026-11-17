@@ -15,7 +15,8 @@ from uuid import uuid4
 from pydantic import ValidationError
 
 from .accounts import AccountError, _price
-from .settings import ModelSettings, build_agent, persist_settings, probe_model, public_settings, settings_path
+from .settings import (ModelSettings, build_agent, persist_settings, probe_model, public_settings, settings_path,
+                       PROBE_INPUT_TOKEN_BUDGET, PROBE_OUTPUT_TOKEN_BUDGET)
 
 
 MODEL_FIELDS = ("model", "base_url", "api_key", "api_format", "stream_tool_calls", "supports_images", "max_images")
@@ -330,9 +331,9 @@ class ModelProfilesRegistry:
         turn_id = "model-profile-probe-" + uuid4().hex
         try:
             self.accounts.reserve_usage(actor_id, turn_id, pricing_override=tariff)
-            cost = int((Decimal(8192) * max(Decimal(tariff["input_per_million"]), Decimal(tariff["cached_input_per_million"]))
-                + Decimal(512) * Decimal(tariff["output_per_million"])).to_integral_value(rounding=ROUND_CEILING))
-            self.accounts.resize_usage(actor_id, turn_id, tokens=8704, cost_micros=cost)
+            cost = int((Decimal(PROBE_INPUT_TOKEN_BUDGET) * max(Decimal(tariff["input_per_million"]), Decimal(tariff["cached_input_per_million"]))
+                + Decimal(PROBE_OUTPUT_TOKEN_BUDGET) * Decimal(tariff["output_per_million"])).to_integral_value(rounding=ROUND_CEILING))
+            self.accounts.resize_usage(actor_id, turn_id, tokens=PROBE_INPUT_TOKEN_BUDGET + PROBE_OUTPUT_TOKEN_BUDGET, cost_micros=cost)
         except AccountError:
             self.accounts.release_usage(actor_id, turn_id)
             raise

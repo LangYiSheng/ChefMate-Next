@@ -106,7 +106,7 @@ def test_parallel_turn_still_competes_with_released_headroom(tmp_path):
 def test_model_connection_probe_is_counted_and_never_exposes_key(tmp_path, monkeypatch):
     class FakeModel:
         def __init__(self, **kwargs):
-            assert kwargs["max_tokens"] == 256
+            assert kwargs["max_tokens"] == 2048
 
         def bind_tools(self, *args, **kwargs):
             return self

@@ -335,6 +335,26 @@ def test_unspecified_function_status_is_compatible_when_response_completed():
     assert asyncio.run(llm.ainvoke("fixture")).tool_calls[0]["args"] == {"value": 1}
 
 
+@pytest.mark.parametrize("responses", [True, False])
+@pytest.mark.parametrize("streaming", [True, False])
+@pytest.mark.parametrize("limited", [True, False])
+def test_incomplete_response_retains_only_safe_output_limit_flag(responses, streaming, limited):
+    guard = ArgumentIntegrity("responses" if responses else "chat_completions")
+    if responses:
+        payload = {"status": "incomplete", "output": [], "incomplete_details": {
+            "reason": "max_output_tokens" if limited else "private-provider-detail"}}
+        invoke = (lambda: guard.responses_event(NS(type="response.incomplete", response=payload))) if streaming else lambda: guard.response(payload)
+    else:
+        payload = {"choices": [{"index": 0, "delta": {}, "message": {},
+                                "finish_reason": "length" if limited else "private-provider-detail"}]}
+        invoke = (lambda: guard.chat_chunk(payload)) if streaming else lambda: guard.response(payload)
+    with pytest.raises(ProviderIntegrityError) as caught:
+        invoke()
+    assert caught.value.code == "provider_response_incomplete"
+    assert bool(caught.value.diagnostics.get("output_limit_reached")) is limited
+    assert "private-provider-detail" not in json.dumps(caught.value.diagnostics)
+
+
 def test_cancelling_async_stream_closes_the_actual_sdk_resource_once():
     async def exercise():
         started, blocked = asyncio.Event(), asyncio.Event()

@@ -18,6 +18,9 @@ PERSISTED = {"model", "base_url", "api_key", "api_format", "stream_tool_calls", 
              "turn_timeout_s", "model_timeout_s", "model_max_retries", "max_model_rounds", "max_tool_calls",
              "max_history_chars", "max_tool_result_chars", "reply_suggestions", "reply_suggestion_count", "timer_limit", "clear_timer_on_step_change", "ui_preferences"}
 PERSONAL_PERSISTED = {"ui_preferences", "reply_suggestions", "reply_suggestion_count", "timer_limit", "clear_timer_on_step_change"}
+PROBE_MAX_OUTPUT_TOKENS = 2048
+PROBE_INPUT_TOKEN_BUDGET = 8192
+PROBE_OUTPUT_TOKEN_BUDGET = 2 * PROBE_MAX_OUTPUT_TOKENS
 
 
 class ModelSettings(BaseModel):
@@ -192,13 +195,14 @@ def build_agent(config, service, *, memory=None, cookbook=None, journal=None, pr
 
 async def probe_model(config, *, on_usage=None):
     """验证原生工具请求、结果回传和最终回答；不把文本中的工具指令当成功。"""
-    from chefmate_agent.provider import IntegrityChatOpenAI
+    from chefmate_agent.provider import IntegrityChatOpenAI, ProviderIntegrityError
+    from openai import APIConnectionError, APITimeoutError
     from langchain_core.messages import HumanMessage, ToolMessage
     from chefmate_agent.telemetry import usage_record, usage_summary
 
     model = IntegrityChatOpenAI(model=config.model, api_key=config.api_key, base_url=config.base_url,
                        use_responses_api=config.api_format == "responses", timeout=35, max_retries=0,
-                       streaming=config.stream_tool_calls, stream_usage=True, max_tokens=256)
+                       streaming=config.stream_tool_calls, stream_usage=True, max_tokens=PROBE_MAX_OUTPUT_TOKENS)
     usage_calls, attempts = [], 0
     def report():
         if on_usage is not None:
@@ -209,7 +213,9 @@ async def probe_model(config, *, on_usage=None):
     request = HumanMessage(content="调用connection_echo，value必须是chefmate。得到工具结果后只回复OK。")
     async def run():
         nonlocal attempts
-        bound = model.bind_tools([tool], tool_choice="connection_echo")
+        # Preserve the provider's thinking mode; forced tool selection is not
+        # supported by every reasoning model. Validate the actual call below.
+        bound = model.bind_tools([tool])
         attempts += 1
         report()
         if config.stream_tool_calls:
@@ -231,15 +237,41 @@ async def probe_model(config, *, on_usage=None):
         final = await model.ainvoke([request, reply, ToolMessage(content="chefmate", tool_call_id=reply.tool_calls[0]["id"])])
         usage_calls.append(usage_record(final, 2, model=config.model))
         report()
-        if final.tool_calls or not final.content:
+        text = final.content if isinstance(final.content, str) else "".join(
+            block.get("text", "") for block in final.content
+            if isinstance(block, dict) and block.get("type") == "text")
+        if final.tool_calls or final.invalid_tool_calls or not text.strip():
             return {"ok": False, "message": "工具调用成功，但结果回传后的回答未完成。"}
         return {"ok": True, "message": "连接、原生工具调用和结果回传均通过。",
                 "api_format": config.api_format, "stream_tool_calls": config.stream_tool_calls}
     try:
         return await asyncio.wait_for(run(), timeout=75)
+    except ProviderIntegrityError as error:
+        if error.diagnostics.get("output_limit_reached"):
+            message = "测试输出额度已耗尽（包含思考 Token），未完成工具调用或最终回答；不代表连接失败。"
+        elif error.code == "provider_response_incomplete":
+            message = "模型响应未完整结束，请重试；本次未能完成工具调用验证。"
+        else:
+            message = "模型返回的原生工具调用未通过完整性校验，请检查接口兼容性。"
+        return {"ok": False, "message": message}
+    except (TimeoutError, APITimeoutError):
+        return {"ok": False, "message": "模型连接测试超时，未完成工具调用或最终回答，请稍后重试。"}
+    except APIConnectionError:
+        return {"ok": False, "message": "无法连接模型服务，请检查服务地址和网络后重试。"}
     except Exception as error:
+        from .debug import redact_debug
         code = getattr(error, "status_code", None)
-        return {"ok": False, "message": "连接测试未通过，请检查端点、专用密钥、模型和协议。",
+        # Only display the structured provider message, never request bodies,
+        # headers or the SDK exception string (which may contain credentials).
+        body = getattr(error, "body", None)
+        detail = body.get("error", body) if isinstance(body, dict) else None
+        detail = detail.get("message") if isinstance(detail, dict) else None
+        message = "连接测试未通过，请检查端点、专用密钥、模型和协议。"
+        if isinstance(detail, str) and detail.strip():
+            detail = redact_debug(detail, (config.api_key, config.database_url, config.app_database_url))
+            detail = " ".join(detail.split())[:600]
+            message = f"模型服务拒绝了测试请求{f'（HTTP {code}）' if isinstance(code, int) else ''}：{detail}"
+        return {"ok": False, "message": message,
                 "http_status": code if isinstance(code, int) else None}
     finally:
         report()

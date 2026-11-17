@@ -112,6 +112,7 @@ class ArgumentIntegrity:
         self.terminal = False
         self.completed_event = None
         self.finish_reason = None
+        self.output_limit_reached = False
         self.status = "pending"
         self.provider_attempts: int | None = None
 
@@ -127,6 +128,7 @@ class ArgumentIntegrity:
 
     def diagnostics(self):
         return {"protocol": self.protocol, "status": self.status,
+                **({"output_limit_reached": True} if self.output_limit_reached else {}),
                 "calls": [call.summary() for _, call in sorted(self.calls.items())]}
 
     def fail(self, code, call=None):
@@ -204,6 +206,7 @@ class ArgumentIntegrity:
         if self.terminal:
             self.fail("provider_response_sequence_invalid")
         if kind in {"response.failed", "response.incomplete", "error"}:
+            self.output_limit_reached = _get(_get(_get(event, "response"), "incomplete_details"), "reason") == "max_output_tokens"
             self.fail("provider_response_incomplete")
         if kind == "response.completed":
             self._responses_complete(_get(event, "response"))
@@ -236,6 +239,7 @@ class ArgumentIntegrity:
         return [event]
 
     def _responses_complete(self, response):
+        self.output_limit_reached = _get(_get(response, "incomplete_details"), "reason") == "max_output_tokens"
         if _get(response, "status") != "completed" or _get(response, "error"):
             self.fail("provider_response_incomplete")
         output = _get(response, "output")
@@ -271,6 +275,7 @@ class ArgumentIntegrity:
             finish = _get(choice, "finish_reason")
             if finish is not None:
                 self.finish_reason = finish
+                self.output_limit_reached = finish == "length"
                 if finish not in {"stop", "tool_calls"} or bool(self.calls) != (finish == "tool_calls"):
                     self.fail("provider_response_incomplete")
                 for call in self.calls.values():
@@ -293,6 +298,7 @@ class ArgumentIntegrity:
             if _get(message, "function_call"):
                 self.fail("provider_tool_identity_conflict")
             finish = _get(choice, "finish_reason")
+            self.output_limit_reached = finish == "length"
             if finish not in {"stop", "tool_calls"} or bool(entries) != (finish == "tool_calls"):
                 self.fail("provider_response_incomplete")
             for index, entry in enumerate(entries):

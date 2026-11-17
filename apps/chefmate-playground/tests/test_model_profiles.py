@@ -195,7 +195,7 @@ def test_probe_runs_native_tools_with_selected_profile_tariff_without_activation
         def __init__(self, **kwargs):
             assert kwargs["model"] == "model-b" and kwargs["api_key"] == SECRET
             assert kwargs["base_url"] == "https://second.invalid/v1" and kwargs["use_responses_api"]
-            assert kwargs["max_tokens"] == 256 and kwargs["max_retries"] == 0
+            assert kwargs["max_tokens"] == 2048 and kwargs["max_retries"] == 0
         def bind_tools(self, *args, **kwargs):
             return self
         async def ainvoke(self, messages):
@@ -224,7 +224,8 @@ def test_probe_missing_usage_retains_selected_profile_bound(registry, monkeypatc
     result = asyncio.run(models.test(owner["id"], second["id"], accepted["revision"]))
     assert result["ok"] is False
     row = app.state.accounts.get_usage(owner["id"])[0]
-    assert row["incomplete"] and row["estimated_cost_micros"] == 18432
+    assert row["incomplete"] and row["estimated_cost_micros"] == 32768
+    assert row["estimated_tokens"] == 12288
     assert row["pricing"]["model_profile_id"] == second["id"] and row["status"] == "error"
 
 

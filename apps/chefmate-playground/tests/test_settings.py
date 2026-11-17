@@ -195,7 +195,7 @@ def test_probe_checks_native_roundtrip_for_the_selected_protocol(monkeypatch, tm
         def __init__(self, **kwargs):
             seen.update(kwargs)
         def bind_tools(self, *args, **kwargs):
-            assert kwargs["tool_choice"] == "connection_echo"
+            assert "tool_choice" not in kwargs
             return self
         async def astream(self, messages):
             yield AIMessageChunk(content="", tool_call_chunks=[{"name": "connection_echo",
@@ -212,4 +212,70 @@ def test_probe_checks_native_roundtrip_for_the_selected_protocol(monkeypatch, tm
     assert result["ok"] is True
     assert seen["use_responses_api"] is (protocol == "responses")
     assert seen["streaming"] is stream
+    assert seen["max_tokens"] == 2048
+    assert "reasoning" not in seen and "reasoning_effort" not in seen
+
+
+@pytest.mark.parametrize("nested", [False, True])
+def test_probe_displays_structured_provider_error_without_secrets(monkeypatch, tmp_path, nested):
+    from chefmate_playground.settings import probe_model
+    class Rejected(Exception):
+        status_code = 400
+        body = {"message": "Thinking mode does not support this tool_choice; old-private-key; "
+                           "Authorization: Bearer other-private-token; postgres://user:password@db/app"}
+    if nested:
+        Rejected.body = {"error": Rejected.body}
+    class FakeModel:
+        def __init__(self, **kwargs):
+            pass
+        def bind_tools(self, *args, **kwargs):
+            return self
+        async def ainvoke(self, messages):
+            raise Rejected("SDK request dump must never be displayed")
+    monkeypatch.setattr("chefmate_agent.provider.IntegrityChatOpenAI", FakeModel)
+    result = asyncio.run(probe_model(replace(config(tmp_path), stream_tool_calls=False)))
+    assert not result["ok"] and result["http_status"] == 400
+    assert "Thinking mode does not support this tool_choice" in result["message"]
+    for secret in ("old-private-key", "other-private-token", "user:password", "SDK request dump"):
+        assert secret not in str(result)
+
+
+@pytest.mark.parametrize("failure, expected", [("limit", "输出额度已耗尽"), ("incomplete", "响应未完整结束"),
+                                              ("timeout", "超时"), ("unknown", "连接测试未通过")])
+def test_probe_distinguishes_output_limit_incomplete_and_timeout(monkeypatch, tmp_path, failure, expected):
+    from chefmate_agent.provider import ProviderIntegrityError
+    from chefmate_playground.settings import probe_model
+    class FakeModel:
+        def __init__(self, **kwargs):
+            pass
+        def bind_tools(self, *args, **kwargs):
+            return self
+        async def ainvoke(self, messages):
+            if failure == "timeout":
+                raise TimeoutError("private timeout details")
+            if failure == "unknown":
+                raise ValueError("private request details")
+            raise ProviderIntegrityError("provider_response_incomplete", {"output_limit_reached": failure == "limit"})
+    monkeypatch.setattr("chefmate_agent.provider.IntegrityChatOpenAI", FakeModel)
+    result = asyncio.run(probe_model(replace(config(tmp_path), stream_tool_calls=False)))
+    assert not result["ok"] and expected in result["message"]
+    assert "private" not in str(result)
+
+
+@pytest.mark.parametrize("content, ok", [([{"type": "reasoning", "summary": []}], False),
+                                        ([{"type": "text", "text": "OK"}], True), ("  ", False)])
+def test_probe_requires_visible_final_answer(monkeypatch, tmp_path, content, ok):
+    from langchain_core.messages import AIMessage, ToolMessage
+    from chefmate_playground.settings import probe_model
+    class FakeModel:
+        def __init__(self, **kwargs):
+            pass
+        def bind_tools(self, *args, **kwargs):
+            return self
+        async def ainvoke(self, messages):
+            if isinstance(messages[-1], ToolMessage):
+                return AIMessage(content=content)
+            return AIMessage(content="", tool_calls=[{"name": "connection_echo", "args": {"value": "chefmate"}, "id": "echo"}])
+    monkeypatch.setattr("chefmate_agent.provider.IntegrityChatOpenAI", FakeModel)
+    assert asyncio.run(probe_model(replace(config(tmp_path), stream_tool_calls=False)))["ok"] is ok
 
