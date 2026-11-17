@@ -290,6 +290,33 @@
 }
 
 /* Quiet surfaces separate groups; only small acknowledgements have spring. */
+.workflow-stages{display:flex;align-items:center;gap:18px;list-style:none;margin:4px 0 18px;padding:0;font-size:.875rem;color:var(--color-muted)}
+.workflow-stages li{display:flex;align-items:center;gap:6px;white-space:nowrap}
+.workflow-stages li>span{display:grid;place-items:center;width:22px;height:22px;border-radius:50%;background:var(--surface-inset);font-size:.8rem}
+.workflow-stages li[aria-current=step]{font-weight:650;color:var(--color-text)}
+.workflow-stages li[aria-current=step]>span{background:var(--color-accent);color:var(--color-canvas)}
+.workflow-stages .stage-done{color:var(--color-accent)}
+.react-cooking-focus .focus-heading{flex-wrap:wrap}
+.react-cooking-focus .focus-heading .workflow-stages{margin:0;gap:14px}
+:is(.react-workspace,.react-cooking-focus) .workflow-next-action{display:flex;flex-wrap:wrap;align-items:center;gap:8px 14px;margin-top:18px;padding:14px 0 4px;border-top:1px solid var(--color-border);background:var(--color-canvas)}
+:is(.react-workspace,.react-cooking-focus) .workflow-next-action>.ui-hint{flex-basis:100%;margin:0 0 4px}
+:is(.react-workspace,.react-cooking-focus) .workflow-next-action>.cooking-primary{min-height:44px;padding:10px 20px}
+:is(.react-workspace,.react-cooking-focus) .workspace-preparation>.ui-hint{margin-top:0;line-height:1.7}
+:is(.react-workspace,.react-cooking-focus) .prep-mode-toggle{margin-bottom:8px}
+:is(.react-workspace,.react-cooking-focus) .workspace-prep-list{max-height:46dvh;overflow:auto;overscroll-behavior:contain;scrollbar-gutter:stable;gap:0 20px}
+:is(.react-workspace,.react-cooking-focus) .ui-prep-row{min-height:68px;padding:10px 4px;background:transparent;border-radius:0;border-bottom:1px solid var(--color-border)}
+:is(.react-workspace,.react-cooking-focus) .ui-prep-row.prep-resolved{background:transparent}
+:is(.react-workspace,.react-cooking-focus) .prep-item-actions{display:flex;flex-wrap:wrap;align-items:center;justify-content:flex-end;gap:4px 8px}
+:is(.react-workspace,.react-cooking-focus) .prep-missing-label{font-size:.875rem;color:var(--color-text);font-weight:600}
+:is(.react-workspace,.react-cooking-focus) .preparation-finish{position:sticky;bottom:0;z-index:1;padding-bottom:10px}
+@media(max-width:600px){
+ .workflow-stages{gap:12px;font-size:.8rem}
+ .react-cooking-focus .focus-heading .workflow-stages{gap:8px}
+ .react-cooking-focus .focus-heading .workflow-stages li{gap:4px}
+ .react-cooking-focus .focus-heading .workflow-stages li>span{width:18px;height:18px}
+ :is(.react-workspace,.react-cooking-focus) .workflow-next-action>.cooking-primary{width:100%}
+ :is(.react-workspace,.react-cooking-focus) .workspace-prep-list{max-height:40dvh}
+}
 /* Font shorthand on readouts resets inherited variants, so lock each numeric role. */
 :is(.react-workspace,.react-cooking-focus,.react-timer-popover,.react-kitchen-timers){font-variant-numeric:tabular-nums lining-nums}
 :is(.react-workspace,.react-cooking-focus) :is(.ui-check-row small,.preparation-progress,.cooking-context,.cooking-progress-label,.ui-serving-form,.workflow-step-index),
@@ -304,8 +331,8 @@
 .react-cooking-focus .focus-modes button[aria-pressed=true]{background:var(--surface-raised)}
 :is(.react-workspace,.react-cooking-focus) :is(.ui-recipe-choice,.ui-ingredient,.ui-plan-recipe){padding-inline:10px;border-radius:9px}
 :is(.react-workspace,.react-cooking-focus) :is(.ui-recipe-choice,.ui-ingredient,.ui-plan-recipe):nth-child(even){background:var(--surface-inset)}
-:is(.react-workspace,.react-cooking-focus) .ui-prep-row{background:var(--surface-inset);transition:background var(--motion-normal) var(--ease-settle)}
-:is(.react-workspace,.react-cooking-focus) .ui-prep-row.prep-resolved{background:color-mix(in srgb,var(--color-accent) 7%,var(--surface-inset))}
+:is(.react-workspace,.react-cooking-focus) .ui-prep-row{transition:background var(--motion-normal) var(--ease-settle)}
+:is(.react-workspace,.react-cooking-focus) .ui-prep-row.prep-resolved{background:transparent}
 :is(.react-workspace,.react-cooking-focus) .cooking-list-row{border-radius:9px;margin-block:4px;transition:background var(--motion-normal) var(--ease-settle),border-color var(--motion-normal) var(--ease-settle)}
 :is(.react-workspace,.react-cooking-focus) .cooking-list-row:nth-child(even){background:var(--surface-inset)}
 :is(.react-workspace,.react-cooking-focus) .cooking-list-row.selected{background:var(--color-accent-soft)}

@@ -20,6 +20,39 @@ const seed = (views: View[], stage = 'planning', extra = {}) => { const id = `re
 beforeEach(() => { vi.spyOn(workspaceStore, 'load').mockImplementation(async id => workspaceStore.entry(id).snapshot); });
 afterEach(() => { ids.forEach(id => workspaceStore.remove(id)); ids.length = 0; });
 describe('React workspace behavior', () => {
+  it('keeps the recipe confirmation visible before selection and opens preparation after saving', async () => {
+    const view: View = { id: 'choose', kind: 'recipe_choices', revision: 1, editable: true, data: { recipes: [{ recipe_id: 'egg', name: '鸡蛋' }] } }, id = seed([view]);
+    const dispatch = vi.spyOn(workspaceStore, 'dispatch').mockResolvedValue({ status: 'ok' }), onFocus = vi.fn(), onContinue = vi.fn();
+    render(<WorkspacePanel sessionId={id} running={false} onFocus={onFocus} onContinue={onContinue} />);
+    expect(screen.getByRole('button', { name: '确认菜品，准备食材' })).toBeDisabled();
+    expect(screen.getByText('先勾选一道想做的菜。')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('checkbox'));
+    fireEvent.click(screen.getByRole('button', { name: '确认菜品，准备食材' }));
+    expect(dispatch).toHaveBeenCalledWith(id, 'select_recipes', { recipe_ids: ['egg'], start_prep: true }, view, expect.objectContaining({ clearDraft: view.id }));
+    await waitFor(() => expect(onFocus).toHaveBeenCalledExactlyOnceWith('prep_checklist'));
+    expect(onContinue).not.toHaveBeenCalled();
+  });
+  it('confirms the visible checklist in one action without marking items on render or calling the model', async () => {
+    const view: View = { id: 'prep', kind: 'prep_checklist', revision: 1, editable: true, data: { items: [{ id: 'egg', canonical_name: '鸡蛋', status: 'pending' }] } }, id = seed([view], 'prep');
+    let finish!: (value: any) => void;
+    const dispatch = vi.spyOn(workspaceStore, 'dispatch').mockImplementation(() => new Promise(resolve => { finish = resolve; })), onFocus = vi.fn(), onContinue = vi.fn();
+    render(<WorkspacePanel sessionId={id} running={false} onContinue={onContinue} onFocus={onFocus} />);
+    expect(screen.queryByRole('checkbox')).not.toBeInTheDocument(); expect(dispatch).not.toHaveBeenCalled();
+    expect(screen.getByRole('list', { name: '做菜流程' }).querySelector('[aria-current=step]')).toHaveTextContent('备菜');
+    fireEvent.click(screen.getByRole('button', { name: '都备齐了，开始做菜' }));
+    expect(dispatch).toHaveBeenCalledExactlyOnceWith(id, 'confirm_prep', {}, view); expect(onFocus).not.toHaveBeenCalled();
+    await act(async () => { finish({ status: 'ok', workspace: { stage: 'cooking' } }); });
+    expect(onFocus).toHaveBeenCalledExactlyOnceWith('cooking_guide'); expect(onContinue).not.toHaveBeenCalled();
+  });
+  it('explains missing ingredients and lets the user explicitly mark them replenished', () => {
+    const view: View = { id: 'prep', kind: 'prep_checklist', revision: 1, editable: true, data: { items: [{ id: 'egg', canonical_name: '鸡蛋', status: 'pending', availability: 'missing' }] } }, id = seed([view], 'prep');
+    const dispatch = vi.spyOn(workspaceStore, 'dispatch').mockResolvedValue({ status: 'ok' });
+    render(<WorkspacePanel sessionId={id} running={false} onContinue={() => {}} />);
+    expect(screen.getByRole('button', { name: '都备齐了，开始做菜' })).toBeDisabled();
+    expect(screen.getByText(/还缺 1 项：鸡蛋/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '鸡蛋已补齐' }));
+    expect(dispatch).toHaveBeenCalledExactlyOnceWith(id, 'check_prep_item', { item_id: 'egg', status: 'ready' }, view);
+  });
   it('keeps input edits controlled and preserves the draft when the panel remounts', () => {
     const id = seed([form]); const rendered = render(<WorkspacePanel sessionId={id} running={false} onContinue={() => {}} />);
     fireEvent.change(screen.getByRole('spinbutton', { name: '用餐人数' }), { target: { value: '4' } });
@@ -44,7 +77,7 @@ describe('React workspace behavior', () => {
     const choice: View = { id: 'choices', kind: 'recipe_choices', revision: 1, editable: true, data: { recipes: [{ recipe_id: 'egg', name: '鸡蛋' }] } }, id = seed([choice]), onFocus = vi.fn();
     let finish!: (value: any) => void; vi.spyOn(workspaceStore, 'dispatch').mockImplementation(() => new Promise(resolve => { finish = resolve; }));
     render(<MessageViews message={{ actions: [{ kind: 'show_component', component: choice }] }} sessionId={id} running={false} onContinue={() => {}} onFocus={onFocus} />);
-    fireEvent.click(screen.getByRole('button', { name: '详情' })); expect(onFocus).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: '查看食材和做法' })); expect(onFocus).not.toHaveBeenCalled();
     await act(async () => { finish({ status: 'ok' }); }); expect(onFocus).toHaveBeenCalledExactlyOnceWith('recipe_detail');
   });
   it('does not expose a question until a running model turn has completed', () => {
@@ -141,13 +174,13 @@ describe('React workspace behavior', () => {
     const rendered = render(<CookingFocus sessionId={id} onClose={() => {}} onContinue={() => {}} />);
     const actions = screen.getByRole('group', { name: '烹饪操作' });
     expect(within(actions).getByRole('button', { name: '完成本餐' })).toBeEnabled();
-    expect(within(actions).queryByRole('button', { name: '取消完成' })).not.toBeInTheDocument();
-    expect(rendered.container.querySelector('.ui-step-heading')).toContainElement(screen.getByRole('button', { name: '取消完成' }));
-    fireEvent.click(screen.getByRole('button', { name: '上一步' }));
+    expect(within(actions).queryByRole('button', { name: '撤销这步完成' })).not.toBeInTheDocument();
+    expect(rendered.container.querySelector('.ui-step-heading')).toContainElement(screen.getByRole('button', { name: '撤销这步完成' }));
+    fireEvent.click(screen.getByRole('button', { name: '查看上一步' }));
     expect(rendered.container.querySelector('.focus-step-reading')).toHaveTextContent('洗净食材。');
     expect(dispatch).not.toHaveBeenCalled();
-    fireEvent.click(screen.getByRole('button', { name: '取消完成' }));
-    expect(dispatch).toHaveBeenCalledWith(id, 'complete_step', { recipe_id: 'soup', step_id: 'wash', completed: false }, guide);
+    fireEvent.click(screen.getByRole('button', { name: '撤销这步完成' }));
+    expect(dispatch).toHaveBeenCalledWith(id, 'complete_step', { recipe_id: 'soup', step_id: 'wash', completed: false, continue_to_next_recipe: true }, guide);
   });
   it('cancels meal confirmation without saving and keeps completion available in the full step overview', () => {
     const guide: View = { id: 'confirm-guide', kind: 'cooking_guide', revision: 1, editable: true, data: { recipe_id: 'soup', recipe_name: '汤', active_step_id: 'wash', steps: [{ id: 'wash', ordinal: 0, instruction: '洗净食材。', status: 'done' }] } };
@@ -160,7 +193,7 @@ describe('React workspace behavior', () => {
     expect(dispatch).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole('tab', { name: '完整步骤' }));
     expect(screen.getAllByRole('button', { name: '完成本餐' })).toHaveLength(1);
-    expect(within(screen.getByRole('list', { name: '完整烹饪步骤' })).getByRole('button', { name: '取消完成' })).toBeEnabled();
+    expect(within(screen.getByRole('list', { name: '完整烹饪步骤' })).getByRole('button', { name: '撤销这步完成' })).toBeEnabled();
     fireEvent.click(screen.getByRole('button', { name: '完成本餐' }));
     expect(screen.getByRole('button', { name: '确认完成本餐' })).toBeInTheDocument();
     expect(dispatch).not.toHaveBeenCalled();
@@ -178,6 +211,7 @@ describe('React workspace behavior', () => {
     const list = screen.getByRole('list', { name: '完整备料清单' }); expect(list.children).toHaveLength(7);
     expect(list.children[0]).toHaveAttribute('data-prep-id', 'pending-0'); expect(list.children[5]).toHaveClass('prep-resolved');
     expect(screen.queryByRole('tablist', { name: '步骤显示方式' })).not.toBeInTheDocument(); expect(screen.queryByRole('navigation', { name: '备菜分页' })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '我想逐项勾选确认' }));
     fireEvent.click(screen.getAllByRole('checkbox', { name: '鸡蛋已备齐' })[0]);
     expect(dispatch).toHaveBeenCalledWith(id, 'check_prep_item', { item_id: 'pending-0', status: 'ready' }, view);
   });
@@ -244,9 +278,9 @@ describe('React workspace behavior', () => {
     expect(screen.queryByRole('combobox')).not.toBeInTheDocument();
     expect(dispatch).not.toHaveBeenCalled();
     const buttons = within(screen.getByRole('navigation', { name: '浏览烹饪步骤' })).getAllByRole('button');
-    expect(buttons.map(button => button.textContent)).toEqual(['上一步', '完成这一步', '下一步']);
+    expect(buttons.map(button => button.textContent)).toEqual(['查看上一步', '做完这步，继续', '查看下一步']);
     fireEvent.click(buttons[1]);
-    expect(dispatch).toHaveBeenCalledWith(id, 'complete_step', { recipe_id: 'soup', step_id: 'boil', completed: true }, view);
+    expect(dispatch).toHaveBeenCalledWith(id, 'complete_step', { recipe_id: 'soup', step_id: 'boil', completed: true, continue_to_next_recipe: true }, view);
   });
   it('keeps the full step list compact and exposes one action for the selected row', () => {
     const view: View = { id: 'compact-guide', kind: 'cooking_guide', revision: 1, editable: true, data: { recipe_id: 'soup', recipe_name: '汤', active_step_id: 'step-2', steps: Array.from({ length: 12 }, (_, index) => ({ id: `step-${index}`, ordinal: index, instruction: `处理第 ${index + 1} 种食材。`, status: index < 2 ? 'done' : 'pending' })) } };
@@ -254,22 +288,22 @@ describe('React workspace behavior', () => {
     render(<ViewCard view={view} entry={workspaceStore.entry(id)} sessionId={id} />);
     fireEvent.click(screen.getByRole('tab', { name: '完整步骤' }));
     const list = screen.getByRole('list', { name: '完整烹饪步骤' });
-    expect(list.children).toHaveLength(12); expect(within(list).getAllByRole('button', { name: '完成这一步' })).toHaveLength(1);
+    expect(list.children).toHaveLength(12); expect(within(list).getAllByRole('button', { name: '做完这步，继续' })).toHaveLength(1);
     expect(within(list).getByRole('button', { name: /查看第 3 步/ })).toHaveAttribute('aria-current', 'step');
     expect(screen.queryByRole('button', { name: '回到正在做的步骤' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: '从这一步继续' })).not.toBeInTheDocument();
     fireEvent.click(within(list).getByRole('button', { name: /查看第 9 步/ }));
     expect(dispatch).not.toHaveBeenCalled();
     const ninth = list.children[8] as HTMLElement;
-    expect(within(ninth).getByRole('button', { name: '完成这一步' })).toBeInTheDocument();
-    expect(within(list).getAllByRole('button', { name: '完成这一步' })).toHaveLength(1);
-    fireEvent.click(within(ninth).getByRole('button', { name: '完成这一步' }));
-    expect(dispatch).toHaveBeenCalledWith(id, 'complete_step', { recipe_id: 'soup', step_id: 'step-8', completed: true }, view);
+    expect(within(ninth).getByRole('button', { name: '做完这步，继续' })).toBeInTheDocument();
+    expect(within(list).getAllByRole('button', { name: '做完这步，继续' })).toHaveLength(1);
+    fireEvent.click(within(ninth).getByRole('button', { name: '做完这步，继续' }));
+    expect(dispatch).toHaveBeenCalledWith(id, 'complete_step', { recipe_id: 'soup', step_id: 'step-8', completed: true, continue_to_next_recipe: true }, view);
   });
   it('follows an assistant step change after the user previously browsed another step', () => {
     const view: View = { id: 'active-guide', kind: 'cooking_guide', revision: 1, editable: true, data: { recipe_id: 'soup', recipe_name: '汤', active_step_id: 'step-0', steps: Array.from({ length: 3 }, (_, index) => ({ id: `step-${index}`, ordinal: index, instruction: `处理第 ${index + 1} 种食材。`, status: 'pending' })) } };
     const id = seed([view], 'cooking'), rendered = render(<WorkspacePanel sessionId={id} running={false} onContinue={() => {}} />);
-    fireEvent.click(screen.getByRole('button', { name: '下一步' }));
+    fireEvent.click(screen.getByRole('button', { name: '查看下一步' }));
     const reading = rendered.container.querySelector('.focus-step-reading')!;
     expect(within(reading as HTMLElement).getByText('处理第 2 种食材。')).toBeInTheDocument();
     act(() => workspaceStore.receive(id, snapshot([{ ...view, revision: 2, data: { ...view.data, active_step_id: 'step-2' } }], 'cooking', { revision: 2 })));
@@ -281,20 +315,20 @@ describe('React workspace behavior', () => {
   it('does not call the entire meal prepared when just the selected dish is ready', () => {
     const view: View = { id: 'prep-one-dish', kind: 'prep_checklist', revision: 1, editable: true, data: { recipe_ids: ['soup'], items: [{ id: 'salt', canonical_name: '盐', status: 'ready' }] } };
     const id = seed([view], 'prep'); render(<ViewCard view={view} entry={workspaceStore.entry(id)} sessionId={id} />);
-    expect(screen.queryByRole('button', { name: '食材备齐，继续做菜' })).not.toBeInTheDocument();
-    expect(screen.getByText('这道菜已准备好，可切换到其他菜品继续备菜。')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '都备齐了，开始做菜' })).not.toBeInTheDocument();
+    expect(screen.getByText('只确认当前这道菜；还有其他菜时会打开下一份清单。')).toBeInTheDocument();
   });
   it('keeps browsing through timer updates but returns to the actual step on an explicit current navigation', () => {
     const view: View = { id: 'current-guide', kind: 'cooking_guide', revision: 1, editable: true, data: { recipe_id: 'soup', recipe_name: '汤', active_step_id: 'wash', steps: [{ id: 'wash', ordinal: 0, instruction: '洗净食材。', status: 'pending' }, { id: 'boil', ordinal: 1, instruction: '加水煮开。', status: 'pending' }] } };
     const id = seed([view], 'cooking'), rendered = render(<WorkspacePanel sessionId={id} running={false} onContinue={() => {}} />);
     const reading = rendered.container.querySelector('.focus-step-reading')!;
-    fireEvent.click(screen.getByRole('button', { name: '下一步' }));
+    fireEvent.click(screen.getByRole('button', { name: '查看下一步' }));
     act(() => workspaceStore.receive(id, snapshot([{ ...view, revision: 2 }], 'cooking', { revision: 2, recent_actions: [{ action_id: 'timer-1', type: 'start_timer' }] })));
     expect(within(reading as HTMLElement).getByText('加水煮开。')).toBeInTheDocument();
     act(() => workspaceStore.receive(id, snapshot([{ ...view, revision: 2, presentation_revision: 1 }], 'cooking', { revision: 2, recent_actions: [{ action_id: 'timer-1', type: 'start_timer' }, { action_id: 'navigate-1', type: 'navigate_cooking_step' }] })));
     expect(within(reading as HTMLElement).getByText('洗净食材。')).toBeInTheDocument();
     expect(within(reading as HTMLElement).queryByText('加水煮开。')).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: '下一步' }));
+    fireEvent.click(screen.getByRole('button', { name: '查看下一步' }));
     act(() => workspaceStore.receive(id, snapshot([{ ...view, revision: 3, presentation_revision: 1 }], 'cooking', { revision: 3, recent_actions: Array.from({ length: 20 }, (_, index) => ({ action_id: `timer-${index + 2}`, type: 'start_timer' })) })));
     expect(within(reading as HTMLElement).getByText('加水煮开。')).toBeInTheDocument();
   });

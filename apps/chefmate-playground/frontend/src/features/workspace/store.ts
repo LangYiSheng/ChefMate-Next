@@ -192,6 +192,11 @@ export class WorkspaceStore {
       }
       if (options.clearDraft) { delete latest.drafts[options.clearDraft]; const migrated = latest.views.find(item => item.kind === view?.kind); if (migrated && migrated.id !== options.clearDraft) delete latest.drafts[migrated.id]; }
       if (type === 'open_recipe_detail') latest.activeKind = 'recipe_detail';
+      if (type === 'start_prep' || type === 'select_recipes' && payload.start_prep) latest.activeKind = 'prep_checklist';
+      if (type === 'confirm_prep') {
+        latest.activeKind = response.workspace?.stage === 'cooking' ? 'cooking_guide' : 'prep_checklist';
+        this.notify(response.workspace?.stage === 'cooking' ? '食材已确认备齐，开始做菜。' : '这道菜的食材已确认，请继续准备下一道。');
+      }
       succeeded = true; return response;
     } catch (error: any) {
       const latest = this.entry(id);

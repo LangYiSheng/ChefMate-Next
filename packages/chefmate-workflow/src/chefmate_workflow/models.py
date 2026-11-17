@@ -571,6 +571,7 @@ class PreferencePayload(StrictModel):
 
 class RecipeIdsPayload(StrictModel):
     recipe_ids: Annotated[list[Text], Field(min_length=1, max_length=4)]
+    start_prep: bool = False
 
 
 class RecipeIdPayload(StrictModel):
@@ -585,9 +586,12 @@ class ChecklistScopePayload(StrictModel):
     recipe_ids: Annotated[list[Text], Field(min_length=1, max_length=4)] | None = None
 
 
-class PrepPayload(StrictModel):
-    item_id: Text
-    status: PrepStatus
+class PrepPayload(PrepItemUpdate):
+    pass
+
+
+class ConfirmPrepPayload(StrictModel):
+    pass
 
 
 class StepPayload(RecipeIdPayload):
@@ -596,6 +600,7 @@ class StepPayload(RecipeIdPayload):
 
 class CompleteStepPayload(StepPayload):
     completed: bool = True
+    continue_to_next_recipe: bool = False
 
 
 class TimerPayload(StrictModel):
@@ -633,6 +638,8 @@ ACTION_PAYLOAD_MODELS = {
     "update_preferences": PreferencePayload, "select_recipes": RecipeIdsPayload,
     "open_recipe_detail": RecipeIdPayload, "change_servings": ServingsPayload,
     "check_prep_item": PrepPayload, "answer_question": AnswerQuestionPayload,
+    "confirm_prep": ConfirmPrepPayload,
+    "start_prep": ConfirmPrepPayload,
     "set_checklist_scope": ChecklistScopePayload,
     "set_active_recipe": RecipeIdPayload, "set_active_step": StepPayload,
     "complete_step": CompleteStepPayload, "change_stage": StagePayload,

@@ -55,7 +55,8 @@ class UserActions:
                 for identity in dict.fromkeys(payload["recipe_ids"]):
                     candidate = next((recipe for recipe in state.candidates if recipe.recipe_id == identity), None)
                     recipes.append(candidate if candidate is not None else self._find_recipe(state, identity))
-                return self._plan(state, recipes)
+                plan = self._plan(state, recipes)
+                return self._set_stage(state, "prep") if value.payload.start_prep else plan
             elif kind == "open_recipe_detail":
                 source_view = next((view for view in state.components if view.id == value.view_id), None)
                 if source_view is not None and source_view.kind == "recipe_choices":
@@ -108,7 +109,36 @@ class UserActions:
                 scope = origin.data.recipe_ids if origin else None
                 if payload["item_id"] not in {item.id for item in self._prep_items(state, scope)}:
                     raise DomainConflict("invalid_reference", "食材不属于本次餐单。")
-                self._set_prep_status(state, payload["item_id"], payload["status"], "unknown")
+                self._set_prep_status(state, payload["item_id"], payload["status"], payload.get("availability") or "unknown")
+            elif kind == "start_prep":
+                if state.stage != "planning":
+                    raise DomainConflict("stage_conflict", "请先确认本次餐单。")
+                return self._set_stage(state, "prep")
+            elif kind == "confirm_prep":
+                if state.stage != "prep":
+                    raise DomainConflict("stage_conflict", "请先进入备菜阶段。")
+                origin = next((view for view in state.components if view.id == value.view_id
+                               and view.kind == "prep_checklist"), None)
+                if origin is None:
+                    raise DomainConflict("invalid_reference", "请在当前食材清单上确认备齐。")
+                blockers = self._transition_blockers(state, "prep")
+                if blockers:
+                    raise DomainConflict(blockers[0]["code"], blockers[0]["message"])
+                items = self._prep_items(state, origin.data.recipe_ids)
+                if not items:
+                    raise DomainConflict("prep_incomplete", "当前清单没有食材，请先核对菜谱。")
+                if any(item.availability == "missing" for item in items):
+                    raise DomainConflict("ingredients_missing", "还有缺少的食材，请补齐后确认，或让助手调整做法。")
+                for item in items:
+                    if item.status == "pending":
+                        self._set_prep_status(state, item.id, "ready")
+                if all(item.status != "pending" for item in self._prep_items(state)):
+                    return self._set_stage(state, "cooking")
+                # A per-dish confirmation only covers the visible checklist.
+                for recipe in state.meal_plan:
+                    if any(item.status == "pending" for item in self._prep_items(state, [recipe.recipe_id])):
+                        origin.data.recipe_ids = [recipe.recipe_id]
+                        return origin
             elif kind == "set_active_recipe":
                 recipe = self._find_recipe(state, payload["recipe_id"])
                 steps = self._recipe_view(recipe, state).steps
@@ -122,6 +152,12 @@ class UserActions:
                 self._activate_step(state, payload["recipe_id"], payload["step_id"])
             elif kind == "complete_step":
                 self._complete_step(state, payload["recipe_id"], payload["step_id"], value.payload.completed)
+                if value.payload.completed and value.payload.continue_to_next_recipe and state.active_step_id is None:
+                    for recipe in state.meal_plan:
+                        remaining = next((step for step in self._recipe_view(recipe, state).steps if step.status != "done"), None)
+                        if remaining:
+                            self._activate_step(state, recipe.recipe_id, remaining.id)
+                            break
             elif kind == "change_stage":
                 return self._set_stage(state, payload["stage"])
             elif kind == "complete_meal":

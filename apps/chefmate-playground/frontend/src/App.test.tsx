@@ -92,12 +92,12 @@ describe('App surface coordination', () => {
   it('requires the server account permission even if developer mode was enabled in browser storage', () => {
     localStorage.setItem('chefmate:developer-settings', JSON.stringify({enabled: true}));
     render(<App account={{id: 'user-a', role: 'user', developer_allowed: false} as AccountUser}/>);
-    fireEvent.click(screen.getByRole('button', {name: '展开右侧栏'})); expect(screen.queryByRole('tab', {name: '调试', hidden: true})).not.toBeInTheDocument(); expect(screen.queryByText('开发请求诊断')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', {name: '查看本餐安排'})); expect(screen.queryByRole('tab', {name: '调试', hidden: true})).not.toBeInTheDocument(); expect(screen.queryByText('开发请求诊断')).not.toBeInTheDocument();
   });
   it('allows an administrator to open diagnostics without a separate developer grant', () => {
     localStorage.setItem('chefmate:developer-settings', JSON.stringify({enabled: true}));
     render(<App account={{id: 'promoted-admin', role: 'admin', developer_allowed: false} as AccountUser}/>);
-    fireEvent.click(screen.getByRole('button', {name: '展开右侧栏'}));
+    fireEvent.click(screen.getByRole('button', {name: '查看本餐安排'}));
     fireEvent.click(screen.getByRole('tab', {name: '调试'}));
     expect(screen.getByText('开发请求诊断')).toBeInTheDocument();
   });
@@ -124,7 +124,7 @@ describe('App surface coordination', () => {
   it('resizes the right panel in the opposite direction and releases capture on cancel and unmount', () => {
     const view = render(<App />), app = view.container.querySelector('.app')!;
     expect(screen.queryByRole('separator', { name: '调整右侧栏宽度' })).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: '展开右侧栏' }));
+    fireEvent.click(screen.getByRole('button', { name: '查看本餐安排' }));
     const handle = screen.getByRole('separator', { name: '调整右侧栏宽度' }), release = capture(handle);
     expect(handle.parentElement).toBe(app);
     pointer(handle, 'pointerdown', 1424);
@@ -143,7 +143,7 @@ describe('App surface coordination', () => {
 
   it('exposes diagnostics only while developer mode is enabled and returns to workspace when disabled', () => {
     render(<App />);
-    fireEvent.click(screen.getByRole('button', { name: '展开右侧栏' }));
+    fireEvent.click(screen.getByRole('button', { name: '查看本餐安排' }));
     expect(screen.queryByRole('tab', { name: '调试', hidden: true })).not.toBeInTheDocument();
     expect(screen.queryByText('开发请求诊断')).not.toBeInTheDocument();
     preferences(true);
@@ -152,14 +152,14 @@ describe('App surface coordination', () => {
     preferences(false);
     expect(screen.queryByRole('tab', { name: '调试', hidden: true })).not.toBeInTheDocument();
     expect(screen.queryByText('开发请求诊断')).not.toBeInTheDocument();
-    expect(screen.getByRole('tab', { name: '工作区' })).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByRole('tab', { name: '本餐安排' })).toHaveAttribute('aria-selected', 'true');
     expect(screen.getByText('厨房任务内容')).toBeInTheDocument();
   });
 
   it('keeps the detail surface mounted but inaccessible after closing', () => {
     const view = render(<App />), panel = view.container.querySelector('aside[aria-label="厨房工作区"]')!;
     expect(panel).toHaveAttribute('inert'); expect(panel).toHaveAttribute('aria-hidden', 'true');
-    fireEvent.click(screen.getByRole('button', { name: '展开右侧栏' }));
+    fireEvent.click(screen.getByRole('button', { name: '查看本餐安排' }));
     expect(panel).not.toHaveAttribute('inert'); expect(panel).toHaveAttribute('aria-hidden', 'false');
     expect(screen.queryByRole('tab', { name: '菜谱详情' })).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: '查看已选菜谱' }));
@@ -168,18 +168,18 @@ describe('App surface coordination', () => {
     expect(view.container.querySelector('aside[aria-label="厨房工作区"]')).toBe(panel);
     expect(panel).toHaveAttribute('inert'); expect(panel).toHaveAttribute('aria-hidden', 'true');
     expect(panel).toHaveTextContent('菜谱详情内容');
-    fireEvent.click(screen.getByRole('button', { name: '展开右侧栏' }));
+    fireEvent.click(screen.getByRole('button', { name: '查看本餐安排' }));
     expect(screen.getByRole('tab', { name: '菜谱详情' })).toHaveAttribute('aria-selected', 'true');
   });
 
   it('offers focus only for an actual kitchen view and coordinates the active scene with inert main content', () => {
     const view = render(<App />), app = view.container.querySelector('[data-page="chat"]')!, focus = view.container.querySelector('[aria-label="烹饪专注模式"]')!;
-    expect(screen.queryByRole('button', { name: '打开烹饪工作台' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '打开做菜指导' })).not.toBeInTheDocument();
     workspace([{ id: 'timers', kind: 'timers', revision: 1, data: { timers: [] } }]);
-    expect(screen.queryByRole('button', { name: '打开烹饪工作台' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '打开做菜指导' })).not.toBeInTheDocument();
     workspace([{ id: 'prep', kind: 'prep_checklist', revision: 1, data: { items: [] } }]);
     expect(focus).toHaveAttribute('aria-hidden', 'true'); expect(focus).toHaveAttribute('inert');
-    fireEvent.click(screen.getByRole('button', { name: '打开烹饪工作台' }));
+    fireEvent.click(screen.getByRole('button', { name: '打开做菜指导' }));
     expect(app).toHaveAttribute('inert'); expect(focus).toHaveAttribute('data-active', 'true');
     expect(focus).not.toHaveAttribute('inert'); expect(focus).toHaveAttribute('aria-hidden', 'false');
     expect(within(focus as HTMLElement).getByRole('textbox', { name: '对话输入' })).toBeInTheDocument();

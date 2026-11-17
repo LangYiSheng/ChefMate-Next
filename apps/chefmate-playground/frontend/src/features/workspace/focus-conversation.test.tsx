@@ -34,10 +34,10 @@ describe('focus conversation alongside the task', () => {
     fireEvent.click(screen.getByRole('button', { name: '收起助手回复' }));
     expect(screen.getByRole('button', { name: '展开助手回复' })).toHaveAttribute('aria-expanded', 'false');
     expect(screen.getByText('第一答')).not.toBeVisible();
-    rendered.rerender(<FocusConversation {...props} messages={[...messages, { role: 'user', request_id: 'two', content: '下一步' }, { role: 'assistant', content: '', streaming: true, tool_calls: [{ name: 'show_cooking_guide', running: true }] }]} />);
+    rendered.rerender(<FocusConversation {...props} messages={[...messages, { role: 'user', request_id: 'two', content: '查看下一步' }, { role: 'assistant', content: '', streaming: true, tool_calls: [{ name: 'show_cooking_guide', running: true }] }]} />);
     expect(screen.getByRole('button', { name: '收起助手回复' })).toHaveAttribute('aria-expanded', 'true');
-    expect(screen.getByText('下一步')).toBeVisible(); expect(screen.getByRole('status')).toHaveTextContent('整理烹饪步骤');
-    rendered.rerender(<FocusConversation {...props} messages={[...messages, { role: 'user', request_id: 'two', content: '下一步' }, { role: 'assistant', content: '', error: '连接暂时中断', retryMessage: '下一步' }]} />);
+    expect(screen.getByText('查看下一步')).toBeVisible(); expect(screen.getByRole('status')).toHaveTextContent('整理烹饪步骤');
+    rendered.rerender(<FocusConversation {...props} messages={[...messages, { role: 'user', request_id: 'two', content: '查看下一步' }, { role: 'assistant', content: '', error: '连接暂时中断', retryMessage: '查看下一步' }]} />);
     fireEvent.click(screen.getByRole('button', { name: '收起助手回复' })); expect(screen.getByRole('alert')).toBeVisible();
   });
 
@@ -119,6 +119,6 @@ describe('focus conversation alongside the task', () => {
     expect(footer.querySelector('.focus-reply')).toBeInTheDocument();
     expect(screen.getByRole('textbox', { name: '专注输入' })).toBe(input);
     expect(input).toHaveValue('我只有一口锅');
-    expect(screen.getByRole('button', { name: '完成这一步' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '这道菜做好了' })).toBeInTheDocument();
   });
 });

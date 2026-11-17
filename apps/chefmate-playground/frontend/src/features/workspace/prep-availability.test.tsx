@@ -1,4 +1,4 @@
-import { render, screen, within } from '@testing-library/react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, expect, it } from 'vitest';
 import { ViewCard } from './views';
 import { workspaceStore } from './store';
@@ -18,8 +18,10 @@ it('marks only explicit missing stock as waiting for purchase without checking u
   const rendered = render(<ViewCard view={view} entry={workspaceStore.entry(id)} sessionId={id} />);
   const missing = rendered.container.querySelector('[data-prep-id=beef]') as HTMLElement;
   const unknown = rendered.container.querySelector('[data-prep-id=potato]') as HTMLElement;
-  expect(within(missing).getByText('待购买')).toBeInTheDocument();
-  expect(within(unknown).queryByText('待购买')).not.toBeInTheDocument();
+  expect(within(missing).getByText('缺少')).toBeInTheDocument();
+  expect(within(unknown).queryByText('缺少')).not.toBeInTheDocument();
+  expect(screen.queryByRole('checkbox')).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: '我想逐项勾选确认' }));
   expect(screen.getByRole('checkbox', { name: '牛肉已备齐' })).not.toBeChecked();
   expect(screen.getByRole('checkbox', { name: '土豆已备齐' })).not.toBeChecked();
   expect(screen.getByRole('checkbox', { name: '番茄已备齐' })).toBeChecked();

@@ -4,7 +4,7 @@ export type Action = { action_id: string; base_revision: number; view_id?: strin
 export type Timer = { id: string; label: string; status: string; seconds: number; deadline_at?: string | null; remaining_seconds?: number; recipe_id?: string; step_id?: string };
 export const labels: Record<string, string> = { preference_form: '条件', recipe_choices: '选菜', recipe_detail: '详情', meal_plan: '餐单', prep_checklist: '备菜', cooking_guide: '做法', timers: '计时', task_progress: '进度' };
 export const stages: Record<string, string> = { idea: '想吃什么', planning: '正在选菜', prep: '备菜', cooking: '烹饪', completed: '已完成' };
-const actions = new Set(['update_preferences', 'select_recipes', 'open_recipe_detail', 'change_servings', 'check_prep_item', 'set_active_recipe', 'set_active_step', 'answer_question', 'set_checklist_scope', 'complete_step', 'complete_meal', 'start_timer', 'pause_timer', 'resume_timer', 'cancel_timer']);
+const actions = new Set(['update_preferences', 'select_recipes', 'open_recipe_detail', 'change_servings', 'check_prep_item', 'confirm_prep', 'start_prep', 'set_active_recipe', 'set_active_step', 'answer_question', 'set_checklist_scope', 'complete_step', 'complete_meal', 'start_timer', 'pause_timer', 'resume_timer', 'cancel_timer']);
 export const clone = <T,>(value: T): T => value == null ? value : JSON.parse(JSON.stringify(value));
 export function changedValues(baseline: Json, values: Json): Json { return Object.fromEntries(Object.entries(values).filter(([key, value]) => JSON.stringify(value) !== JSON.stringify(baseline[key]))); }
 export function makeAction(type: string, payload: Json, revision: number, viewId?: string, actionId = crypto.randomUUID()): Action {
