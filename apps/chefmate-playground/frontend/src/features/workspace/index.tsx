@@ -51,7 +51,7 @@ export function MessageViews({ message, sessionId, running, onContinue, onRecipe
       <button className="view-receipt" type="button" aria-expanded={false} onClick={() => setExpanded(values => ({ ...values, [view.id]: true }))}><Icon name="layers" /><span><strong>{view.title || labels[view.kind]}</strong><small>{viewSummary(current || view)}</small></span><Icon name="chevron-down" /></button>
       {current && onFocus && <Button className="ui-text-button" aria-label={`全屏查看${view.title || labels[view.kind]}`} onClick={() => onFocus(view.kind)}><Icon name="maximize" /></Button>}
     </section>;
-    return <div className="workspace-inline-view" key={view.id}><ViewCard view={live ? current! : view} entry={entry} sessionId={sessionId} historical={!live} onContinue={onContinue} onRecipe={onRecipe} onFocus={onFocus} onCollapse={() => setExpanded(values => ({ ...values, [view.id]: false }))} /></div>;
+    return <div className="workspace-inline-view" key={view.id}><ViewCard compact view={live ? current! : view} entry={entry} sessionId={sessionId} historical={!live} onContinue={onContinue} onRecipe={onRecipe} onFocus={onFocus} onCollapse={() => setExpanded(values => ({ ...values, [view.id]: false }))} /></div>;
   })}</div>;
 }
 function restoreFocusEntrance(target: HTMLElement | null) {

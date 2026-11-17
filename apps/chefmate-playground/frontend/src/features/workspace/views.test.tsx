@@ -20,6 +20,25 @@ const seed = (views: View[], stage = 'planning', extra = {}) => { const id = `re
 beforeEach(() => { vi.spyOn(workspaceStore, 'load').mockImplementation(async id => workspaceStore.entry(id).snapshot); });
 afterEach(() => { ids.forEach(id => workspaceStore.remove(id)); ids.length = 0; });
 describe('React workspace behavior', () => {
+  it('shows only the current dish, step and instruction in a conversation cooking card', () => {
+    const view: View = { id: 'inline-guide', kind: 'cooking_guide', revision: 1, editable: true, data: { recipe_id: 'egg', recipe_name: '洋葱炒鸡蛋', active_step_id: 'fry', steps: [{ id: 'mix', ordinal: 0, instruction: '搅拌蛋液。', status: 'done' }, { id: 'fry', ordinal: 1, instruction: '倒入蛋液翻炒。', adapted_instruction: '用小火翻炒蛋液。', status: 'current' }, { id: 'serve', ordinal: 2, instruction: '装盘。', status: 'pending' }] } };
+    const id = seed([view], 'cooking'), onFocus = vi.fn(), dispatch = vi.spyOn(workspaceStore, 'dispatch').mockResolvedValue({ status: 'ok' });
+    render(<MessageViews message={{ actions: [{ kind: 'show_component', component: view }] }} sessionId={id} running={false} onContinue={() => {}} onFocus={onFocus} />);
+    const card = screen.getByRole('region', { name: '当前做菜步骤' });
+    expect(card).toHaveTextContent('洋葱炒鸡蛋'); expect(card).toHaveTextContent('第 2 / 3 步'); expect(card).toHaveTextContent('用小火翻炒蛋液。');
+    expect(within(card).queryByRole('list', { name: '做菜流程' })).not.toBeInTheDocument();
+    expect(within(card).queryByRole('tablist')).not.toBeInTheDocument(); expect(within(card).queryByRole('progressbar')).not.toBeInTheDocument();
+    expect(within(card).queryByText('全部步骤大纲')).not.toBeInTheDocument(); expect(within(card).getAllByRole('button')).toHaveLength(2);
+    fireEvent.click(within(card).getByRole('button', { name: '打开做菜指导' })); expect(onFocus).toHaveBeenCalledExactlyOnceWith('cooking_guide');
+    fireEvent.click(within(card).getByRole('button', { name: '做完这步，继续' }));
+    expect(dispatch).toHaveBeenCalledWith(id, 'complete_step', { recipe_id: 'egg', step_id: 'fry', completed: true, continue_to_next_recipe: true }, view);
+  });
+  it('shows a completed dish instead of replaying the first instruction in a conversation', () => {
+    const view: View = { id: 'done-inline', kind: 'cooking_guide', revision: 1, editable: true, data: { recipe_id: 'egg', recipe_name: '洋葱炒鸡蛋', steps: [{ id: 'mix', ordinal: 0, instruction: '不要重播的第一步。', status: 'done' }] } }, id = seed([view], 'cooking');
+    render(<MessageViews message={{ actions: [{ kind: 'show_component', component: view }] }} sessionId={id} running={false} onContinue={() => {}} onFocus={() => {}} />);
+    expect(screen.getByText('这道菜已做好。')).toBeInTheDocument(); expect(screen.getByText('1 / 1 步已完成')).toBeInTheDocument();
+    expect(screen.queryByText('不要重播的第一步。')).not.toBeInTheDocument(); expect(screen.queryByRole('button', { name: '撤销这步完成' })).not.toBeInTheDocument();
+  });
   it('keeps the recipe confirmation visible before selection and opens preparation after saving', async () => {
     const view: View = { id: 'choose', kind: 'recipe_choices', revision: 1, editable: true, data: { recipes: [{ recipe_id: 'egg', name: '鸡蛋' }] } }, id = seed([view]);
     const dispatch = vi.spyOn(workspaceStore, 'dispatch').mockResolvedValue({ status: 'ok' }), onFocus = vi.fn(), onContinue = vi.fn();

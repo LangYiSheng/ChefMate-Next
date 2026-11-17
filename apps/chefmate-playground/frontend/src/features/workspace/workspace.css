@@ -130,7 +130,7 @@
 /* App moves this ordinary scene beside the main conversation. */
 .react-cooking-focus{--focus-content-max:1160px;--focus-gutter:32px;position:fixed;inset:12px;display:flex;flex-direction:column;min-width:0;min-height:0;margin:0;padding:0;border:0;border-radius:20px;background:var(--color-canvas);color:var(--color-text);overflow:hidden;box-shadow:0 12px 56px var(--color-shadow)}
 .react-cooking-focus .focus-header{display:flex;align-items:center;justify-content:space-between;gap:16px;flex:none;padding:14px 24px 10px}
-.react-cooking-focus .focus-heading{display:flex;align-items:baseline;gap:14px;flex:1;min-width:0}
+.react-cooking-focus .focus-heading{display:flex;align-items:center;gap:24px;flex:1;min-width:0}
 .react-cooking-focus .focus-heading h2{font:var(--font-title-weight,700) 1.375rem/1.5 var(--font-title);overflow:hidden;white-space:nowrap;text-overflow:ellipsis;min-width:0}
 .react-cooking-focus .focus-header-progress{font:400 0.875rem/1.5 var(--font-ui);color:var(--color-muted);white-space:nowrap}
 .react-cooking-focus .focus-header-actions{display:flex;align-items:center;gap:10px;flex:none}
@@ -290,14 +290,23 @@
 }
 
 /* Quiet surfaces separate groups; only small acknowledgements have spring. */
-.workflow-stages{display:flex;align-items:center;gap:18px;list-style:none;margin:4px 0 18px;padding:0;font-size:.875rem;color:var(--color-muted)}
-.workflow-stages li{display:flex;align-items:center;gap:6px;white-space:nowrap}
-.workflow-stages li>span{display:grid;place-items:center;width:22px;height:22px;border-radius:50%;background:var(--surface-inset);font-size:.8rem}
+:is(.react-workspace,.react-cooking-focus) .workflow-stages{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));align-items:center;gap:12px;width:min(100%,320px);min-height:28px;list-style:none;margin:4px 0 20px;padding:0;font:400 .875rem/1 var(--font-ui);color:var(--color-muted)}
+.workflow-stages li{display:flex;align-items:center;gap:7px;min-height:28px;margin:0;padding:0;white-space:nowrap}
+.workflow-stages .workflow-stage-number{display:grid;place-items:center;flex:none;width:22px;height:22px;border-radius:50%;background:var(--surface-inset);font-size:.8rem;line-height:1}
+.workflow-stages .workflow-stage-label{display:block;line-height:22px}
 .workflow-stages li[aria-current=step]{font-weight:650;color:var(--color-text)}
-.workflow-stages li[aria-current=step]>span{background:var(--color-accent);color:var(--color-canvas)}
+.workflow-stages li[aria-current=step]>.workflow-stage-number{background:var(--color-accent);color:var(--color-canvas)}
 .workflow-stages .stage-done{color:var(--color-accent)}
 .react-cooking-focus .focus-heading{flex-wrap:wrap}
-.react-cooking-focus .focus-heading .workflow-stages{margin:0;gap:14px}
+.react-cooking-focus .focus-heading .workflow-stages{margin:0;flex-shrink:0}
+.react-workspace .compact-cooking-card{padding:16px 18px;border-radius:12px;background:var(--surface-inset)}
+.react-workspace .compact-cooking-heading{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:6px 16px}
+.react-workspace .compact-cooking-heading strong{font-size:1rem;font-weight:600;overflow-wrap:anywhere}
+.react-workspace .compact-cooking-heading>span{font-size:.875rem;color:var(--color-muted);white-space:nowrap}
+.react-workspace .compact-cooking-instruction{margin:12px 0 16px;font:400 1.125rem/1.8 var(--font-reading);white-space:pre-wrap;overflow-wrap:anywhere}
+.react-workspace .compact-cooking-actions{display:flex;align-items:center;flex-wrap:wrap;gap:8px 12px}
+.react-workspace .compact-cooking-actions>.ui-button{min-height:40px}
+.react-workspace .compact-cooking-actions .complete-meal-control{margin:0}
 :is(.react-workspace,.react-cooking-focus) .workflow-next-action{display:flex;flex-wrap:wrap;align-items:center;gap:8px 14px;margin-top:18px;padding:14px 0 4px;border-top:1px solid var(--color-border);background:var(--color-canvas)}
 :is(.react-workspace,.react-cooking-focus) .workflow-next-action>.ui-hint{flex-basis:100%;margin:0 0 4px}
 :is(.react-workspace,.react-cooking-focus) .workflow-next-action>.cooking-primary{min-height:44px;padding:10px 20px}
@@ -310,10 +319,10 @@
 :is(.react-workspace,.react-cooking-focus) .prep-missing-label{font-size:.875rem;color:var(--color-text);font-weight:600}
 :is(.react-workspace,.react-cooking-focus) .preparation-finish{position:sticky;bottom:0;z-index:1;padding-bottom:10px}
 @media(max-width:600px){
- .workflow-stages{gap:12px;font-size:.8rem}
- .react-cooking-focus .focus-heading .workflow-stages{gap:8px}
- .react-cooking-focus .focus-heading .workflow-stages li{gap:4px}
- .react-cooking-focus .focus-heading .workflow-stages li>span{width:18px;height:18px}
+ :is(.react-workspace,.react-cooking-focus) .workflow-stages{gap:8px;width:min(100%,280px);font-size:.8rem}
+ .workflow-stages li{gap:5px}
+ .workflow-stages .workflow-stage-number{width:20px;height:20px}
+ .react-cooking-focus .focus-heading .workflow-stages{margin-top:6px}
  :is(.react-workspace,.react-cooking-focus) .workflow-next-action>.cooking-primary{width:100%}
  :is(.react-workspace,.react-cooking-focus) .workspace-prep-list{max-height:40dvh}
 }

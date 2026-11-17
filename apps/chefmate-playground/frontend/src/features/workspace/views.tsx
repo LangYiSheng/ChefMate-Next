@@ -5,14 +5,14 @@ import { workspaceStore, type Entry } from './store';
 import { ReadingPages } from './ReadingPages';
 import './cooking-actions.css';
 
-type Context = { sessionId: string; entry: Entry; historical?: boolean; focused?: boolean; onFocus?: (kind: string) => void; onRecipe?: (id: string) => void; onContinue?: (message: string) => void; onCollapse?: () => void };
+type Context = { sessionId: string; entry: Entry; historical?: boolean; focused?: boolean; compact?: boolean; onFocus?: (kind: string) => void; onRecipe?: (id: string) => void; onContinue?: (message: string) => void; onCollapse?: () => void };
 export function Button({ children, onClick, disabled, className = 'ui-button', ...rest }: { children: ReactNode; onClick?: () => unknown; disabled?: boolean; className?: string; [key: string]: any }) {
   return <button {...rest} className={className} type="button" disabled={disabled} onClick={() => { Promise.resolve(onClick?.()).catch(() => {}); }}>{children}</button>;
 }
 export const Hint = ({ children }: { children: ReactNode }) => <p className="ui-hint">{children}</p>;
 export function WorkflowSteps({ stage }: { stage: string }) {
   const current = ({ idea: 0, planning: 0, prep: 1, cooking: 2, completed: 3 } as Record<string, number>)[stage] ?? 0;
-  return <ol className="workflow-stages" aria-label="做菜流程">{['选菜', '备菜', '做菜', '完成'].map((label, index) => <li key={label} aria-current={index === current ? 'step' : undefined} className={index < current ? 'stage-done' : ''}><span aria-hidden="true">{index < current ? '✓' : index + 1}</span>{label}</li>)}</ol>;
+  return <ol className="workflow-stages" aria-label="做菜流程">{['选菜', '备菜', '做菜', '完成'].map((label, index) => <li key={label} aria-current={index === current ? 'step' : undefined} className={index < current ? 'stage-done' : ''}><span className="workflow-stage-number" aria-hidden="true">{index < current ? '✓' : index + 1}</span><span className="workflow-stage-label">{label}</span></li>)}</ol>;
 }
 export const CompletionNotice = ({ entry }: { entry: Entry }) => entry.snapshot?.stage === 'completed' && entry.completion ? <p className="workspace-completion" role="status"><Icon name="circle-check" /><span>{completionText(entry.completion)}</span></p> : null;
 const Estimate = () => <span className="estimate-marker" title="这一项含估算值">估算</span>;
@@ -178,6 +178,20 @@ export function CompleteMeal({ ctx }: { ctx: Context }) {
   const busy = ctx.entry.saving || ctx.entry.running || ctx.entry.loading || !!ctx.entry.failed || !!ctx.entry.conflict;
   return <div className={`complete-meal-control${confirming ? ' is-confirming' : ''}`}>{confirming ? <div className="complete-meal-confirm" role="group" aria-label="确认完成本餐"><p>确认这餐烹饪已经完成？完成后会保存烹饪记录。</p><div className="complete-meal-actions"><Button className="ui-button cooking-primary" disabled={busy} onClick={async () => { await workspaceStore.dispatch(ctx.sessionId, 'complete_meal', {}, undefined, { continuation: '这顿饭所有菜都做好啦，我已点击完成本次菜肴。请查看本次营养登记状态；如果是多人用餐或人数不明确，先问我自己吃了哪些、吃了多少，再登记个人营养。' }); setConfirming(false); }}>确认完成本餐</Button><Button className="ui-text-button" onClick={() => setConfirming(false)}>继续烹饪</Button></div></div> : <Button className="ui-button cooking-primary complete-meal-button" disabled={busy} onClick={() => setConfirming(true)}><Icon name="circle-check" />完成本餐</Button>}</div>;
 }
+function CompactCookingGuide({ view, ctx }: { view: View; ctx: Context }) {
+  const data = view.data, steps: Json[] = data.steps || [];
+  const current = steps.find(step => step.id === data.active_step_id && step.status !== 'done') || steps.find(step => step.status !== 'done');
+  const done = steps.length > 0 && !current;
+  return <>
+    <div className="compact-cooking-heading"><strong>{data.recipe_name || '当前菜品'}</strong><span>{current ? `第 ${Number(current.ordinal) + 1} / ${steps.length} 步` : done ? `${steps.length} / ${steps.length} 步已完成` : '暂无步骤'}</span></div>
+    <p className="compact-cooking-instruction">{current ? current.adapted_instruction || current.instruction : done ? '这道菜已做好。' : '打开做菜指导查看当前安排。'}</p>
+    <div className="compact-cooking-actions">
+      {current && <Button className="ui-button cooking-primary" disabled={locked(view, ctx) || ctx.entry.snapshot?.stage !== 'cooking'} onClick={() => action(view, ctx, 'complete_step', { recipe_id: data.recipe_id, step_id: current.id, completed: true, continue_to_next_recipe: true })}>{steps.every(step => step.id === current.id || step.status === 'done') ? '这道菜做好了' : '做完这步，继续'}</Button>}
+      {done && <CompleteMeal ctx={ctx} />}
+      {ctx.onFocus && <Button className="ui-text-button" onClick={() => ctx.onFocus?.('cooking_guide')}>打开做菜指导<Icon name="arrow-up-right" /></Button>}
+    </div>
+  </>;
+}
 function CookingGuide({ view, ctx }: { view: View; ctx: Context }) {
   const data = view.data, steps: Json[] = data.steps || [];
   const [mode, setMode] = useState('detail');
@@ -186,7 +200,8 @@ function CookingGuide({ view, ctx }: { view: View; ctx: Context }) {
   // Keep an observed navigation anchor when it ages out of the bounded action history.
   const navigationId = ctx.entry.snapshot?.recent_actions?.findLast((item: Json) => item.type === 'navigate_cooking_step')?.action_id ?? browsing?.navigationId;
   useEffect(() => { setBrowsing(null); }, [data.recipe_id, data.active_step_id, navigationId]);
-  const activeIndex = Math.max(0, steps.findIndex(step => step.id === data.active_step_id));
+  const explicitIndex = steps.findIndex(step => step.id === data.active_step_id), pendingIndex = steps.findIndex(step => step.status !== 'done');
+  const activeIndex = explicitIndex >= 0 ? explicitIndex : pendingIndex >= 0 ? pendingIndex : Math.max(0, steps.length - 1);
   const browseIndex = browsing && browsing.recipeId === data.recipe_id && browsing.activeStepId === data.active_step_id && browsing.navigationId === navigationId ? steps.findIndex(step => step.id === browsing.stepId) : -1;
   const index = browseIndex >= 0 ? browseIndex : activeIndex, selected = steps[index];
   const recipes: Json[] = ctx.entry.views.find(item => item.kind === 'meal_plan')?.data.recipes || [];
@@ -266,6 +281,7 @@ function Timers({ view, ctx }: { view: View; ctx: Context }) { return <div><Reve
 function TaskProgress({ view, ctx }: { view: View; ctx: Context }) { const data = view.data; return <div><span className="ui-badge">{stages[data.stage] || '厨房任务'}</span><Hint>{data.recipe_count ?? 0} 道菜 · 备菜 {data.prep_ready ?? 0}/{data.prep_total ?? 0} · 步骤 {data.steps_done ?? 0}/{data.steps_total ?? 0}</Hint><CompleteMeal ctx={ctx} /></div>; }
 const renderers: Record<string, (props: { view: View; ctx: Context }) => ReactNode> = { preference_form: Preferences, recipe_choices: Choices, recipe_detail: RecipeDetail, meal_plan: MealPlan, prep_checklist: PrepChecklist, cooking_guide: CookingGuide, timers: Timers, task_progress: TaskProgress };
 export function ViewCard({ view, ...ctx }: Context & { view: View }) {
+  if (ctx.compact && view.kind === 'cooking_guide') return <section className="ui-component ui-cooking_guide compact-cooking-card" aria-label="当前做菜步骤" data-view-id={view.id} data-view-kind={view.kind}><CompactCookingGuide view={view} ctx={ctx} /></section>;
   const Renderer = renderers[view.kind], glyph = ({ preference_form: 'list-checks', recipe_choices: 'utensils', recipe_detail: 'book-open', meal_plan: 'chef-hat', prep_checklist: 'list-checks', cooking_guide: 'chef-hat', timers: 'timer', task_progress: 'circle-check' } as Json)[view.kind];
   const title = view.kind === 'prep_checklist' ? '准备食材' : view.title || labels[view.kind] || '任务内容';
   return <section className={`ui-component ui-${view.kind}`} data-view-id={view.id} data-view-kind={view.kind}><div className="ui-component-heading"><h3>{glyph && <Icon name={glyph} />}{title}</h3><div className="ui-component-actions">{ctx.historical && <span className="ui-badge muted">历史记录</span>}{!ctx.historical && !ctx.focused && ctx.onFocus && <Button className="ui-text-button card-heading-action" aria-label={`全屏查看${title}`} title="全屏查看" onClick={() => ctx.onFocus?.(view.kind)}><Icon name="maximize" /></Button>}{ctx.onCollapse && <Button className="ui-text-button card-heading-action" aria-label={`收起${title}`} title="收起" aria-expanded={true} onClick={ctx.onCollapse}><Icon name="chevron-up" /></Button>}</div></div>{!ctx.focused && ['recipe_choices', 'prep_checklist', 'meal_plan', 'cooking_guide'].includes(view.kind) && <WorkflowSteps stage={ctx.entry.snapshot?.stage} />}{Renderer ? <Renderer key={view.id} view={view} ctx={ctx} /> : <Hint>这个组件暂不支持，请通过对话继续。</Hint>}</section>;
