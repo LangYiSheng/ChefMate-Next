@@ -515,7 +515,7 @@ class SelectRecipesInput(ExpectedRevisionInput):
     servings: dict[str, Positive] = Field(default_factory=dict,
         description="仅覆盖某盘的配方等效份量，通常省略让系统分配共享菜量；不是整餐人数。只有用户明确要求某道的量时才填写。")
     diners: Positive | None = Field(default=None,
-        description="整餐实际用餐人数；已有餐单收到新的明确人数，也要重新select同一餐单并填写此值，先更新量再备菜。省略沿用偏好中的人数。5人共享4菜填5，通常不填写servings。")
+        description="整餐规划用餐人数；已有餐单收到新的明确人数，也要重新select同一餐单并填写此值，先更新量再备菜。省略沿用偏好或当前餐单人数，都没有时默认1人；有适用的记忆人数时显式填写，不重复追问。5人共享4菜填5，通常不填写servings。")
     portion_mode: Literal["shared", "per_dish"] = Field(default="shared",
         description="shared按整餐人数与菜数分配每盘共享量；仅用户明确每道都要足额人数份时用per_dish。")
 

@@ -107,6 +107,39 @@ def test_shared_meal_separates_diners_from_each_dish_equivalent_portions(kitchen
     assert service.meal_record() is None
 
 
+@pytest.mark.parametrize("entry", ["select_recipes", "set_meal_plan", "user_action"])
+def test_unspecified_meal_defaults_to_one_diner_with_real_scaled_amounts(kitchen, entry):
+    service, host, _, _ = kitchen
+    if entry == "user_action":
+        assert tool(kitchen, "show_recipe_choices", {"recipe_ids": ["r1"], "data_snapshot": SNAPSHOT})["status"] == "ok"
+        result = action(kitchen, "select_recipes", {"recipe_ids": ["r1"]})
+    else:
+        request = {"recipe_ids": ["r1"], "data_snapshot": SNAPSHOT}
+        if entry == "select_recipes":
+            request["expected_revision"] = 0
+        result = tool(kitchen, entry, request)
+    assert result["status"] == "ok"
+    assert host.state["meal_diners"] == 1
+    assert len(host.state["meal_plan"]) == 1
+    assert host.state["meal_plan"][0]["target_servings"] == 1
+    assert host.state["preferences"]["servings"] is None
+    plan = next(view for view in result["views"] if view["kind"] == "meal_plan")
+    assert plan["data"]["recipes"][0]["original_servings"] == 2
+    prep = tool(kitchen, "show_prep_checklist")
+    items = next(view for view in prep["views"] if view["kind"] == "prep_checklist")["data"]["items"]
+    assert next(item for item in items if item["ingredient_id"] == "shrimp")["amount_value"] == 50
+
+
+def test_default_diner_does_not_override_existing_meal_or_explicit_multidish_request(kitchen):
+    _, host, _, _ = kitchen
+    result = tool(kitchen, "select_recipes", {"recipe_ids": ["r1", "r2"], "data_snapshot": SNAPSHOT, "diners": 3, "expected_revision": 0})
+    assert result["status"] == "ok" and host.state["meal_diners"] == 3
+    assert [item["target_servings"] for item in host.state["meal_plan"]] == [2.25, 2.25]
+    result = choose(kitchen, ids=["r1", "r2"])
+    assert result["status"] == "ok" and host.state["meal_diners"] == 3
+    assert len(host.state["meal_plan"]) == 2
+
+
 def test_explicit_per_dish_mode_and_individual_portion_overrides(kitchen):
     _, host, _, _ = kitchen
     action(kitchen, "update_preferences", {"values": {"servings": 5}})
@@ -309,7 +342,7 @@ def test_portions_respect_non_scalable_ingredients_and_metric_contributions(kitc
 
 
 def test_preparation_retains_dish_identity_shape_and_amounts(kitchen):
-    choose(kitchen, ids=["r1", "r2", "r3"])
+    choose(kitchen, ids=["r1", "r2", "r3"], servings={"r1": 2, "r2": 2, "r3": 2})
     result = tool(kitchen, "show_prep_checklist")
     items = result["actions"][0]["component"]["data"]["items"]
     shrimp = [item for item in items if item["ingredient_id"] == "shrimp"]
@@ -332,7 +365,7 @@ def test_unknown_quantities_remain_unknown_and_separate(kitchen):
 
 
 def test_single_dish_preparation_preserves_other_dish_confirmations(kitchen):
-    choose(kitchen, ids=["r1", "r2"], servings={"r1": 4})
+    choose(kitchen, ids=["r1", "r2"], servings={"r1": 4, "r2": 2})
     result = tool(kitchen, "show_prep_checklist", {"recipe_ids": ["r1"]})
     view = result["actions"][0]["component"]
     shrimp = next(item for item in view["data"]["items"] if item["ingredient_id"] == "shrimp")

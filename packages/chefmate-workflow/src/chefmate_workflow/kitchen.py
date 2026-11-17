@@ -137,6 +137,7 @@ class KitchenCommands:
         existing = {(item.recipe_id, _dump(item.data_snapshot.model_dump(mode="json"))): item for item in state.meal_plan}
         diners = diners if diners is not None else state.preferences.servings
         diners = diners if diners is not None else state.meal_diners
+        diners = diners if diners is not None else 1
         factor = 1.0 if portion_mode == "per_dish" else {1: 1.0, 2: 0.75, 3: 0.6, 4: 0.5}[len(recipes)]
         default_target = round(diners * factor, 2) if diners is not None else None
         selected = []

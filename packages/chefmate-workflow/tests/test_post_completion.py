@@ -39,7 +39,7 @@ def test_finished_meal_return_to_planning_keeps_frozen_portions_but_not_executio
     assert result["status"] == "ok"
     assert host.state["meal_id"] != finished["meal_id"]
     assert host.state["meal_plan"] == finished["meal_plan"]
-    assert host.state["meal_diners"] == diners and host.state["portion_mode"] == portion_mode
+    assert host.state["meal_diners"] == (diners if diners is not None else 1) and host.state["portion_mode"] == portion_mode
     assert host.state["preferences"]["servings"] == 8
     assert host.state["started_at"] is None and host.state["completed_at"] is None
     assert host.state["prep_status"] == {} and host.state["step_status"] == {} and host.state["timers"] == []
